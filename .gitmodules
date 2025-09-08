@@ -1,3 +1,6 @@
 [submodule "OpenBarnyard"]
 	path = OpenBarnyard
 	url = https://github.com/InfiniteC0re/OpenBarnyard
+[submodule "ThirdParty/NVRHI"]
+	path = ThirdParty/NVRHI
+	url = https://github.com/NVIDIA-RTX/NVRHI.git
