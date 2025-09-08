@@ -1,0 +1,3 @@
+[submodule "OpenBarnyard"]
+	path = OpenBarnyard
+	url = https://github.com/InfiniteC0re/OpenBarnyard
