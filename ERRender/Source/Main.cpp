@@ -1,5 +1,7 @@
 #include "pch.h"
 
+#include "ERRender.h"
+
 #include <AImGUI.h>
 #include <ModLoader.h>
 #include <AHooks.h>
@@ -7,12 +9,6 @@
 
 #include <BYardSDK/AGUI2.h>
 #include <BYardSDK/THookedRenderD3DInterface.h>
-#include <BYardSDK/AGUI2FontManager.h>
-#include <BYardSDK/AGameStateController.h>
-#include <BYardSDK/ATerrainInterface.h>
-#include <BYardSDK/ACamera.h>
-#include <BYardSDK/ASteer.h>
-#include <BYardSDK/APlayerManager.h>
 
 #include <Toshi/THPTimer.h>
 #include <Toshi/TScheduler.h>
@@ -26,6 +22,8 @@ class ERRenderMod : public AModInstance
 public:
 	TBOOL OnLoad() OVERRIDE
 	{
+		remaster::SetupRenderHooks();
+
 		return TTRUE;
 	}
 
@@ -78,7 +76,7 @@ extern "C"
 		TUtil::TOSHIParams toshiParams;
 		toshiParams.szCommandLine = "";
 		toshiParams.szLogFileName = "er-render";
-		toshiParams.szLogAppName  = "RERender";
+		toshiParams.szLogAppName  = "ERRender";
 
 		TUtil::ToshiCreate( toshiParams );
 

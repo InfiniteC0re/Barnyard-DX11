@@ -10,7 +10,10 @@ project "ERRender"
 	{
 		"Toshi",
 		"BYardSDK",
-		"BYModCore"
+		"BYModCore",
+		"d3d11.lib",
+		"dxgi.lib",
+		"d3dcompiler.lib"
 	}
 	
 	libdirs
