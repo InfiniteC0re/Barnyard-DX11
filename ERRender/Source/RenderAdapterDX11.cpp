@@ -221,10 +221,9 @@ void RenderAdapterDX11::EnumerateOutputs( RenderDX11* render, IDXGIAdapter* dxgi
 			}
 
 			DXGI_MODE_DESC* descriptions = new DXGI_MODE_DESC[ numModes ];
-
 			dxgiOutput->GetDisplayModeList( DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_ENUM_MODES_INTERLACED, &numModes, descriptions );
 
-			for ( size_t i = 0; i < numModes; i++ )
+			for ( UINT i = 0; i < numModes; i++ )
 			{
 				Mode* mode = new Mode;
 				mode->SetModeIndex( i );

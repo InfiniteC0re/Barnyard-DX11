@@ -224,6 +224,11 @@ TRenderInterface::DISPLAYPARAMS* RenderDX11::GetCurrentDisplayParams()
 	return &m_oDisplayParams;
 }
 
+TBOOL RenderDX11::Supports32BitTextures()
+{
+	return TTRUE;
+}
+
 TRenderContext* RenderDX11::CreateRenderContext()
 {
 	return new RenderContextD3D11( this );
@@ -345,6 +350,8 @@ TBOOL RenderDX11::Create( const TCHAR* a_pchWindowTitle )
 		    | D3D11_CREATE_DEVICE_DEBUG
 #endif
 			;
+
+		TOrderTable::CreateStaticData( 2000, 4000 );
 
 		BuildAdapterDatabase();
 		DX11_API_VALIDATE_EXIT( D3D11CreateDevice( NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, flags, NULL, 0, D3D11_SDK_VERSION, &m_pDevice, &m_eFeatureLevel, &m_pDeviceContext ) );

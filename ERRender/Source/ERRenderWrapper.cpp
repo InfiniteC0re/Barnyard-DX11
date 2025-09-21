@@ -1,5 +1,12 @@
 #include "pch.h"
 #include "ERRender.h"
+#include "Shader/GrassShader.h"
+#include "Shader/SkinShader.h"
+#include "Shader/WorldShader.h"
+#include "Shader/StaticInstanceShader.h"
+#include "Shader/SysShader.h"
+#include "Resource/TextureResource.h"
+#include "Resource/Viewport.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -28,4 +35,12 @@ void remaster::SetupRenderHooks()
 {
 	InstallHook<TRenderD3DInterface_Create>();
 	InstallHook<TRenderD3DInterface_CreateObject>();
+
+	SetupRenderHooks_GrassShader();
+	SetupRenderHooks_SkinShader();
+	SetupRenderHooks_WorldShader();
+	SetupRenderHooks_TextureResource();
+	SetupRenderHooks_Viewport();
+	SetupRenderHooks_StaticInstanceShader();
+	SetupRenderHooks_SysShader();
 }

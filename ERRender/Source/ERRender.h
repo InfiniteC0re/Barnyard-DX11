@@ -41,6 +41,7 @@ public:
 	virtual TBOOL                                EndScene() OVERRIDE;
 	virtual Toshi::TRenderAdapter::Mode::Device* GetCurrentDevice() OVERRIDE;
 	virtual DISPLAYPARAMS*                       GetCurrentDisplayParams() OVERRIDE;
+	virtual TBOOL                                Supports32BitTextures() OVERRIDE;
 	virtual Toshi::TRenderContext*               CreateRenderContext() OVERRIDE;
 	virtual Toshi::TRenderCapture*               CreateCapture() OVERRIDE;
 	virtual void                                 DestroyCapture( Toshi::TRenderCapture* a_pRenderCapture ) OVERRIDE;
