@@ -7,6 +7,7 @@
 #include "Shader/SysShader.h"
 #include "Resource/TextureResource.h"
 #include "Resource/Viewport.h"
+#include "UI/GUI2Renderer.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -43,4 +44,5 @@ void remaster::SetupRenderHooks()
 	SetupRenderHooks_Viewport();
 	SetupRenderHooks_StaticInstanceShader();
 	SetupRenderHooks_SysShader();
+	SetupRenderHooks_UIRenderer();
 }
