@@ -9,6 +9,8 @@
 #include "Resource/Viewport.h"
 #include "Resource/OrderTable.h"
 #include "Resource/ClassPatcher.h"
+#include "Resource/VertexBlock.h"
+#include "Resource/IndexBlock.h"
 #include "UI/GUI2Renderer.h"
 
 #include <AHooks.h>
@@ -53,4 +55,6 @@ void remaster::SetupRenderHooks()
 	SetupRenderHooks_SysShader();
 	SetupRenderHooks_UIRenderer();
 	SetupRenderHooks_OrderTable();
+	SetupRenderHooks_VertexBlock();
+	SetupRenderHooks_IndexBlock();
 }

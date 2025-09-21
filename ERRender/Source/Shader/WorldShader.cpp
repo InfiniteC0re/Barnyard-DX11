@@ -27,10 +27,27 @@ MEMBER_HOOK( 0x005f69e0, AWorldMaterialHAL, AWorldMaterialHAL_SetOrderTable, voi
 	SetOrderTable( a_pOrderTable );
 }
 
+HOOK( 0x00611970, AWorldMaterialHAL_FUN_00611970, void, remaster::WorldMaterial* a_pMaterial, const TCHAR* a_pchMatName )
+{
+	if ( CALL( 0x006113a0, TBOOL, const TCHAR*, a_pchMatName ) )
+	{
+		auto pShader = TSTATICCAST(remaster::WorldShaderDX11, remaster::WorldShaderDX11::GetSingleton());
+
+		CALL_THIS( 0x005f69e0, remaster::WorldMaterial*, void, a_pMaterial, TOrderTable*, pShader->GetOrderTable( 5 ) ); // a_pMaterial->SetOrderTable( pShader->GetOrderTable( 5 ) );
+	}
+	else if ( CALL( 0x006113f0, TBOOL, const TCHAR*, a_pchMatName ) )
+	{
+		a_pMaterial->SetBlendMode( 7 );
+	}
+
+	CALL( 0x00611630, void, remaster::WorldMaterial*, a_pMaterial, const TCHAR*, a_pchMatName );
+}
+
 void remaster::SetupRenderHooks_WorldShader()
 {
 	InstallHook<AWorldShaderHAL_Constructor>();
 	InstallHook<AWorldMaterialHAL_SetOrderTable>();
+	InstallHook<AWorldMaterialHAL_FUN_00611970>();
 }
 
 remaster::WorldShaderDX11::WorldShaderDX11()

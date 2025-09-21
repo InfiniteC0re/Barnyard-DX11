@@ -6,6 +6,7 @@
 #include <BYardSDK/SDKHooks.h>
 
 #include <Platform/DX8/TModel_DX8.h>
+#include <Platform/DX8/TTextureFactoryHAL_DX8.h>
 
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
@@ -180,15 +181,15 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 
 		//m_pDirectDevice->ShowCursor( TRUE );
 
-		//// Create invalid texture pattern
-		//TUINT invalidTextureData[ 32 ];
-		//for ( TINT i = 0; i < 32; i++ )
-		//{
-		//	invalidTextureData[ i ] = 0xff0fff0f;
-		//}
+		// Create invalid texture pattern
+		TUINT invalidTextureData[ 32 ];
+		for ( TINT i = 0; i < 32; i++ )
+		{
+			invalidTextureData[ i ] = 0xff0fff0f;
+		}
 
-		//auto pTextureFactory = GetSystemResource<TTextureFactoryHAL>( SYSRESOURCE_TEXTUREFACTORY );
-		//m_pInvalidTexture    = pTextureFactory->CreateTextureFromMemory( invalidTextureData, sizeof( invalidTextureData ), 0x11, 8, 8 );
+		auto pTextureFactory = GetSystemResource<Toshi::TTextureFactoryHAL>( SYSRESOURCE_TEXTUREFACTORY );
+		m_pInvalidTexture    = pTextureFactory->CreateTextureFromMemory( invalidTextureData, sizeof( invalidTextureData ), 0x11, 8, 8 );
 
 		// Enable color correction and mark display as created
 		EnableColourCorrection( TTRUE );
@@ -216,11 +217,35 @@ TBOOL RenderDX11::Update( TFLOAT a_fDeltaTime )
 
 TBOOL RenderDX11::BeginScene()
 {
-	return TTRUE;
+	if ( BaseClass::BeginScene() )
+	{
+		/*TFLOAT clearColor[] = { 0.0f, 0.2f, 0.0f, 1.0f };
+		m_pDeviceContext->OMSetRenderTargets( 1, &m_pRenderTargetView, TNULL );
+		m_pDeviceContext->ClearRenderTargetView( m_pRenderTargetView, clearColor );*/
+
+		D3D11_VIEWPORT viewport;
+		viewport.TopLeftX = 0.0f;
+		viewport.TopLeftY = 0.0f;
+		viewport.MinDepth = 0.0f;
+		viewport.MaxDepth = 1.0f;
+		viewport.Width    = 1280.0f;
+		viewport.Height   = 720.0f;
+
+		m_pDeviceContext->RSSetViewports( 1, &viewport );
+		m_bInScene = TTRUE;
+
+		return TTRUE;
+	}
+	
+	return TFALSE;
 }
 
 TBOOL RenderDX11::EndScene()
 {
+	//m_pSwapChain->Present( 1, 0 );
+
+	m_bInScene = TFALSE;
+
 	return TTRUE;
 	//throw std::logic_error( "The method or operation is not implemented." );
 }
@@ -233,6 +258,16 @@ TRenderAdapter::Mode::Device* RenderDX11::GetCurrentDevice()
 TRenderInterface::DISPLAYPARAMS* RenderDX11::GetCurrentDisplayParams()
 {
 	return &m_oDisplayParams;
+}
+
+void RenderDX11::FlushOrderTables()
+{
+	TASSERT( TTRUE == IsInScene() );
+
+	for ( auto it = m_OrderTables.Begin(); it != m_OrderTables.End(); it++ )
+	{
+		it->Flush();
+	}
 }
 
 TBOOL RenderDX11::Supports32BitTextures()

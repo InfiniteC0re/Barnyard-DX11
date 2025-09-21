@@ -35,7 +35,7 @@ public:
 	void SetOrderTable( Toshi::TOrderTable* a_pOrderTable );
 
 private:
-	WorldMaterial*  m_pAlphaBlendMaterial;
+	WorldMaterial*      m_pAlphaBlendMaterial;
 	Toshi::TOrderTable* m_pAssignedOrderTable;
 	TBOOL               m_aHasUVOffsets[ MAX_TEXTURES ];
 	TFLOAT              m_aUVOffsetsX[ MAX_TEXTURES ];

@@ -40,7 +40,7 @@ public:
 protected:
 	union
 	{
-		TUINT8 m_SomeColourComponents[ 8 ];
+		TUINT8 m_SomeColourComponents[ 4 ];
 		TINT32 m_SomeColour;
 	};
 	TINT   m_Unk2;

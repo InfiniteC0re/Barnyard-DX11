@@ -35,6 +35,9 @@ public:
 	RenderDX11();
 	~RenderDX11();
 
+	//-----------------------------------------------------------------------------
+	// Toshi::TRenderInterface
+	//-----------------------------------------------------------------------------
 	virtual TBOOL                                CreateDisplay( const DISPLAYPARAMS& a_rParams ) OVERRIDE;
 	virtual TBOOL                                DestroyDisplay() OVERRIDE;
 	virtual TBOOL                                Update( TFLOAT a_fDeltaTime ) OVERRIDE;
@@ -42,6 +45,7 @@ public:
 	virtual TBOOL                                EndScene() OVERRIDE;
 	virtual Toshi::TRenderAdapter::Mode::Device* GetCurrentDevice() OVERRIDE;
 	virtual DISPLAYPARAMS*                       GetCurrentDisplayParams() OVERRIDE;
+	virtual void                                 FlushOrderTables() OVERRIDE;
 	virtual TBOOL                                Supports32BitTextures() OVERRIDE;
 	virtual Toshi::TRenderContext*               CreateRenderContext() OVERRIDE;
 	virtual Toshi::TRenderCapture*               CreateCapture() OVERRIDE;
@@ -53,6 +57,9 @@ public:
 	virtual Toshi::TDebugText*                   CreateDebugText() OVERRIDE;
 	virtual void                                 DestroyDebugText() OVERRIDE;
 
+	//-----------------------------------------------------------------------------
+	// Own methods (NEEDED to replicate interface of TRenderD3DInterface!!!
+	//-----------------------------------------------------------------------------
 	virtual TBOOL RecreateDisplay( const DISPLAYPARAMS& a_rDisplayParams );
 	virtual void SetContrast( TFLOAT a_fConstrast );
 	virtual void SetBrightness( TFLOAT a_fBrightness );
@@ -73,6 +80,10 @@ public:
 
 	Toshi::TPriList<Toshi::TOrderTable>& GetOrderTables() { return m_OrderTables; }
 
+	ID3D11Device*           GetD3D11Device() { return m_pDevice; }
+	ID3D11DeviceContext*    GetD3D11DeviceContext() { return m_pDeviceContext; }
+	IDXGISwapChain*         GetD3D11SwapChain() { return m_pSwapChain; }
+	ID3D11RenderTargetView* GetD3D11RenderTargetView() { return m_pRenderTargetView; }
 
 private:
 	IDirect3D8*                          m_pDirect3D;     // Direct3D interface

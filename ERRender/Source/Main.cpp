@@ -71,7 +71,7 @@ extern "C"
 	MODLOADER_EXPORT AModInstance* CreateModInstance( const T2CommandLine* a_pCommandLine )
 	{
 		// TODO: Specify max memory size to allocate for the mod
-		TMemory::Initialise( 1 * 1024 * 1024, 0 );
+		TMemory::Initialise( 128 * 1024 * 1024, 0 );
 
 		TUtil::TOSHIParams toshiParams;
 		toshiParams.szCommandLine = "";

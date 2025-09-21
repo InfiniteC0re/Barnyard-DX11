@@ -31,6 +31,17 @@ public:
 	// Own methods
 	//-----------------------------------------------------------------------------
 	virtual void CopyToAlphaBlendMaterial();
+
+public:
+	void SetOrderTable( Toshi::TOrderTable* a_pOrderTable );
+	
+private:
+	SkinMaterial*       m_pAlphaBlendMaterial;
+	Toshi::TOrderTable* m_pAssignedOrderTable;
+	TBOOL               m_bIsHDLighting;
+	TBOOL               m_bHasLighting1Tex;
+	TBOOL               m_bHasLighting2Tex;
+	Toshi::TTexture*    m_pSomeTexture;
 };
 
 }; // namespace remaster

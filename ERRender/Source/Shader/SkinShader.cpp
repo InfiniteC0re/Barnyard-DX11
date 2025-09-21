@@ -51,26 +51,32 @@ void remaster::SkinShaderDX11::EndFlush()
 
 TBOOL remaster::SkinShaderDX11::Create()
 {
-	return TFALSE;
+	m_aOrderTables[ 0 ].Create( this, -390 );
+	m_aOrderTables[ 1 ].Create( this, 1000 );
+	m_aOrderTables[ 2 ].Create( this, -400 );
+	return BaseClass::Create();
 }
 
 TBOOL remaster::SkinShaderDX11::Validate()
 {
-	return TFALSE;
+	return BaseClass::Validate();
 }
 
 void remaster::SkinShaderDX11::Invalidate()
 {
+	BaseClass::Invalidate();
 }
 
 TBOOL remaster::SkinShaderDX11::TryInvalidate()
 {
-	return TFALSE;
+	Invalidate();
+	return TTRUE;
 }
 
 TBOOL remaster::SkinShaderDX11::TryValidate()
 {
-	return TFALSE;
+	Validate();
+	return TTRUE;
 }
 
 void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )

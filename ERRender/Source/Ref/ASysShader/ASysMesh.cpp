@@ -87,6 +87,7 @@ TBOOL ASysMesh::Create( void* a_pUnk, const TCHAR* a_szSomeString )
 // $Barnyard: FUNCTION 005f0450
 TBOOL ASysMesh::CreatePools( TUINT32 a_uiResourcesFlags, TUINT16 a_uiMaxVertices, TUINT16 a_uiMaxIndices )
 {
+	TASSERT( 32768 != a_uiResourcesFlags );
 	m_uiFlags       = a_uiResourcesFlags;
 	m_uiMaxVertices = a_uiMaxVertices;
 	m_uiMaxIndices  = a_uiMaxIndices;
@@ -154,7 +155,7 @@ TBOOL ASysMesh::CreateResource()
 	}
 
 
-	m_pIndexPool = pIndexFactory->CreatePoolResource( m_uiMaxVertices, ( -(TUINT)( ( m_uiFlags & 0x40 ) != 0 ) & 0xfffffff8 ) + 16 | uiIndexPoolFlags );
+	m_pIndexPool = pIndexFactory->CreatePoolResource( m_uiMaxIndices, ( -(TUINT)( ( m_uiFlags & 0x40 ) != 0 ) & 0xfffffff8 ) + 16 | uiIndexPoolFlags );
 	TVALIDPTR( m_pIndexPool );
 
 	return TTRUE;
@@ -194,7 +195,7 @@ void ASysMesh::Unlock( TUINT32 a_uiNumVertices, TUINT32 a_uiNumIndices )
 
 	m_pVertexPool->Unlock( a_uiNumVertices );
 	m_pIndexPool->Unlock( a_uiNumIndices );
-	m_uiFlags &= FLAG_LOCKED;
+	m_uiFlags &= ~FLAG_LOCKED;
 }
 
 Toshi::TVertexPoolResourceInterface* ASysMesh::GetVertexPool()

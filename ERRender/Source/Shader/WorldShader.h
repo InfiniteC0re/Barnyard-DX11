@@ -14,6 +14,10 @@ public:
 
 	static constexpr TUINT NUM_ORDER_TABLES = 9;
 
+	struct AUnknown : Toshi::TNodeList<AUnknown>::TNode
+	{
+	};
+
 public:
 	WorldShaderDX11();
 	~WorldShaderDX11();
@@ -75,7 +79,18 @@ public:
 	}
 
 private:
-	Toshi::TOrderTable m_aOrderTables[ NUM_ORDER_TABLES ];
+	Toshi::TNodeList<AUnknown> m_SomeList;
+	DWORD                      m_hVertexShader;
+	TINT*                      m_pUnk2;
+	TUINT                      m_iAlphaRef;
+	TBOOL                      m_bRenderEnvMap;
+	Toshi::TOrderTable         m_aOrderTables[ NUM_ORDER_TABLES ];
+	TBOOL                      m_bIsHighEndMode;
+	TBOOL                      m_bAlphaBlendMaterial;
+	TBOOL                      m_bUnkFlag3;
+	TBOOL                      m_bUnkFlag4;
+	Toshi::TVector4            m_ShadowColour;
+	Toshi::TVector4            m_AmbientColour;
 };
 
 }; // namespace remaster
