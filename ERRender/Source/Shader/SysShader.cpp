@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "SysShader.h"
 #include "SysMaterial.h"
+#include "SysMesh.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -86,5 +87,10 @@ ASysMaterial* remaster::SysShaderDX11::CreateMaterial( const TCHAR* a_szName )
 
 ASysMesh* remaster::SysShaderDX11::CreateMesh( const TCHAR* a_szName )
 {
-	return TNULL;
+	Validate();
+
+	auto pMeshHAL = new SysMesh();
+	pMeshHAL->SetOwnerShader( this );
+
+	return pMeshHAL;
 }

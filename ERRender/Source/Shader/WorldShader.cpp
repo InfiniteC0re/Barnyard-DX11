@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "WorldShader.h"
 #include "WorldMaterial.h"
+#include "WorldMesh.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -107,7 +108,12 @@ AWorldMaterial* remaster::WorldShaderDX11::CreateMaterial( const TCHAR* a_szName
 
 AWorldMesh* remaster::WorldShaderDX11::CreateMesh( const TCHAR* a_szName )
 {
-	return TNULL;
+	Validate();
+
+	auto pMesh = new WorldMesh();
+	pMesh->SetOwnerShader( this );
+
+	return pMesh;
 }
 
 TBOOL remaster::WorldShaderDX11::IsHighEndMode()

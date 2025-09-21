@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "GrassShader.h"
+#include "GrassMesh.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -79,5 +80,10 @@ AGrassMaterial* remaster::GrassShaderDX11::CreateMaterial( const TCHAR* a_szName
 
 AGrassMesh* remaster::GrassShaderDX11::CreateMesh( const TCHAR* a_szName )
 {
-	return TNULL;
+	Validate();
+
+	AGrassMeshHAL* pMesh = new AGrassMeshHAL();
+	pMesh->SetOwnerShader( this );
+
+	return pMesh;
 }

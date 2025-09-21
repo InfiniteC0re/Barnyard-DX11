@@ -55,7 +55,8 @@ void AGrassMesh::Invalidate()
 // $Barnyard: FUNCTION 005f7b50
 void AGrassMesh::OnDestroy()
 {
-	/*AModelLoader::DestroyMaterial( GetMaterial() );
+	TASSERT( TFALSE );
+	//AModelLoader::DestroyMaterial( GetMaterial() );
 
 	if ( m_pVertexPool )
 	{
@@ -64,14 +65,13 @@ void AGrassMesh::OnDestroy()
 	}
 
 	m_uiFlags       = 0;
-	m_uiMaxVertices = 0;*/
+	m_uiMaxVertices = 0;
 }
 
 // $Barnyard: FUNCTION 005f7b80
 TBOOL AGrassMesh::Create( TUINT32 a_uiFlags, TUINT16 a_uiMaxVertices )
 {
-	return TFALSE;
-	/*m_uiFlags       = a_uiFlags;
+	m_uiFlags       = a_uiFlags;
 	m_uiMaxVertices = a_uiMaxVertices;
 
 	auto pVertexFactory = TRenderInterface::GetSingleton()->GetSystemResource<TVertexFactoryResourceInterface>( SYSRESOURCE_VFWORLD );
@@ -80,7 +80,7 @@ TBOOL AGrassMesh::Create( TUINT32 a_uiFlags, TUINT16 a_uiMaxVertices )
 	m_pVertexPool = pVertexFactory->CreatePoolResource( m_uiMaxVertices, 1 );
 	BaseClass::Create();
 
-	return TTRUE;*/
+	return TTRUE;
 }
 
 TBOOL AGrassMesh::Lock( LockBuffer& a_rLockBuffer )

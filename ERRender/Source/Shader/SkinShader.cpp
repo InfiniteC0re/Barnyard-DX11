@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "SkinShader.h"
 #include "SkinMaterial.h"
+#include "SkinMesh.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -133,7 +134,12 @@ ASkinMaterial* remaster::SkinShaderDX11::CreateMaterial( const TCHAR* a_szName )
 
 ASkinMesh* remaster::SkinShaderDX11::CreateMesh( const TCHAR* a_szName )
 {
-	return TNULL;
+	Validate();
+
+	auto pMesh = new SkinMesh();
+	pMesh->SetOwnerShader( this );
+
+	return pMesh;
 }
 
 TINT remaster::SkinShaderDX11::AddLight( const Toshi::TVector3& a_rPosition, TFLOAT a_fIntensity )
