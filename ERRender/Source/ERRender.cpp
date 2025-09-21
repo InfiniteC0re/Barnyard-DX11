@@ -3,6 +3,9 @@
 #include "RenderAdapterDX11.h"
 
 #include <BYardSDK/THookedRenderD3DInterface.h>
+#include <BYardSDK/SDKHooks.h>
+
+#include <Platform/DX8/TModel_DX8.h>
 
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
@@ -22,8 +25,10 @@ RenderDX11::RenderDX11()
 {
 	THookedRenderD3DInterface::SetSingleton( (TRenderD3DInterface*)this );
 
+	m_pDirect3D	                         = TNULL;
+	m_pDirectDevice                      = TNULL;
 	m_fPixelAspectRatio                  = 1.0f;
-	m_AcceleratorTable                   = NULL;
+	m_AcceleratorTable                   = TNULL;
 	m_pAdapterDevice                     = TNULL;
 	m_oDisplayParams.uiWidth             = 640; // Default width
 	m_oDisplayParams.uiHeight            = 480; // Default height
@@ -209,9 +214,15 @@ TBOOL RenderDX11::Update( TFLOAT a_fDeltaTime )
 	return !m_bExited;
 }
 
+TBOOL RenderDX11::BeginScene()
+{
+	return TTRUE;
+}
+
 TBOOL RenderDX11::EndScene()
 {
-	throw std::logic_error( "The method or operation is not implemented." );
+	return TTRUE;
+	//throw std::logic_error( "The method or operation is not implemented." );
 }
 
 TRenderAdapter::Mode::Device* RenderDX11::GetCurrentDevice()
@@ -249,19 +260,43 @@ void* RenderDX11::CreateUnknown( const TCHAR* a_szName, TINT a_iUnk1, TINT a_iUn
 	return TNULL;
 }
 
-TModel* RenderDX11::CreateModel( TTMD* a_pTMD, TBOOL a_bLoad )
+TModel* RenderDX11::CreateModelTMD( TTMD* a_pTMD, TBOOL a_bLoad )
 {
-	throw std::logic_error( "The method or operation is not implemented." );
+	TASSERT( FALSE );
+	return TNULL;
+	/*auto pModel = new TModelHAL();
+
+	if ( pModel )
+	{
+		if ( !pModel->Create( a_pTMD, a_bLoad ) )
+		{
+			pModel->Delete();
+			return TNULL;
+		}
+	}
+
+	return pModel;*/
 }
 
-TModel* RenderDX11::CreateModel( const TCHAR* a_szFilePath, TBOOL a_bLoad )
+TModel* RenderDX11::CreateModelTMDFile( const TCHAR* a_szFilePath, TBOOL a_bLoad )
 {
-	throw std::logic_error( "The method or operation is not implemented." );
+	auto pModel = new TModelHAL();
+
+	if ( pModel )
+	{
+		if ( !pModel->Create( a_szFilePath, a_bLoad ) )
+		{
+			pModel->Delete();
+			return TNULL;
+		}
+	}
+
+	return pModel;
 }
 
-TModel* RenderDX11::CreateModel( const TCHAR* a_szFilePath, TBOOL a_bLoad, TTRB* a_pAssetTRB, TUINT8 a_ui8FileNameLen )
+TModel* RenderDX11::CreateModelTRB( const TCHAR* a_szFilePath, TBOOL a_bLoad, TTRB* a_pAssetTRB, TUINT8 a_ui8FileNameLen )
 {
-	throw std::logic_error( "The method or operation is not implemented." );
+	return CALL_THIS( 0x006c6320, RenderDX11*, TModel*, this, const TCHAR*, a_szFilePath, TBOOL, a_bLoad, TTRB*, a_pAssetTRB, TUINT8, a_ui8FileNameLen );
 }
 
 TDebugText* RenderDX11::CreateDebugText()
@@ -350,8 +385,6 @@ TBOOL RenderDX11::Create( const TCHAR* a_pchWindowTitle )
 		    | D3D11_CREATE_DEVICE_DEBUG
 #endif
 			;
-
-		TOrderTable::CreateStaticData( 2000, 4000 );
 
 		BuildAdapterDatabase();
 		DX11_API_VALIDATE_EXIT( D3D11CreateDevice( NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, flags, NULL, 0, D3D11_SDK_VERSION, &m_pDevice, &m_eFeatureLevel, &m_pDeviceContext ) );

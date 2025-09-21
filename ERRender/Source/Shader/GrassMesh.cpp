@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "GrassMesh.h"
+#include "Resource/ClassPatcher.h"
 
 #include <Platform/DX8/TRenderContext_DX8.h>
 #include <Platform/DX8/TRenderInterface_DX8.h>
@@ -11,6 +12,8 @@
 #include <Core/TMemoryDebugOn.h>
 
 TOSHI_NAMESPACE_USING
+
+TDEFINE_CLASS_PATCHED( remaster::GrassMesh, 0x0079ab2c );
 
 remaster::GrassMesh::GrassMesh()
 {

@@ -8,6 +8,9 @@ class SysMaterial
 	: public ASysMaterial
 {
 public:
+	TDECLARE_CLASS( SysMaterial, ASysMaterial );
+
+public:
 	SysMaterial();
 	~SysMaterial();
 

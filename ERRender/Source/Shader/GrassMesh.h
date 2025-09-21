@@ -8,6 +8,9 @@ class GrassMesh
     : public AGrassMesh
 {
 public:
+	TDECLARE_CLASS( GrassMesh, AGrassMesh );
+
+public:
 	GrassMesh();
 	~GrassMesh();
 

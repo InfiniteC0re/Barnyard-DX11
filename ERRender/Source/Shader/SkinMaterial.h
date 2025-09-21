@@ -8,6 +8,9 @@ class SkinMaterial
 	: public ASkinMaterial
 {
 public:
+	TDECLARE_CLASS( SkinMaterial, ASkinMaterial );
+
+public:
 	SkinMaterial();
 	~SkinMaterial();
 

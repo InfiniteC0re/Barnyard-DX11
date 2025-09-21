@@ -8,6 +8,9 @@ class SysMesh
 	: public ASysMesh
 {
 public:
+	TDECLARE_CLASS( SysMesh, ASysMesh );
+
+public:
 	SysMesh();
 	~SysMesh();
 

@@ -8,6 +8,9 @@ class SkinMesh
     : public ASkinMesh
 {
 public:
+	TDECLARE_CLASS( SkinMesh, ASkinMesh );
+
+public:
 	SkinMesh();
 	~SkinMesh();
 

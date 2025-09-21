@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "SysMesh.h"
+#include "Resource/ClassPatcher.h"
 
 #include <Render/TRenderPacket.h>
 #include <Render/TRenderInterface.h>
@@ -11,6 +12,8 @@
 #include <Core/TMemoryDebugOn.h>
 
 TOSHI_NAMESPACE_USING
+
+TDEFINE_CLASS_PATCHED( remaster::SysMesh, 0x0079a468 );
 
 remaster::SysMesh::SysMesh()
     : m_iZBias( 0 )

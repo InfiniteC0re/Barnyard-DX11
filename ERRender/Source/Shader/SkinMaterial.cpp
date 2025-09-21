@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "SkinMaterial.h"
+#include "Resource/ClassPatcher.h"
 
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
@@ -8,6 +9,8 @@
 #include <Core/TMemoryDebugOn.h>
 
 TOSHI_NAMESPACE_USING
+
+TDEFINE_CLASS_PATCHED( remaster::SkinMaterial, 0x0079a618 );
 
 remaster::SkinMaterial::SkinMaterial()
 {

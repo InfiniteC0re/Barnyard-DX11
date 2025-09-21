@@ -9,6 +9,9 @@ void SetupRenderHooks_SkinShader();
 class SkinShaderDX11 : public ASkinShader
 {
 public:
+	TDECLARE_CLASS( SkinShaderDX11, ASkinShader );
+
+public:
 	SkinShaderDX11();
 	~SkinShaderDX11();
 

@@ -10,6 +10,9 @@ class GrassShaderDX11 :
 	public AGrassShader
 {
 public:
+	TDECLARE_CLASS( GrassShaderDX11, AGrassShader );
+
+public:
 	GrassShaderDX11();
 	~GrassShaderDX11();
 

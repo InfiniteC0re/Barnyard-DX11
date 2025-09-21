@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "GrassShader.h"
 #include "GrassMesh.h"
+#include "Resource/ClassPatcher.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -12,6 +13,8 @@
 #include <Core/TMemoryDebugOn.h>
 
 TOSHI_NAMESPACE_USING
+
+TDEFINE_CLASS_PATCHED( remaster::GrassShaderDX11, 0x0079aacc );
 
 MEMBER_HOOK( 0x005f7c10, AGrassShaderHAL, AGrassShaderHAL_Constructor, remaster::GrassShaderDX11* )
 {

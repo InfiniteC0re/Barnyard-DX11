@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "SysMaterial.h"
+#include "Resource/ClassPatcher.h"
 
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
@@ -8,6 +9,8 @@
 #include <Core/TMemoryDebugOn.h>
 
 TOSHI_NAMESPACE_USING
+
+TDEFINE_CLASS_PATCHED( remaster::SysMaterial, 0x0079a498 );
 
 remaster::SysMaterial::SysMaterial()
     : m_pAssignedOrderTable( TNULL )

@@ -10,6 +10,9 @@ class SysShaderDX11
     : public ASysShader
 {
 public:
+	TDECLARE_CLASS( SysShaderDX11, ASysShader );
+
+public:
 	static constexpr TUINT NUM_ORDER_TABLES = 4;
 
 public:

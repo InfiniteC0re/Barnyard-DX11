@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "WorldMesh.h"
+#include "Resource/ClassPatcher.h"
 
 #include <Platform/DX8/TRenderInterface_DX8.h>
 #include <Platform/DX8/TRenderContext_DX8.h>
@@ -11,6 +12,8 @@
 #include <Core/TMemoryDebugOn.h>
 
 TOSHI_NAMESPACE_USING
+
+TDEFINE_CLASS_PATCHED( remaster::WorldMesh, 0x0079a950 );
 
 remaster::WorldMesh::WorldMesh()
 {

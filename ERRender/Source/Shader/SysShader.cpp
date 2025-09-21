@@ -2,6 +2,7 @@
 #include "SysShader.h"
 #include "SysMaterial.h"
 #include "SysMesh.h"
+#include "Resource/ClassPatcher.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -13,6 +14,8 @@
 #include <Core/TMemoryDebugOn.h>
 
 TOSHI_NAMESPACE_USING
+
+TDEFINE_CLASS_PATCHED( remaster::SysShaderDX11, 0x0079a4c8 );
 
 MEMBER_HOOK( 0x005f04e0, ASysShaderHAL, ASysShaderHAL_Constructor, remaster::SysShaderDX11* )
 {

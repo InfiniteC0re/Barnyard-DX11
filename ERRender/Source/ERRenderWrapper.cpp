@@ -7,6 +7,8 @@
 #include "Shader/SysShader.h"
 #include "Resource/TextureResource.h"
 #include "Resource/Viewport.h"
+#include "Resource/OrderTable.h"
+#include "Resource/ClassPatcher.h"
 #include "UI/GUI2Renderer.h"
 
 #include <AHooks.h>
@@ -32,10 +34,15 @@ MEMBER_HOOK( 0x006c72a0, remaster::RenderDX11, TRenderD3DInterface_Create, TBOOL
 	return Create( a_pchWindowTitle );
 }
 
+MEMBER_HOOK( 0x006c58e0, remaster::RenderDX11, TRenderD3DInterface_BeginEndScene, void )
+{
+}
+
 void remaster::SetupRenderHooks()
 {
 	InstallHook<TRenderD3DInterface_Create>();
 	InstallHook<TRenderD3DInterface_CreateObject>();
+	InstallHook<TRenderD3DInterface_BeginEndScene>();
 
 	SetupRenderHooks_GrassShader();
 	SetupRenderHooks_SkinShader();
@@ -45,4 +52,5 @@ void remaster::SetupRenderHooks()
 	SetupRenderHooks_StaticInstanceShader();
 	SetupRenderHooks_SysShader();
 	SetupRenderHooks_UIRenderer();
+	SetupRenderHooks_OrderTable();
 }

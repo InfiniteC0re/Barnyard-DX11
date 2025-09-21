@@ -10,6 +10,11 @@ class WorldShaderDX11
     : public AWorldShader
 {
 public:
+	TDECLARE_CLASS( WorldShaderDX11, AWorldShader );
+
+	static constexpr TUINT NUM_ORDER_TABLES = 9;
+
+public:
 	WorldShaderDX11();
 	~WorldShaderDX11();
 
@@ -61,6 +66,16 @@ public:
 
 	// Probably used in debug mode but is stripped out in release
 	virtual void* CreateUnknown( void*, void*, void*, void* );
+
+public:
+	Toshi::TOrderTable* GetOrderTable( TUINT a_uiIndex )
+	{
+		TASSERT( a_uiIndex < NUM_ORDER_TABLES );
+		return &m_aOrderTables[ a_uiIndex ];
+	}
+
+private:
+	Toshi::TOrderTable m_aOrderTables[ NUM_ORDER_TABLES ];
 };
 
 }; // namespace remaster

@@ -225,10 +225,7 @@ void remaster::GUI2RendererDX11::RenderLine( TFLOAT x1, TFLOAT y1, TFLOAT x2, TF
 void remaster::GUI2RendererDX11::DestroyMaterial( AGUI2Material* a_pMaterial )
 {
 	if ( a_pMaterial )
-	{
 		a_pMaterial->Destroy();
-		delete a_pMaterial;
-	}
 }
 
 Toshi::TTexture* remaster::GUI2RendererDX11::GetTexture( const TCHAR* a_szTextureName )

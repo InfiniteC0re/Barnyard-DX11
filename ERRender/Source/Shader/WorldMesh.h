@@ -8,6 +8,9 @@ class WorldMesh
     : public AWorldMesh
 {
 public:
+	TDECLARE_CLASS( WorldMesh, AWorldMesh );
+
+public:
 	WorldMesh();
 	~WorldMesh();
 

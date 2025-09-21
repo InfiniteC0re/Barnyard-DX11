@@ -38,6 +38,7 @@ public:
 	virtual TBOOL                                CreateDisplay( const DISPLAYPARAMS& a_rParams ) OVERRIDE;
 	virtual TBOOL                                DestroyDisplay() OVERRIDE;
 	virtual TBOOL                                Update( TFLOAT a_fDeltaTime ) OVERRIDE;
+	virtual TBOOL                                BeginScene() OVERRIDE;
 	virtual TBOOL                                EndScene() OVERRIDE;
 	virtual Toshi::TRenderAdapter::Mode::Device* GetCurrentDevice() OVERRIDE;
 	virtual DISPLAYPARAMS*                       GetCurrentDisplayParams() OVERRIDE;
@@ -46,9 +47,9 @@ public:
 	virtual Toshi::TRenderCapture*               CreateCapture() OVERRIDE;
 	virtual void                                 DestroyCapture( Toshi::TRenderCapture* a_pRenderCapture ) OVERRIDE;
 	virtual void*                                CreateUnknown( const TCHAR* a_szName, TINT a_iUnk1, TINT a_iUnk2, TINT a_iUnk3 ) OVERRIDE;
-	virtual Toshi::TModel*                       CreateModel( Toshi::TTMD* a_pTMD, TBOOL a_bLoad ) OVERRIDE;
-	virtual Toshi::TModel*                       CreateModel( const TCHAR* a_szFilePath, TBOOL a_bLoad ) OVERRIDE;
-	virtual Toshi::TModel*                       CreateModel( const TCHAR* a_szFilePath, TBOOL a_bLoad, Toshi::TTRB* a_pAssetTRB, TUINT8 a_ui8FileNameLen ) OVERRIDE;
+	virtual Toshi::TModel*                       CreateModelTMD( Toshi::TTMD* a_pTMD, TBOOL a_bLoad ) OVERRIDE;
+	virtual Toshi::TModel*                       CreateModelTMDFile( const TCHAR* a_szFilePath, TBOOL a_bLoad ) OVERRIDE;
+	virtual Toshi::TModel*                       CreateModelTRB( const TCHAR* a_szFilePath, TBOOL a_bLoad, Toshi::TTRB* a_pAssetTRB, TUINT8 a_ui8FileNameLen ) OVERRIDE;
 	virtual Toshi::TDebugText*                   CreateDebugText() OVERRIDE;
 	virtual void                                 DestroyDebugText() OVERRIDE;
 
@@ -70,10 +71,13 @@ public:
 	TBOOL Create( const TCHAR* a_pchWindowTitle );
 	void  BuildAdapterDatabase();
 
+	Toshi::TPriList<Toshi::TOrderTable>& GetOrderTables() { return m_OrderTables; }
+
 
 private:
-	// Original structure...
-	TBYTE                                PADDING1[ 92 ];
+	IDirect3D8*                          m_pDirect3D;     // Direct3D interface
+	IDirect3DDevice8*                    m_pDirectDevice; // Direct3D device
+	TBYTE                                PADDING1[ 84 ];
 	TFLOAT                               m_fPixelAspectRatio;               // Pixel aspect ratio
 	HACCEL                               m_AcceleratorTable;                // Accelerator table
 	Toshi::TRenderAdapter::Mode::Device* m_pAdapterDevice;                  // Current device

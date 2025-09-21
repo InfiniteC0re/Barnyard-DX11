@@ -2,6 +2,7 @@
 #include "SkinShader.h"
 #include "SkinMaterial.h"
 #include "SkinMesh.h"
+#include "Resource/ClassPatcher.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -13,6 +14,8 @@
 #include <Core/TMemoryDebugOn.h>
 
 TOSHI_NAMESPACE_USING
+
+TDEFINE_CLASS_PATCHED( remaster::SkinShaderDX11, 0x0079a648 );
 
 MEMBER_HOOK( 0x005f46a0, ASkinShaderHAL, ASkinShaderHAL_Constructor, remaster::SkinShaderDX11* )
 {

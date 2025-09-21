@@ -2,6 +2,7 @@
 #include "WorldShader.h"
 #include "WorldMaterial.h"
 #include "WorldMesh.h"
+#include "Resource/ClassPatcher.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -14,14 +15,22 @@
 
 TOSHI_NAMESPACE_USING
 
+TDEFINE_CLASS_PATCHED( remaster::WorldShaderDX11, 0x0079a980 );
+
 MEMBER_HOOK( 0x005f75e0, AWorldShaderHAL, AWorldShaderHAL_Constructor, remaster::WorldShaderDX11* )
 {
 	return new remaster::WorldShaderDX11();
 }
 
+MEMBER_HOOK( 0x005f69e0, AWorldMaterialHAL, AWorldMaterialHAL_SetOrderTable, void, Toshi::TOrderTable* a_pOrderTable )
+{
+	SetOrderTable( a_pOrderTable );
+}
+
 void remaster::SetupRenderHooks_WorldShader()
 {
 	InstallHook<AWorldShaderHAL_Constructor>();
+	InstallHook<AWorldMaterialHAL_SetOrderTable>();
 }
 
 remaster::WorldShaderDX11::WorldShaderDX11()
@@ -48,7 +57,16 @@ void remaster::WorldShaderDX11::EndFlush()
 
 TBOOL remaster::WorldShaderDX11::Create()
 {
-	return TFALSE;
+	m_aOrderTables[ 0 ].Create( this, -3000 );
+	m_aOrderTables[ 1 ].Create( this, 100 );
+	m_aOrderTables[ 2 ].Create( this, 101 );
+	m_aOrderTables[ 3 ].Create( this, 601 );
+	m_aOrderTables[ 4 ].Create( this, -400 );
+	m_aOrderTables[ 5 ].Create( this, 500 );
+	m_aOrderTables[ 6 ].Create( this, -6005 );
+	m_aOrderTables[ 7 ].Create( this, -7000 );
+
+	return BaseClass::Create();
 }
 
 TBOOL remaster::WorldShaderDX11::Validate()
