@@ -150,7 +150,7 @@ ID3D11ShaderResourceView* remaster::dx11::CreateTexture( TUINT a_uiWidth, TUINT 
 		ID3D11ShaderResourceView* pShaderResourceView = TNULL;
 		DX11_API_VALIDATE( g_pRender->GetD3D11Device()->CreateShaderResourceView( pTexture, &shaderResourceViewDesc, &pShaderResourceView ) );
 
-		if ( pShaderResourceView != TNULL )
+		if ( false && pShaderResourceView != TNULL )
 		{
 			g_pRender->GetD3D11DeviceContext()->GenerateMips( pShaderResourceView );
 		}

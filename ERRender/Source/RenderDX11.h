@@ -259,6 +259,7 @@ public:
 	ID3D11DeviceContext*                 GetD3D11DeviceContext() { return m_pDeviceContext; }
 	IDXGISwapChain*                      GetD3D11SwapChain() { return m_pSwapChain; }
 	ID3D11RenderTargetView*              GetD3D11RenderTargetView() { return m_pRenderTargetView; }
+	ID3D11DepthStencilView*              GetD3D11DepthStencilView() { return m_pDepthStencilView; }
 
 private:
 	void BuildAdapterDatabase();
