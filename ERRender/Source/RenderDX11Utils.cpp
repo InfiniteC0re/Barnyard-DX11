@@ -119,8 +119,8 @@ ID3D11ShaderResourceView* remaster::dx11::CreateTexture( TUINT a_uiWidth, TUINT 
 	textureDesc.Height             = a_uiHeight;
 	textureDesc.Format             = a_eFormat;
 	textureDesc.CPUAccessFlags     = a_eCPUAccessFlags;
-	textureDesc.MipLevels          = 0;
-	textureDesc.MiscFlags          = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+	textureDesc.MipLevels          = 1;
+	textureDesc.MiscFlags          = false ? D3D11_RESOURCE_MISC_GENERATE_MIPS : 0;
 	textureDesc.BindFlags          = D3D11_BIND_SHADER_RESOURCE;
 
 	ID3D11Texture2D* pTexture = TNULL;
@@ -136,7 +136,7 @@ ID3D11ShaderResourceView* remaster::dx11::CreateTexture( TUINT a_uiWidth, TUINT 
 		subresourceData.SysMemPitch      = GetTextureRowPitch( a_eFormat, a_uiWidth );
 		subresourceData.SysMemSlicePitch = GetTextureDepthPitch( a_eFormat, a_uiWidth, a_uiHeight );
 
-		g_pRender->GetD3D11Device()->CreateTexture2D( &textureDesc, &subresourceData, &pTexture );
+		DX11_API_VALIDATE( g_pRender->GetD3D11Device()->CreateTexture2D( &textureDesc, &subresourceData, &pTexture ) );
 	}
 
 	if ( pTexture )
@@ -144,11 +144,11 @@ ID3D11ShaderResourceView* remaster::dx11::CreateTexture( TUINT a_uiWidth, TUINT 
 		D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceViewDesc;
 		shaderResourceViewDesc.Format                    = textureDesc.Format;
 		shaderResourceViewDesc.ViewDimension             = ( a_uiSampleDescCount > 1 ) ? D3D_SRV_DIMENSION_TEXTURE2DMS : D3D_SRV_DIMENSION_TEXTURE2D;
-		shaderResourceViewDesc.Texture2D.MipLevels       = 0;
+		shaderResourceViewDesc.Texture2D.MipLevels       = 1;
 		shaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
 
 		ID3D11ShaderResourceView* pShaderResourceView = TNULL;
-		g_pRender->GetD3D11Device()->CreateShaderResourceView( pTexture, &shaderResourceViewDesc, &pShaderResourceView );
+		DX11_API_VALIDATE( g_pRender->GetD3D11Device()->CreateShaderResourceView( pTexture, &shaderResourceViewDesc, &pShaderResourceView ) );
 
 		if ( pShaderResourceView != TNULL )
 		{
@@ -180,6 +180,7 @@ TINT remaster::dx11::GetTextureRowPitch( DXGI_FORMAT a_eFormat, TUINT a_uiWidth 
 		case DXGI_FORMAT_BC3_UNORM:
 		case DXGI_FORMAT_BC5_UNORM: return ( ( a_uiWidth + 3U ) >> 2 ) << 4;
 		case DXGI_FORMAT_B8G8R8X8_UNORM: return a_uiWidth * 3;
+		case DXGI_FORMAT_B4G4R4A4_UNORM: return a_uiWidth * 2;
 	}
 
 	TASSERT( TFALSE );
@@ -204,6 +205,7 @@ TINT remaster::dx11::GetTextureDepthPitch( DXGI_FORMAT a_eFormat, TUINT a_uiWidt
 		case DXGI_FORMAT_BC3_UNORM:
 		case DXGI_FORMAT_BC5_UNORM: return ( ( a_uiWidth + 3U ) >> 2 ) * ( ( a_uiHeight + 3U ) >> 2 ) * 16;
 		case DXGI_FORMAT_B8G8R8X8_UNORM: return a_uiWidth * a_uiHeight * 3;
+		case DXGI_FORMAT_B4G4R4A4_UNORM: return a_uiWidth * a_uiHeight * 2;
 	}
 
 	TASSERT( TFALSE );

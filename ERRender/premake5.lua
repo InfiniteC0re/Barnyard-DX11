@@ -28,6 +28,7 @@ project "ERRender"
 	{
 		"Source/**.h",
 		"Source/**.cpp",
+		"Source/**.c",
 	}
 
 	includedirs
@@ -53,3 +54,6 @@ project "ERRender"
 			"TOSHI_SDK",
 			"TOSHI_MODLOADER_CLIENT"
 		}
+
+	filter "files:**.c"
+		flags { "NoPCH" }
