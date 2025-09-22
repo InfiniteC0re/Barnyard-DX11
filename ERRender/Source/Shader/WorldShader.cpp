@@ -17,37 +17,20 @@ TOSHI_NAMESPACE_USING
 
 TDEFINE_CLASS_PATCHED( remaster::WorldShaderDX11, 0x0079a980 );
 
-MEMBER_HOOK( 0x005f75e0, AWorldShaderHAL, AWorldShaderHAL_Constructor, remaster::WorldShaderDX11* )
+MEMBER_HOOK( 0x005f75e0, remaster::WorldShaderDX11, AWorldShaderHAL_Constructor, remaster::WorldShaderDX11* )
 {
 	return new remaster::WorldShaderDX11();
 }
 
-MEMBER_HOOK( 0x005f69e0, AWorldMaterialHAL, AWorldMaterialHAL_SetOrderTable, void, Toshi::TOrderTable* a_pOrderTable )
+MEMBER_HOOK( 0x005f69e0, remaster::WorldMaterial, AWorldMaterialHAL_SetOrderTable, void, Toshi::TOrderTable* a_pOrderTable, TINT a_iUnused )
 {
-	SetOrderTable( a_pOrderTable );
-}
-
-HOOK( 0x00611970, AWorldMaterialHAL_FUN_00611970, void, remaster::WorldMaterial* a_pMaterial, const TCHAR* a_pchMatName )
-{
-	if ( CALL( 0x006113a0, TBOOL, const TCHAR*, a_pchMatName ) )
-	{
-		auto pShader = TSTATICCAST(remaster::WorldShaderDX11, remaster::WorldShaderDX11::GetSingleton());
-
-		CALL_THIS( 0x005f69e0, remaster::WorldMaterial*, void, a_pMaterial, TOrderTable*, pShader->GetOrderTable( 5 ) ); // a_pMaterial->SetOrderTable( pShader->GetOrderTable( 5 ) );
-	}
-	else if ( CALL( 0x006113f0, TBOOL, const TCHAR*, a_pchMatName ) )
-	{
-		a_pMaterial->SetBlendMode( 7 );
-	}
-
-	CALL( 0x00611630, void, remaster::WorldMaterial*, a_pMaterial, const TCHAR*, a_pchMatName );
+	SetOrderTable( a_pOrderTable, a_iUnused );
 }
 
 void remaster::SetupRenderHooks_WorldShader()
 {
 	InstallHook<AWorldShaderHAL_Constructor>();
 	InstallHook<AWorldMaterialHAL_SetOrderTable>();
-	InstallHook<AWorldMaterialHAL_FUN_00611970>();
 }
 
 remaster::WorldShaderDX11::WorldShaderDX11()

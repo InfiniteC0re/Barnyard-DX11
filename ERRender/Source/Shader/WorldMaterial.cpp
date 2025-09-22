@@ -151,7 +151,7 @@ void remaster::WorldMaterial::CopyToAlphaBlendMaterial()
 	}
 }
 
-void remaster::WorldMaterial::SetOrderTable( Toshi::TOrderTable* a_pOrderTable )
+void remaster::WorldMaterial::SetOrderTable( Toshi::TOrderTable* a_pOrderTable, TINT a_iUnused )
 {
 	if ( a_pOrderTable != m_pAssignedOrderTable )
 	{

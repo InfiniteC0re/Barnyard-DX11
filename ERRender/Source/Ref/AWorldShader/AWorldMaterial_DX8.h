@@ -30,7 +30,7 @@ public:
 	//-----------------------------------------------------------------------------
 	virtual void CopyToAlphaBlendMaterial();
 
-	void SetOrderTable( Toshi::TOrderTable* a_pOrderTable );
+	void SetOrderTable( Toshi::TOrderTable* a_pOrderTable, TINT a_iUnused = 0 );
 
 	AWorldMaterialHAL* GetAlphaBlendMaterial() const { return m_pAlphaBlendMaterial; }
 	void               SetAlphaBlendMaterial( AWorldMaterialHAL* val ) { m_pAlphaBlendMaterial = val; }

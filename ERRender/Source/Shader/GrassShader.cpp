@@ -78,6 +78,7 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 AGrassMaterial* remaster::GrassShaderDX11::CreateMaterial( const TCHAR* a_szName )
 {
+
 	return TNULL;
 }
 

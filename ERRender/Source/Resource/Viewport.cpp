@@ -14,7 +14,6 @@ TOSHI_NAMESPACE_USING
 
 MEMBER_HOOK( 0x006d7fe0, Toshi::TViewport, TViewport_BeginSKU, void )
 {
-	return;
 }
 
 void remaster::SetupRenderHooks_Viewport()

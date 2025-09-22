@@ -228,7 +228,7 @@ void AWorldMaterialHAL::CopyToAlphaBlendMaterial()
 }
 
 // $Barnyard: FUNCTION 005f69e0
-void AWorldMaterialHAL::SetOrderTable( Toshi::TOrderTable* a_pOrderTable )
+void AWorldMaterialHAL::SetOrderTable( Toshi::TOrderTable* a_pOrderTable, TINT a_iUnused )
 {
 	if ( a_pOrderTable != m_pAssignedOrderTable )
 	{

@@ -8,6 +8,8 @@
 #include <Platform/DX8/TModel_DX8.h>
 #include <Platform/DX8/TTextureFactoryHAL_DX8.h>
 
+#include <dxgi1_2.h>
+
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
 // Note: Should be the last include!
@@ -94,53 +96,63 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 			uiWindowPosY = ( clientRect.bottom - pMode->GetHeight() ) / 2;
 		}
 
-		//// Initialize presentation parameters
-		//TUtil::MemClear( &m_PresentParams, sizeof( m_PresentParams ) );
-		//m_PresentParams.Windowed               = pDisplayParams->bWindowed;
-		//m_PresentParams.BackBufferCount        = 1;
-		//m_PresentParams.MultiSampleType        = D3DMULTISAMPLE_NONE;
-		//m_PresentParams.SwapEffect             = D3DSWAPEFFECT_DISCARD;
-		//m_PresentParams.EnableAutoDepthStencil = TRUE;
-		//m_PresentParams.hDeviceWindow          = m_Window.GetHWND();
-		//m_PresentParams.AutoDepthStencilFormat = TD3DAdapter::Mode::Device::DEPTHSTENCILFORMATS[ pDisplayParams->eDepthStencilFormat ];
-		//m_PresentParams.BackBufferWidth        = pDisplayParams->uiWidth;
-		//m_PresentParams.BackBufferHeight       = pDisplayParams->uiHeight;
-
 		// Get device information
 		auto pDevice        = TSTATICCAST( RenderAdapterDX11::Mode::Device, GetCurrentDevice() );
 		auto pMode          = TSTATICCAST( RenderAdapterDX11::Mode, pDevice->GetMode() );
 		auto pAdapter       = TSTATICCAST( RenderAdapterDX11, pMode->GetAdapter() );
 		auto uiAdapterIndex = pAdapter->GetAdapterIndex();
 
-		//// Set back buffer format based on windowed/fullscreen mode
-		//if ( pDisplayParams->bWindowed )
-		//{
-		//	m_PresentParams.BackBufferFormat = pMode->GetD3DDisplayMode().Format;
-		//}
-		//else
-		//{
-		//	m_PresentParams.BackBufferFormat = pMode->GetBackBufferFormat( pDisplayParams->uiColourDepth );
-		//}
+		// Create swapchain
+		IDXGIDevice* dxgiDevice = TNULL;
+		DX11_API_VALIDATE_EXIT( m_pDevice->QueryInterface( __uuidof( IDXGIDevice ), (void**)&dxgiDevice ) );
 
-		//// Create Direct3D device
-		//HRESULT hRes = m_pDirect3D->CreateDevice(
-		//    uiAdapterIndex,
-		//    TD3DAdapter::Mode::Device::DEVICETYPES[ pDevice->GetDeviceIndex() ],
-		//    m_Window.GetHWND(),
-		//    pDevice->GetD3DDeviceFlags(),
-		//    &m_PresentParams,
-		//    &m_pDirectDevice
-		//);
+		IDXGIAdapter* dxgiAdapter = TNULL;
+		DX11_API_VALIDATE_EXIT( dxgiDevice->GetAdapter( &dxgiAdapter ) );
 
-		//if ( FAILED( hRes ) )
-		//{
-		//	OnInitializationFailureDevice();
-		//	PrintError( hRes, "Failed to create D3D Device!" );
-		//	return TFALSE;
-		//}
+		IDXGIFactory* dxgiFactory = TNULL;
+		DX11_API_VALIDATE_EXIT( dxgiAdapter->GetParent( __uuidof( IDXGIFactory ), (void**)&dxgiFactory ) );
 
-		//// Initialize device states
-		//SetDeviceDefaultStates();
+		DXGI_SWAP_CHAIN_DESC oSwapChainDesc = {};
+
+		oSwapChainDesc.BufferCount                        = 1;
+		oSwapChainDesc.BufferDesc.Width                   = clientRect.right - clientRect.left;
+		oSwapChainDesc.BufferDesc.Height                  = clientRect.bottom - clientRect.top;
+		oSwapChainDesc.BufferDesc.RefreshRate.Numerator   = 0;
+		oSwapChainDesc.BufferDesc.RefreshRate.Denominator = 0;
+		oSwapChainDesc.BufferDesc.Format                  = DXGI_FORMAT_R8G8B8A8_UNORM;
+
+		oSwapChainDesc.SampleDesc.Count   = 1;
+		oSwapChainDesc.SampleDesc.Quality = 0;
+
+		oSwapChainDesc.BufferUsage  = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+		oSwapChainDesc.OutputWindow = m_Window.GetHWND();
+		oSwapChainDesc.Windowed     = pDisplayParams->bWindowed;
+		oSwapChainDesc.SwapEffect   = DXGI_SWAP_EFFECT_DISCARD;
+		oSwapChainDesc.Flags        = 0;
+
+		DX11_API_VALIDATE_EXIT( dxgiFactory->CreateSwapChain( m_pDevice, &oSwapChainDesc, &m_pSwapChain ) );
+
+		dxgiFactory->Release();
+		dxgiAdapter->Release();
+		dxgiDevice->Release();
+
+		// Create render target
+		D3D11_TEXTURE2D_DESC backBufferDesc = {};
+		backBufferDesc.ArraySize            = 1;
+		backBufferDesc.BindFlags            = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+		backBufferDesc.CPUAccessFlags       = 0;
+		backBufferDesc.Format               = DXGI_FORMAT_R8G8B8A8_UNORM;
+		backBufferDesc.Height               = oSwapChainDesc.BufferDesc.Height;
+		backBufferDesc.Width                = oSwapChainDesc.BufferDesc.Width;
+		backBufferDesc.MipLevels            = 1;
+		backBufferDesc.MiscFlags            = 0;
+		backBufferDesc.SampleDesc.Count     = oSwapChainDesc.SampleDesc.Count;
+		backBufferDesc.SampleDesc.Quality   = oSwapChainDesc.SampleDesc.Quality;
+		backBufferDesc.Usage                = D3D11_USAGE_DEFAULT;
+
+		DX11_API_VALIDATE_EXIT( m_pDevice->CreateTexture2D( &backBufferDesc, TNULL, &m_pRenderTargetTexture ) );
+		DX11_API_VALIDATE_EXIT( m_pSwapChain->GetBuffer( 0, __uuidof( ID3D11Texture2D ), (LPVOID*)&m_pRenderTargetTexture ) );
+		DX11_API_VALIDATE_EXIT( m_pDevice->CreateRenderTargetView( m_pRenderTargetTexture, TNULL, &m_pRenderTargetView ) );
 
 		// Set window mode
 		if ( pDisplayParams->bWindowed )
@@ -153,7 +165,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		}
 
 		// Handle multi-monitor setup
-		/*if ( uiAdapterIndex != 0 )
+		if ( uiAdapterIndex != 0 )
 		{
 			HMONITOR hMonitor = m_pDirect3D->GetAdapterMonitor( uiAdapterIndex );
 
@@ -162,24 +174,16 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 
 			uiWindowPosX += monitorInfo.rcMonitor.left;
 			uiWindowPosY += monitorInfo.rcMonitor.right;
-		}*/
+		}
 
 		// Set window position and size
 		m_Window.SetPosition( uiWindowPosX, uiWindowPosY, pDisplayParams->uiWidth, pDisplayParams->uiHeight );
-
-		//// Get back buffer surface description
-		//IDirect3DSurface8* pSurface;
-		//m_pDirectDevice->GetBackBuffer( 0, D3DBACKBUFFER_TYPE_MONO, &pSurface );
-		//pSurface->GetDesc( &m_SurfaceDesk );
-		//pSurface->Release();
 
 		// Set cursor position to center of window
 		SetCursorPos(
 		    uiWindowPosX + pDisplayParams->uiWidth / 2,
 		    uiWindowPosY + pDisplayParams->uiHeight / 2
 		);
-
-		//m_pDirectDevice->ShowCursor( TRUE );
 
 		// Create invalid texture pattern
 		TUINT invalidTextureData[ 32 ];
@@ -219,17 +223,17 @@ TBOOL RenderDX11::BeginScene()
 {
 	if ( BaseClass::BeginScene() )
 	{
-		/*TFLOAT clearColor[] = { 0.0f, 0.2f, 0.0f, 1.0f };
+		TFLOAT clearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 		m_pDeviceContext->OMSetRenderTargets( 1, &m_pRenderTargetView, TNULL );
-		m_pDeviceContext->ClearRenderTargetView( m_pRenderTargetView, clearColor );*/
+		m_pDeviceContext->ClearRenderTargetView( m_pRenderTargetView, clearColor );
 
 		D3D11_VIEWPORT viewport;
 		viewport.TopLeftX = 0.0f;
 		viewport.TopLeftY = 0.0f;
 		viewport.MinDepth = 0.0f;
 		viewport.MaxDepth = 1.0f;
-		viewport.Width    = 1280.0f;
-		viewport.Height   = 720.0f;
+		viewport.Width    = TFLOAT( m_oDisplayParams.uiWidth );
+		viewport.Height   = TFLOAT( m_oDisplayParams.uiHeight );
 
 		m_pDeviceContext->RSSetViewports( 1, &viewport );
 		m_bInScene = TTRUE;
@@ -242,12 +246,11 @@ TBOOL RenderDX11::BeginScene()
 
 TBOOL RenderDX11::EndScene()
 {
-	//m_pSwapChain->Present( 1, 0 );
+	m_pSwapChain->Present( 1, 0 );
 
 	m_bInScene = TFALSE;
 
 	return TTRUE;
-	//throw std::logic_error( "The method or operation is not implemented." );
 }
 
 TRenderAdapter::Mode::Device* RenderDX11::GetCurrentDevice()

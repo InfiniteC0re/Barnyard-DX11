@@ -115,6 +115,7 @@ private:
 	ID3D11DeviceContext*    m_pDeviceContext    = TNULL;
 	IDXGISwapChain*         m_pSwapChain        = TNULL;
 	ID3D11RenderTargetView* m_pRenderTargetView = TNULL;
+	ID3D11Texture2D*        m_pRenderTargetTexture = TNULL;
 };
 
 extern RenderDX11* g_pRender;
