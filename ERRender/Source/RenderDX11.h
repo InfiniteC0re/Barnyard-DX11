@@ -9,6 +9,8 @@
 #include <Platform/DX8/TMSWindow.h>
 
 #include <d3d11.h>
+#include <d2d1_3.h>
+#include <dwrite_3.h>
 
 #define DX11_API_VALIDATE( CALL )       \
 	{                                   \
@@ -255,11 +257,17 @@ public:
 	//-----------------------------------------------------------------------------
 
 	Toshi::TPriList<Toshi::TOrderTable>& GetOrderTables() { return m_OrderTables; }
-	ID3D11Device*                        GetD3D11Device() { return m_pDevice; }
-	ID3D11DeviceContext*                 GetD3D11DeviceContext() { return m_pDeviceContext; }
-	IDXGISwapChain*                      GetD3D11SwapChain() { return m_pSwapChain; }
-	ID3D11RenderTargetView*              GetD3D11RenderTargetView() { return m_pRenderTargetView; }
-	ID3D11DepthStencilView*              GetD3D11DepthStencilView() { return m_pDepthStencilView; }
+	ID3D11Device*                        GetD3D11Device() const { return m_pDevice; }
+	ID3D11DeviceContext*                 GetD3D11DeviceContext() const { return m_pDeviceContext; }
+	IDXGISwapChain*                      GetD3D11SwapChain() const { return m_pSwapChain; }
+	ID3D11RenderTargetView*              GetD3D11RenderTargetView() const { return m_pRenderTargetView; }
+	ID3D11DepthStencilView*              GetD3D11DepthStencilView() const { return m_pDepthStencilView; }
+
+	ID2D1Factory*      GetD2DFactory() const { return m_pD2DFactory; }
+	ID2D1RenderTarget* GetD2DRenderTarget() const { return m_pD2DRenderTarget; }
+	IDWriteFactory*    GetDWriteFactory() const { return m_pDWFactory; }
+	IDWriteFontFile*   GetDWriteFontFile() const { return m_pDWFontFile; }
+	IDWriteFontFace*   GetDWriteFontFace() const { return m_pDWFontFace; }
 
 private:
 	void BuildAdapterDatabase();
@@ -299,6 +307,13 @@ private:
 	ID3D11DepthStencilView* m_pDepthStencilView    = TNULL;
 	DXGI_SWAP_CHAIN_DESC    m_oSwapChainDesc;
 
+	// DirectWrite
+	ID2D1RenderTarget* m_pD2DRenderTarget = TNULL;
+	IDWriteFactory*    m_pDWFactory       = TNULL;
+	ID2D1Factory*      m_pD2DFactory      = TNULL;
+	IDWriteFontFile*   m_pDWFontFile      = TNULL;
+	IDWriteFontFace*   m_pDWFontFace      = TNULL;
+	
 	// Buffers
 	void*         m_pVertexConstantBuffer;
 	TBOOL         m_IsVertexConstantBufferSet;

@@ -1,8 +1,9 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "RenderDX11.h"
 #include "RenderAdapterDX11.h"
 #include "RenderContentDX11.h"
 #include "RenderDX11Utils.h"
+#include "RenderDX11Text.h"
 
 #include <BYardSDK/THookedRenderD3DInterface.h>
 #include <BYardSDK/SDKHooks.h>
@@ -11,6 +12,7 @@
 #include <Platform/DX8/TTextureFactoryHAL_DX8.h>
 
 #include <dxgi1_2.h>
+#include <dwrite_3.h>
 
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
@@ -250,8 +252,15 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 			uiWindowPosY += monitorInfo.rcMonitor.right;
 		}
 
+		RECT oAdjustedWindowSize;
+		oAdjustedWindowSize.left   = 0;
+		oAdjustedWindowSize.top    = 0;
+		oAdjustedWindowSize.right  = pDisplayParams->uiWidth;
+		oAdjustedWindowSize.bottom = pDisplayParams->uiHeight;
+		AdjustWindowRect( &oAdjustedWindowSize, 0x86c00000, FALSE );
+
 		// Set window position and size
-		m_Window.SetPosition( uiWindowPosX, uiWindowPosY, pDisplayParams->uiWidth, pDisplayParams->uiHeight );
+		m_Window.SetPosition( uiWindowPosX, uiWindowPosY, oAdjustedWindowSize.right - oAdjustedWindowSize.left, oAdjustedWindowSize.bottom - oAdjustedWindowSize.top );
 
 		// Set cursor position to center of window
 		SetCursorPos(
@@ -272,6 +281,37 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		// Enable color correction and mark display as created
 		EnableColourCorrection( TTRUE );
 		m_bDisplayCreated = TTRUE;
+
+		// Initialize Direct2D and DirectWrite
+		D2D1CreateFactory( D2D1_FACTORY_TYPE_SINGLE_THREADED, &m_pD2DFactory );
+		DWriteCreateFactory( DWRITE_FACTORY_TYPE_SHARED, __uuidof( IDWriteFactory ), (IUnknown**)&m_pDWFactory );
+
+		IDXGISurface* pBackBufferSurface = nullptr;
+		m_pRenderTargetTexture->QueryInterface( __uuidof( IDXGISurface ), (void**)&pBackBufferSurface );
+
+		D2D1_RENDER_TARGET_PROPERTIES rtProps = D2D1::RenderTargetProperties(
+		    D2D1_RENDER_TARGET_TYPE_DEFAULT,
+		    D2D1::PixelFormat( DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED )
+		);
+
+		DX11_API_VALIDATE( m_pD2DFactory->CreateDxgiSurfaceRenderTarget( pBackBufferSurface, &rtProps, &m_pD2DRenderTarget ) );
+
+		// Create font
+		DX11_API_VALIDATE( m_pDWFactory->CreateFontFileReference(
+			L"CCThatsAllFolks.ttf",
+			TNULL,
+			&m_pDWFontFile
+		) );
+		DX11_API_VALIDATE( m_pDWFactory->CreateFontFace(
+		    DWRITE_FONT_FACE_TYPE_TRUETYPE,
+		    1,
+		    &m_pDWFontFile,
+		    0,
+		    DWRITE_FONT_SIMULATIONS_NONE,
+		    &m_pDWFontFace
+		) );
+
+		pBackBufferSurface->Release();
 
 		return TTRUE;
 	}
@@ -320,8 +360,85 @@ TBOOL RenderDX11::BeginScene()
 
 TBOOL RenderDX11::EndScene()
 {
-	m_pSwapChain->Present( 1, 0 );
+	{
+		ID2D1Geometry* pTextGeometry = dx11::CreateTextGeometry( L"HELLO WORLD!" );
 
+		m_pD2DRenderTarget->BeginDraw();
+
+		ID2D1SolidColorBrush* pBlackBrush = TNULL;
+		m_pD2DRenderTarget->CreateSolidColorBrush( D2D1::ColorF( D2D1::ColorF::Black, 1.0f ), &pBlackBrush );
+
+		ID2D1SolidColorBrush* pWhiteBrush = TNULL;
+		m_pD2DRenderTarget->CreateSolidColorBrush( D2D1::ColorF( D2D1::ColorF::White, 1.0f ), &pWhiteBrush );
+
+		ID2D1StrokeStyle* pStrokeStyle;
+		m_pD2DFactory->CreateStrokeStyle(
+		    D2D1::StrokeStyleProperties(
+		        D2D1_CAP_STYLE_ROUND,
+		        D2D1_CAP_STYLE_ROUND,
+		        D2D1_CAP_STYLE_ROUND,
+		        D2D1_LINE_JOIN_ROUND,
+		        0.0f,
+		        D2D1_DASH_STYLE_SOLID,
+		        0.0f
+		    ),
+		    TNULL,
+		    0,
+		    &pStrokeStyle
+		);
+
+		m_pD2DRenderTarget->SetTransform( D2D1::Matrix3x2F::Translation( 10.0f, 65.0f ) );
+		m_pD2DRenderTarget->DrawGeometry( pTextGeometry, pBlackBrush, 6.0f, pStrokeStyle );
+		m_pD2DRenderTarget->FillGeometry( pTextGeometry, pWhiteBrush );
+
+		pBlackBrush->Release();
+		pWhiteBrush->Release();
+		pStrokeStyle->Release();
+		m_pD2DRenderTarget->EndDraw();
+
+		pTextGeometry->Release();
+		// Prepare Text Resources
+		//IDWriteTextFormat* pTextFormat = nullptr;
+		//m_pDWFactory->CreateTextFormat(
+		//    L"Arial",
+		//    nullptr,
+		//    DWRITE_FONT_WEIGHT_NORMAL,
+		//    DWRITE_FONT_STYLE_NORMAL,
+		//    DWRITE_FONT_STRETCH_NORMAL,
+		//    24.0f,
+		//    L"en-us",
+		//    &pTextFormat
+		//);
+
+		//IDWriteTextLayout* pTextLayout = nullptr;
+		//const WCHAR*       text        = L"Привет";
+		//m_pDWFactory->CreateTextLayout(
+		//    text,
+		//    wcslen( text ),
+		//    pTextFormat,
+		//    500.0f, // Max width
+		//    100.0f, // Max height
+		//    &pTextLayout
+		//);
+
+		//// ... (Direct3D 11 rendering) ...
+
+		//// Render Text with Direct2D
+		//m_pD2DRenderTarget->BeginDraw();
+		//ID2D1SolidColorBrush* pBlackBrush = nullptr;
+		//m_pD2DRenderTarget->CreateSolidColorBrush( D2D1::ColorF( D2D1::ColorF::White, 0.5f ), &pBlackBrush );
+		//m_pD2DRenderTarget->DrawTextLayout( D2D1::Point2F( 10.0f, 10.0f ), pTextLayout, pBlackBrush );
+
+
+		//
+		//m_pD2DRenderTarget->EndDraw();
+
+		//pBlackBrush->Release();
+		//pTextLayout->Release();
+		//pTextFormat->Release();
+	}
+
+	m_pSwapChain->Present( 1, 0 );
 	m_bInScene = TFALSE;
 
 	return TTRUE;
@@ -480,7 +597,7 @@ TBOOL RenderDX11::Create( const TCHAR* a_pchWindowTitle )
 {
 	if ( TBOOL bRenderInterfaceCreated = TRenderInterface::Create() )
 	{
-		TUINT flags = D3D11_CREATE_DEVICE_SINGLETHREADED
+		TUINT flags = D3D11_CREATE_DEVICE_SINGLETHREADED | D3D11_CREATE_DEVICE_BGRA_SUPPORT
 #if defined( TOSHI_DEBUG )
 		    | D3D11_CREATE_DEVICE_DEBUG
 #endif
