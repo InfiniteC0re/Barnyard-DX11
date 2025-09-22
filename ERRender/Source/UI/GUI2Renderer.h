@@ -56,7 +56,7 @@ public:
 	void UpdateTransform();
 
 private:
-	static void SetupProjectionMatrix( Toshi::TMatrix44& a_rOutMatrix, TINT a_iLeft, TINT a_iRight, TINT a_iTop, TINT a_iBottom );
+	static void SetupProjectionMatrix( Toshi::TMatrix44& a_rOutMatrix, TFLOAT a_fLeft, TFLOAT a_fRight, TFLOAT a_fTop, TFLOAT a_fBottom );
 
 public:
 	inline static Vertex sm_Vertices[ MAX_VERTICES ];

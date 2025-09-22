@@ -23,7 +23,6 @@ MEMBER_HOOK( 0x006d7fe0, Toshi::TViewport, TViewport_BeginSKU, void )
 	viewport.Width    = m_pRenderCtx->GetViewportParameters().fWidth;
 	viewport.Height   = m_pRenderCtx->GetViewportParameters().fHeight;
 
-
 	remaster::g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &viewport );
 
 	if ( m_bAllowBackgroundClear )
