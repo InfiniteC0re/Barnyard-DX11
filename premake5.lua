@@ -44,6 +44,11 @@ workspace "Barnyard Remastered"
 			"TRENDERINTERFACE_DX8"
 		}
 
+		linkoptions
+		{
+			"/SAFESEH:NO"
+		}
+
 		externalincludedirs
 		{
 			"%{IncludeDir.dx8}"

@@ -9,6 +9,8 @@
 #include <BYardSDK/AGUI2.h>
 #include <BYardSDK/AMaterialLibraryManager.h>
 
+#include <Platform/DX8/TTextureResourceHAL_DX8.h>
+
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
 // Note: Should be the last include!
@@ -139,6 +141,79 @@ void remaster::GUI2RendererDX11::PrepareRenderer()
 void remaster::GUI2RendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
 {
 	if ( a_pMaterial == m_pMaterial ) return;
+
+	g_pRender->SetCullMode( D3D11_CULL_NONE );
+	sm_fZCoordinate = 0.1f;
+
+	if ( a_pMaterial == TNULL )
+	{
+		g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
+	}
+	else
+	{
+		auto pTexture = TSTATICCAST( Toshi::TTextureResourceHAL, a_pMaterial->m_pTextureResource );
+		pTexture->Validate();
+
+		auto pD3DTexture = ( ID3D11ShaderResourceView* ) pTexture->GetD3DTexture();
+		g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 0, 1, &pD3DTexture );
+
+		switch ( a_pMaterial->m_eBlendState )
+		{
+			case 0:
+				g_pRender->SetBlendEnabled( TFALSE );
+				break;
+			case 1:
+				g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
+				g_pRender->SetDepthWrite( TFALSE );
+				break;
+			case 2:
+				g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ONE );
+				g_pRender->SetDepthWrite( TFALSE );
+				break;
+			case 3:
+				g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_REV_SUBTRACT, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ONE );
+				g_pRender->SetDepthWrite( TFALSE );
+				break;
+			case 4:
+				g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_ZERO, D3D11_BLEND_ONE );
+				g_pRender->SetZMode( TTRUE, D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
+				sm_fZCoordinate = (!sm_bUnknownFlag) ? 0.05f : 0.02f;
+				break;
+			case 5:
+				g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
+				g_pRender->SetZMode( TTRUE, D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ZERO );
+
+				if ( sm_bUnknownFlag )
+				{
+					sm_fZCoordinate = 0.03f;
+					sm_bUnknownFlag = TFALSE;
+				}
+
+				break;
+			case 6:
+				g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
+				g_pRender->SetZMode( TTRUE, D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
+				sm_fZCoordinate = 0.04f;
+				sm_bUnknownFlag = TTRUE;
+				break;
+			default:
+				g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
+				break;
+		}
+
+		if ( a_pMaterial->m_eTextureAddress == 1 )
+		{
+			g_pRender->SetSamplerState( 0, 1, TTRUE );
+		}
+		else if ( a_pMaterial->m_eTextureAddress == 2 )
+		{
+			g_pRender->SetSamplerState( 0, 4, TTRUE );
+		}
+		else
+		{
+			g_pRender->SetSamplerState( 0, 3, TTRUE );
+		}
+	}
 
 	m_pMaterial = a_pMaterial;
 }
