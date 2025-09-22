@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "ERRender.h"
+#include "RenderDX11.h"
 #include "Shader/GrassShader.h"
 #include "Shader/SkinShader.h"
 #include "Shader/WorldShader.h"
@@ -33,7 +33,7 @@ HOOK( 0x006c6d60, TRenderD3DInterface_CreateObject, TRenderInterface* )
 
 MEMBER_HOOK( 0x006c72a0, remaster::RenderDX11, TRenderD3DInterface_Create, TBOOL, const char* a_pchWindowTitle )
 {
-	return Create( a_pchWindowTitle );
+	return Create( "Barnyard Remastered" );
 }
 
 MEMBER_HOOK( 0x006c58e0, remaster::RenderDX11, TRenderD3DInterface_BeginEndScene, void )

@@ -1,9 +1,12 @@
 #include "pch.h"
 #include "GUI2Renderer.h"
+#include "RenderDX11.h"
+#include "RenderDX11Utils.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
 
+#include <BYardSDK/AGUI2.h>
 #include <BYardSDK/AMaterialLibraryManager.h>
 
 //-----------------------------------------------------------------------------
@@ -16,9 +19,7 @@ TOSHI_NAMESPACE_USING
 
 MEMBER_HOOK( 0x0064e5c0, AGUI2Renderer, AGUI2Renderer_Constructor, remaster::GUI2RendererDX11* )
 {
-	TSTATICASSERT( sizeof( remaster::GUI2RendererDX11 ) == 24 );
-
-	return new ( this ) remaster::GUI2RendererDX11();
+	return new remaster::GUI2RendererDX11();
 }
 
 void remaster::SetupRenderHooks_UIRenderer()
@@ -31,6 +32,29 @@ remaster::GUI2RendererDX11::GUI2RendererDX11()
 	m_pTransforms       = new AGUI2Transform[ MAX_NUM_TRANSFORMS ];
 	m_iTransformCount   = 0;
 	m_bIsTransformDirty = TFALSE;
+
+	m_pVSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "vs_main", "vs_5_0", TNULL );
+	m_pPSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main", "ps_5_0", TNULL );
+
+	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob );
+	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_pVertexShader ) );
+	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob->GetBufferPointer(), m_pPSShaderBlob->GetBufferSize(), &m_pPixelShader ) );
+
+	D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
+		{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+		{ .SemanticName = "COLOR", .SemanticIndex = 0, .Format = DXGI_FORMAT_B8G8R8A8_UNORM, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+		{ .SemanticName = "TEXCOORD", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32_FLOAT, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+	};
+
+	DX11_API_VALIDATE(
+		g_pRender->GetD3D11Device()->CreateInputLayout(
+			aInputElements,
+			TARRAYSIZE( aInputElements ),
+			m_pVSShaderBlob->GetBufferPointer(),
+			m_pVSShaderBlob->GetBufferSize(),
+			&m_pInputLayout
+		)
+	);
 }
 
 remaster::GUI2RendererDX11::~GUI2RendererDX11()
@@ -67,7 +91,34 @@ TUINT remaster::GUI2RendererDX11::GetHeight( AGUI2Material* a_pMaterial )
 
 void remaster::GUI2RendererDX11::BeginScene()
 {
-	
+	TRenderInterface::DISPLAYPARAMS* pDisplayParams = g_pRender->GetCurrentDisplayParams();
+
+	// Update projection matrix
+	TMatrix44 matProjection = {
+		2.0f / TFLOAT( pDisplayParams->uiWidth ), 0.0f, 0.0f, 0.0f,
+		0.0f, 2.0f / TFLOAT( pDisplayParams->uiHeight ), 0.0f, 0.0f,
+		0.0f, 0.0f, 1.0f, 0.0f,
+		0.0f, 0.0f, 0.0f, 1.0f
+	};
+
+	g_pRender->VSBufferSetVec4( 0, &matProjection, 4 );
+
+	// Initialise first root transform
+	TFLOAT fRootWidth;
+	TFLOAT fRootHeight;
+	AGUI2::GetContext()->GetRootElement()->GetDimensions( fRootWidth, fRootHeight );
+
+	AGUI2Transform& rTransform    = m_pTransforms[ m_iTransformCount ];
+	rTransform.m_aMatrixRows[ 0 ] = { pDisplayParams->uiWidth / fRootWidth, 0.0f };
+	rTransform.m_aMatrixRows[ 1 ] = { 0.0f, -TFLOAT( pDisplayParams->uiHeight ) / fRootHeight };
+	rTransform.m_vecTranslation   = { 0.0f, 0.0f };
+
+	g_pRender->GetD3D11DeviceContext()->PSSetShader( m_pPixelShader, TNULL, 0 );
+	g_pRender->GetD3D11DeviceContext()->VSSetShader( m_pVertexShader, TNULL, 0 );
+	g_pRender->GetD3D11DeviceContext()->IASetInputLayout( m_pInputLayout );
+
+	g_pRender->SetDepthClip( TFALSE );
+	g_pRender->SetZMode( TTRUE, D3D11_COMPARISON_ALWAYS, D3D11_DEPTH_WRITE_MASK_ALL );
 }
 
 void remaster::GUI2RendererDX11::EndScene()
@@ -141,7 +192,29 @@ void remaster::GUI2RendererDX11::ClearScissor()
 
 void remaster::GUI2RendererDX11::RenderRectangle( const Toshi::TVector2& a, const Toshi::TVector2& b, const Toshi::TVector2& uv1, const Toshi::TVector2& uv2 )
 {
-	
+	if ( m_bIsTransformDirty )
+	{
+		UpdateTransform();
+	}
+
+	sm_Vertices[ 0 ].Position = { a.x, a.y, -sm_fZCoordinate };
+	sm_Vertices[ 0 ].Colour   = m_uiColour;
+	sm_Vertices[ 0 ].UV       = { uv1.x, uv1.y };
+
+	sm_Vertices[ 1 ].Position = { b.x, a.y, -sm_fZCoordinate };
+	sm_Vertices[ 1 ].Colour   = m_uiColour;
+	sm_Vertices[ 1 ].UV       = { uv2.x, uv1.y };
+
+	sm_Vertices[ 2 ].Position = { a.x, b.y, -sm_fZCoordinate };
+	sm_Vertices[ 2 ].Colour   = m_uiColour;
+	sm_Vertices[ 2 ].UV       = { uv1.x, uv2.y };
+
+	sm_Vertices[ 3 ].Position = { b.x, b.y, -sm_fZCoordinate };
+	sm_Vertices[ 3 ].Colour   = m_uiColour;
+	sm_Vertices[ 3 ].UV       = { uv2.x, uv2.y };
+
+	TUINT16 aIndices[] = { 0, 1, 2, 3 };
+	g_pRender->DrawImmediately( D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP, 4, aIndices, DXGI_FORMAT_R16_UINT, &sm_Vertices, sizeof( Vertex ), 4 );
 }
 
 void remaster::GUI2RendererDX11::RenderTriStrip( Toshi::TVector2* vertices, Toshi::TVector2* UV, uint32_t numverts )
@@ -176,7 +249,6 @@ void remaster::GUI2RendererDX11::ResetZCoordinate()
 
 void remaster::GUI2RendererDX11::UpdateTransform()
 {
-	//auto            pRender    = TSTATICCAST( TRenderD3DInterface, TRenderInterface::GetSingleton() );
 	AGUI2Transform* pTransform = m_pTransforms + m_iTransformCount;
 
 	TMatrix44 worldMatrix;
@@ -200,21 +272,20 @@ void remaster::GUI2RendererDX11::UpdateTransform()
 	worldMatrix.m_f43 = 0.0f;
 	worldMatrix.m_f44 = 1.0f;
 
-	//pRender->GetDirect3DDevice()->SetTransform( D3DTS_WORLDMATRIX( 0 ), (D3DMATRIX*)&worldMatrix );
+	g_pRender->VSBufferSetVec4( 4, &worldMatrix, 4 );
 	m_bIsTransformDirty = TFALSE;
 }
 
 void remaster::GUI2RendererDX11::SetupProjectionMatrix( Toshi::TMatrix44& a_rOutMatrix, TINT a_iLeft, TINT a_iRight, TINT a_iTop, TINT a_iBottom )
 {
-	/*auto pRender        = TSTATICCAST( TRenderD3DInterface, TRenderInterface::GetSingleton() );
-	auto pDisplayParams = pRender->GetCurrentDisplayParams();
+	auto pDisplayParams = g_pRender->GetCurrentDisplayParams();
 
 	a_rOutMatrix = {
 		2.0f / ( a_iRight - a_iLeft ), 0.0f, 0.0f, 0.0f,
 		0.0f, 2.0f / ( a_iBottom - a_iTop ), 0.0f, 0.0f,
 		0.0f, 0.0f, 1.0f, 0.0f,
 		( ( pDisplayParams->uiWidth - a_iLeft ) - a_iRight ) / (TFLOAT)( a_iRight - a_iLeft ), ( ( pDisplayParams->uiHeight - a_iTop ) - a_iBottom ) / (TFLOAT)( a_iTop - a_iBottom ), 0.0f, 1.0f
-	};*/
+	};
 }
 
 void remaster::GUI2RendererDX11::RenderLine( TFLOAT x1, TFLOAT y1, TFLOAT x2, TFLOAT y2 )

@@ -1,7 +1,8 @@
 #pragma once
-#include "Ref/AGUI2Renderer.h"
-
 #include <Math/TMatrix44.h>
+#include <BYardSDK/AGUI2Renderer.h>
+
+#include <d3d11.h>
 
 namespace remaster
 {
@@ -68,6 +69,12 @@ private:
 	TUINT32         m_uiColour;
 	TBOOL           m_bIsTransformDirty;
 	AGUI2Material*  m_pMaterial;
+
+	ID3D11InputLayout*  m_pInputLayout;
+	ID3DBlob*           m_pVSShaderBlob;
+	ID3D11VertexShader* m_pVertexShader;
+	ID3DBlob*           m_pPSShaderBlob;
+	ID3D11PixelShader*  m_pPixelShader;
 };
 
 }; // namespace remaster
