@@ -21,6 +21,26 @@ TOSHI_NAMESPACE_USING
 constexpr TFLOAT FONT_SCALE         = 38.0f;
 constexpr TFLOAT FONT_HEIGHT_FACTOR = 0.65f;
 
+static TFLOAT GetViewportX()
+{
+	return TSTATICCAST( remaster::GUI2RendererDX11, AGUI2::GetRenderer() )->GetViewportX();
+}
+
+static TFLOAT GetViewportY()
+{
+	return TSTATICCAST( remaster::GUI2RendererDX11, AGUI2::GetRenderer() )->GetViewportY();
+}
+
+static TFLOAT GetViewportWidth()
+{
+	return TSTATICCAST( remaster::GUI2RendererDX11, AGUI2::GetRenderer() )->GetViewportWidth();
+}
+
+static TFLOAT GetViewportHeight()
+{
+	return TSTATICCAST( remaster::GUI2RendererDX11, AGUI2::GetRenderer() )->GetViewportHeight();
+}
+
 MEMBER_HOOK( 0x006c32b0, AGUI2Font, AGUI2Font_GetTextWidth, TFLOAT, const TWCHAR* a_wszText, TINT a_iTextLength, TFLOAT a_fScale )
 {
 	TFLOAT flUICanvasWidth;
@@ -38,11 +58,11 @@ MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TW
 {
 	ID2D1Geometry* pTextGeometry = remaster::dx11::CreateTextGeometry( a_wszText, a_iTextLength, a_fScale );
 
-	TFLOAT flUICanvasHalfWidth;
-	TFLOAT flUICanvasHalfHeight;
-	AGUI2::GetSingleton()->GetDimensions( flUICanvasHalfWidth, flUICanvasHalfHeight );
-	flUICanvasHalfWidth *= 0.5f;
-	flUICanvasHalfHeight *= 0.5f;
+	TFLOAT flUICanvasWidth;
+	TFLOAT flUICanvasHeight;
+	AGUI2::GetSingleton()->GetDimensions( flUICanvasWidth, flUICanvasHeight );
+	TFLOAT flUIScaleX = ( remaster::g_pRender->GetSurfaceWidth() / flUICanvasWidth );
+	TFLOAT flUIScaleY = ( remaster::g_pRender->GetSurfaceHeight() / flUICanvasHeight );
 
 	auto pD2DRenderTarget = remaster::g_pRender->GetD2DRenderTarget();
 	auto pD2DFactory      = remaster::g_pRender->GetD2DFactory();
@@ -78,32 +98,24 @@ MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TW
 
 	D2D1_MATRIX_3X2_F matView;
 	matView.m11 = pUIRenderer->GetViewMatrix().m_f11;
-	matView.m12 = pUIRenderer->GetViewMatrix().m_f12;
+	matView.m12 = -pUIRenderer->GetViewMatrix().m_f12;
 	matView.m21 = pUIRenderer->GetViewMatrix().m_f21;
-	matView.m22 = pUIRenderer->GetViewMatrix().m_f22;
+	matView.m22 = -pUIRenderer->GetViewMatrix().m_f22;
 	matView.dx  = pUIRenderer->GetViewMatrix().m_f41;
-	matView.dy  = pUIRenderer->GetViewMatrix().m_f42;
-
-	D2D1_MATRIX_3X2_F matProj;
-	matProj.m11 = pUIRenderer->GetProjectionMatrix().m_f11;
-	matProj.m12 = pUIRenderer->GetProjectionMatrix().m_f12;
-	matProj.m21 = pUIRenderer->GetProjectionMatrix().m_f21;
-	matProj.m22 = -pUIRenderer->GetProjectionMatrix().m_f22;
-	matProj.dx  = pUIRenderer->GetProjectionMatrix().m_f41;
-	matProj.dy  = pUIRenderer->GetProjectionMatrix().m_f42;
+	matView.dy  = -pUIRenderer->GetViewMatrix().m_f42;
 
 	TFLOAT flLineHeight = TFLOAT( remaster::g_pRender->GetFontMetrics().capHeight ) / remaster::g_pRender->GetFontMetrics().designUnitsPerEm / 72.0f * 96 * a_fScale * FONT_HEIGHT_FACTOR;
 
-	auto test = D2D1::Matrix3x2F::Translation( a_fX, a_fY + flLineHeight ) * matView * matProj;
+	auto transform = D2D1::Matrix3x2F::Translation( a_fX, a_fY + flLineHeight ) * matView;
 
-	test.m11 *= flUICanvasHalfWidth;
-	test.m12 *= flUICanvasHalfHeight;
-	test.m21 *= flUICanvasHalfWidth;
-	test.m22 *= flUICanvasHalfHeight;
-	test.dx = ( test.dx + 1.0f ) * 0.5f * remaster::g_pRender->GetSurfaceWidth();
-	test.dy = ( test.dy + 1.0f ) * 0.5f * remaster::g_pRender->GetSurfaceHeight();
+	transform.m11 /= flUIScaleX;
+	transform.m12 /= flUIScaleY;
+	transform.m21 /= flUIScaleX;
+	transform.m22 /= flUIScaleY;
+	transform.dx = GetViewportX() + ( transform.dx + GetViewportWidth() * 0.5f );
+	transform.dy = GetViewportY() + ( transform.dy + GetViewportHeight() * 0.5f );
 
-	pD2DRenderTarget->SetTransform( test );
+	pD2DRenderTarget->SetTransform( transform );
 	pD2DRenderTarget->DrawGeometry( pTextGeometry, pBlackBrush, ( a_fScale / 42.0f ) * 6.0f, pStrokeStyle );
 	pD2DRenderTarget->FillGeometry( pTextGeometry, pWhiteBrush );
 

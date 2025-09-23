@@ -59,6 +59,11 @@ public:
 	const Toshi::TMatrix44& GetProjectionMatrix() const { return m_matProjection; }
 	const Toshi::TMatrix44& GetViewMatrix() const { return m_matView; }
 
+	TFLOAT GetViewportX() const { return m_oViewport.TopLeftX; }
+	TFLOAT GetViewportY() const { return m_oViewport.TopLeftY; }
+	TFLOAT GetViewportWidth() const { return m_oViewport.Width; }
+	TFLOAT GetViewportHeight() const { return m_oViewport.Height; }
+
 private:
 	static void SetupProjectionMatrix( Toshi::TMatrix44& a_rOutMatrix, TFLOAT a_fLeft, TFLOAT a_fRight, TFLOAT a_fTop, TFLOAT a_fBottom );
 
@@ -82,6 +87,8 @@ private:
 
 	Toshi::TMatrix44 m_matProjection;
 	Toshi::TMatrix44 m_matView;
+
+	D3D11_VIEWPORT m_oViewport;
 };
 
 }; // namespace remaster

@@ -95,14 +95,17 @@ void remaster::GUI2RendererDX11::BeginScene()
 {
 	TRenderInterface::DISPLAYPARAMS* pDisplayParams = g_pRender->GetCurrentDisplayParams();
 
-	// Update projection matrix
-	m_matProjection = {
-		2.0f / TFLOAT( pDisplayParams->uiWidth ), 0.0f, 0.0f, 0.0f,
-		0.0f, 2.0f / TFLOAT( pDisplayParams->uiHeight ), 0.0f, 0.0f,
-		0.0f, 0.0f, 1.0f, 0.0f,
-		0.0f, 0.0f, 0.0f, 1.0f
+	m_oViewport = {
+		.TopLeftX = 0,
+		.TopLeftY = 0,
+		.Width    = TFLOAT( pDisplayParams->uiWidth ),
+		.Height   = TFLOAT( pDisplayParams->uiHeight ),
+		.MinDepth = 0.0f,
+		.MaxDepth = 1.0f
 	};
 
+	// Update projection matrix
+	SetupProjectionMatrix( m_matProjection, 0.0f, TFLOAT( pDisplayParams->uiWidth ), 0.0f, TFLOAT( pDisplayParams->uiHeight ) );
 	g_pRender->VSBufferSetVec4( 0, &m_matProjection, 4 );
 
 	// Initialise first root transform
@@ -291,7 +294,7 @@ void remaster::GUI2RendererDX11::SetScissor( TFLOAT a_fVal1, TFLOAT a_fVal2, TFL
 	DWORD iTop    = TMath::Max( TMath::FloorToInt( transformed2.y ), 0 );
 	DWORD iBottom = TMath::Min( TMath::FloorToInt( transformed1.y ), TINT( pDisplayParams->uiHeight ) );
 
-	D3D11_VIEWPORT viewport = {
+	m_oViewport = {
 		.TopLeftX = TFLOAT( iLeft ),
 		.TopLeftY = TFLOAT( iTop ),
 		.Width    = TFLOAT( iRight - iLeft ),
@@ -300,13 +303,13 @@ void remaster::GUI2RendererDX11::SetScissor( TFLOAT a_fVal1, TFLOAT a_fVal2, TFL
 		.MaxDepth = 1.0f
 	};
 
-	if ( viewport.Width == 0 )
-		viewport.Width = 1;
+	if ( m_oViewport.Width == 0 )
+		m_oViewport.Width = 1;
 
-	if ( viewport.Height == 0 )
-		viewport.Height = 1;
+	if ( m_oViewport.Height == 0 )
+		m_oViewport.Height = 1;
 
-	g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &viewport );
+	g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &m_oViewport );
 
 	SetupProjectionMatrix( m_matProjection, TFLOAT( iLeft ), TFLOAT( iRight ), TFLOAT( iTop ), TFLOAT( iBottom ) );
 	g_pRender->VSBufferSetVec4( 0, &m_matProjection, 4 );
@@ -316,7 +319,7 @@ void remaster::GUI2RendererDX11::ClearScissor()
 {
 	auto pDisplayParams = g_pRender->GetCurrentDisplayParams();
 
-	D3D11_VIEWPORT viewport = {
+	m_oViewport = {
 		.TopLeftX = 0,
 		.TopLeftY = 0,
 		.Width    = TFLOAT( pDisplayParams->uiWidth ),
@@ -325,9 +328,9 @@ void remaster::GUI2RendererDX11::ClearScissor()
 		.MaxDepth = 1.0f
 	};
 
-	g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &viewport );
+	g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &m_oViewport );
 
-	SetupProjectionMatrix( m_matProjection, viewport.TopLeftX, viewport.Width + viewport.TopLeftX, viewport.TopLeftY, viewport.Height + viewport.TopLeftY );
+	SetupProjectionMatrix( m_matProjection, m_oViewport.TopLeftX, m_oViewport.Width + m_oViewport.TopLeftX, m_oViewport.TopLeftY, m_oViewport.Height + m_oViewport.TopLeftY );
 	g_pRender->VSBufferSetVec4( 0, &m_matProjection, 4 );
 }
 
