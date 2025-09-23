@@ -294,7 +294,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		    D2D1::PixelFormat( DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED )
 		);
 
-		//DX11_API_VALIDATE( m_pD2DFactory->CreateDxgiSurfaceRenderTarget( pBackBufferSurface, &rtProps, &m_pD2DRenderTarget ) );
+		DX11_API_VALIDATE( m_pD2DFactory->CreateDxgiSurfaceRenderTarget( pBackBufferSurface, &rtProps, &m_pD2DRenderTarget ) );
 
 		// Create font
 		DX11_API_VALIDATE( m_pDWFactory->CreateFontFileReference(
@@ -310,6 +310,8 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		    DWRITE_FONT_SIMULATIONS_NONE,
 		    &m_pDWFontFace
 		) );
+
+		m_pDWFontFace->GetMetrics( &m_oFontMetrics );
 
 		pBackBufferSurface->Release();
 
@@ -361,43 +363,6 @@ TBOOL RenderDX11::BeginScene()
 TBOOL RenderDX11::EndScene()
 {
 	{
-		/*ID2D1Geometry* pTextGeometry = dx11::CreateTextGeometry( L"HELLO WORLD!" );
-
-		m_pD2DRenderTarget->BeginDraw();
-
-		ID2D1SolidColorBrush* pBlackBrush = TNULL;
-		m_pD2DRenderTarget->CreateSolidColorBrush( D2D1::ColorF( D2D1::ColorF::Black, 1.0f ), &pBlackBrush );
-
-		ID2D1SolidColorBrush* pWhiteBrush = TNULL;
-		m_pD2DRenderTarget->CreateSolidColorBrush( D2D1::ColorF( D2D1::ColorF::White, 1.0f ), &pWhiteBrush );
-
-		ID2D1StrokeStyle* pStrokeStyle;
-		m_pD2DFactory->CreateStrokeStyle(
-		    D2D1::StrokeStyleProperties(
-		        D2D1_CAP_STYLE_ROUND,
-		        D2D1_CAP_STYLE_ROUND,
-		        D2D1_CAP_STYLE_ROUND,
-		        D2D1_LINE_JOIN_ROUND,
-		        0.0f,
-		        D2D1_DASH_STYLE_SOLID,
-		        0.0f
-		    ),
-		    TNULL,
-		    0,
-		    &pStrokeStyle
-		);
-
-		m_pD2DRenderTarget->SetTransform( D2D1::Matrix3x2F::Translation( 10.0f, 65.0f ) );
-		m_pD2DRenderTarget->DrawGeometry( pTextGeometry, pBlackBrush, 6.0f, pStrokeStyle );
-		m_pD2DRenderTarget->FillGeometry( pTextGeometry, pWhiteBrush );
-
-		pBlackBrush->Release();
-		pWhiteBrush->Release();
-		pStrokeStyle->Release();
-		m_pD2DRenderTarget->EndDraw();
-
-		pTextGeometry->Release();*/
-
 		// Prepare Text Resources
 		//IDWriteTextFormat* pTextFormat = nullptr;
 		//m_pDWFactory->CreateTextFormat(

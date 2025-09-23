@@ -96,14 +96,14 @@ void remaster::GUI2RendererDX11::BeginScene()
 	TRenderInterface::DISPLAYPARAMS* pDisplayParams = g_pRender->GetCurrentDisplayParams();
 
 	// Update projection matrix
-	TMatrix44 matProjection = {
+	m_matProjection = {
 		2.0f / TFLOAT( pDisplayParams->uiWidth ), 0.0f, 0.0f, 0.0f,
 		0.0f, 2.0f / TFLOAT( pDisplayParams->uiHeight ), 0.0f, 0.0f,
 		0.0f, 0.0f, 1.0f, 0.0f,
 		0.0f, 0.0f, 0.0f, 1.0f
 	};
 
-	g_pRender->VSBufferSetVec4( 0, &matProjection, 4 );
+	g_pRender->VSBufferSetVec4( 0, &m_matProjection, 4 );
 
 	// Initialise first root transform
 	TFLOAT fRootWidth;
@@ -308,9 +308,8 @@ void remaster::GUI2RendererDX11::SetScissor( TFLOAT a_fVal1, TFLOAT a_fVal2, TFL
 
 	g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &viewport );
 
-	TMatrix44 matProjection;
-	SetupProjectionMatrix( matProjection, TFLOAT( iLeft ), TFLOAT( iRight ), TFLOAT( iTop ), TFLOAT( iBottom ) );
-	g_pRender->VSBufferSetVec4( 0, &matProjection, 4 );
+	SetupProjectionMatrix( m_matProjection, TFLOAT( iLeft ), TFLOAT( iRight ), TFLOAT( iTop ), TFLOAT( iBottom ) );
+	g_pRender->VSBufferSetVec4( 0, &m_matProjection, 4 );
 }
 
 void remaster::GUI2RendererDX11::ClearScissor()
@@ -328,9 +327,8 @@ void remaster::GUI2RendererDX11::ClearScissor()
 
 	g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &viewport );
 
-	TMatrix44 matProjection;
-	SetupProjectionMatrix( matProjection, viewport.TopLeftX, viewport.Width + viewport.TopLeftX, viewport.TopLeftY, viewport.Height + viewport.TopLeftY );
-	g_pRender->VSBufferSetVec4( 0, &matProjection, 4 );
+	SetupProjectionMatrix( m_matProjection, viewport.TopLeftX, viewport.Width + viewport.TopLeftX, viewport.TopLeftY, viewport.Height + viewport.TopLeftY );
+	g_pRender->VSBufferSetVec4( 0, &m_matProjection, 4 );
 }
 
 void remaster::GUI2RendererDX11::RenderRectangle( const Toshi::TVector2& a, const Toshi::TVector2& b, const Toshi::TVector2& uv1, const Toshi::TVector2& uv2 )
@@ -389,28 +387,27 @@ void remaster::GUI2RendererDX11::UpdateTransform()
 {
 	AGUI2Transform* pTransform = m_pTransforms + m_iTransformCount;
 
-	TMatrix44 worldMatrix;
-	worldMatrix.m_f11 = pTransform->m_aMatrixRows[ 0 ].x;
-	worldMatrix.m_f12 = pTransform->m_aMatrixRows[ 0 ].y;
-	worldMatrix.m_f13 = 0.0f;
-	worldMatrix.m_f14 = 0.0f;
+	m_matView.m_f11 = pTransform->m_aMatrixRows[ 0 ].x;
+	m_matView.m_f12 = pTransform->m_aMatrixRows[ 0 ].y;
+	m_matView.m_f13 = 0.0f;
+	m_matView.m_f14 = 0.0f;
 
-	worldMatrix.m_f21 = pTransform->m_aMatrixRows[ 1 ].x;
-	worldMatrix.m_f22 = pTransform->m_aMatrixRows[ 1 ].y;
-	worldMatrix.m_f23 = 0.0f;
-	worldMatrix.m_f24 = 0.0f;
+	m_matView.m_f21 = pTransform->m_aMatrixRows[ 1 ].x;
+	m_matView.m_f22 = pTransform->m_aMatrixRows[ 1 ].y;
+	m_matView.m_f23 = 0.0f;
+	m_matView.m_f24 = 0.0f;
 
-	worldMatrix.m_f31 = 0.0f;
-	worldMatrix.m_f32 = 0.0f;
-	worldMatrix.m_f33 = 1.0f;
-	worldMatrix.m_f34 = 0.0f;
+	m_matView.m_f31 = 0.0f;
+	m_matView.m_f32 = 0.0f;
+	m_matView.m_f33 = 1.0f;
+	m_matView.m_f34 = 0.0f;
 
-	worldMatrix.m_f41 = pTransform->m_vecTranslation.x;
-	worldMatrix.m_f42 = pTransform->m_vecTranslation.y;
-	worldMatrix.m_f43 = 0.0f;
-	worldMatrix.m_f44 = 1.0f;
+	m_matView.m_f41 = pTransform->m_vecTranslation.x;
+	m_matView.m_f42 = pTransform->m_vecTranslation.y;
+	m_matView.m_f43 = 0.0f;
+	m_matView.m_f44 = 1.0f;
 
-	g_pRender->VSBufferSetVec4( 4, &worldMatrix, 4 );
+	g_pRender->VSBufferSetVec4( 4, &m_matView, 4 );
 	m_bIsTransformDirty = TFALSE;
 }
 

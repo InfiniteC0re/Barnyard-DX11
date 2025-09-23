@@ -53,7 +53,11 @@ public:
 	virtual void             ScaleCoords( TFLOAT& x, TFLOAT& y ) OVERRIDE;
 	virtual void             ResetZCoordinate() OVERRIDE;
 
+public:
 	void UpdateTransform();
+
+	const Toshi::TMatrix44& GetProjectionMatrix() const { return m_matProjection; }
+	const Toshi::TMatrix44& GetViewMatrix() const { return m_matView; }
 
 private:
 	static void SetupProjectionMatrix( Toshi::TMatrix44& a_rOutMatrix, TFLOAT a_fLeft, TFLOAT a_fRight, TFLOAT a_fTop, TFLOAT a_fBottom );
@@ -75,6 +79,9 @@ private:
 	ID3D11VertexShader* m_pVertexShader;
 	ID3DBlob*           m_pPSShaderBlob;
 	ID3D11PixelShader*  m_pPixelShader;
+
+	Toshi::TMatrix44 m_matProjection;
+	Toshi::TMatrix44 m_matView;
 };
 
 }; // namespace remaster
