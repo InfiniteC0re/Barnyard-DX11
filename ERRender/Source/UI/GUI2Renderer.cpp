@@ -119,8 +119,9 @@ void remaster::GUI2RendererDX11::BeginScene()
 	g_pRender->GetD3D11DeviceContext()->VSSetShader( m_pVertexShader, TNULL, 0 );
 	g_pRender->GetD3D11DeviceContext()->IASetInputLayout( m_pInputLayout );
 
-	g_pRender->SetDepthClip( TFALSE );
-	g_pRender->SetZMode( TTRUE, D3D11_COMPARISON_ALWAYS, D3D11_DEPTH_WRITE_MASK_ALL );
+	g_pRender->SetCullMode( D3D11_CULL_NONE );
+	g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
+	g_pRender->SetZMode( g_pRender->IsZEnabled(), D3D11_COMPARISON_ALWAYS, D3D11_DEPTH_WRITE_MASK_ZERO );
 }
 
 void remaster::GUI2RendererDX11::EndScene()
@@ -133,6 +134,23 @@ void remaster::GUI2RendererDX11::ResetRenderer()
 
 void remaster::GUI2RendererDX11::PrepareRenderer()
 {
+	g_pRender->SetCullMode( D3D11_CULL_NONE );
+	g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
+	g_pRender->SetZMode( g_pRender->IsZEnabled(), D3D11_COMPARISON_ALWAYS, D3D11_DEPTH_WRITE_MASK_ZERO );
+
+	sm_fZCoordinate = 0.1f;
+
+	// Force material to update
+	auto pMaterial = m_pMaterial;
+	m_pMaterial    = (AGUI2Material*)( ~(uintptr_t)pMaterial );
+	SetMaterial( pMaterial );
+
+	// Force colour to update
+	auto uiColour = m_uiColour;
+	m_uiColour    = ~uiColour;
+	SetColour( uiColour );
+
+	m_bIsTransformDirty = TTRUE;
 }
 
 void remaster::GUI2RendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
@@ -177,7 +195,7 @@ void remaster::GUI2RendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
 				sm_fZCoordinate = ( !sm_bUnknownFlag ) ? 0.05f : 0.02f;
 				break;
 			case 5:
-				g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
+				g_pRender->SetBlendMode( TTRUE, g_pRender->GetBlendOp(), D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
 				g_pRender->SetZMode( TTRUE, D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ZERO );
 
 				if ( sm_bUnknownFlag )
@@ -189,7 +207,7 @@ void remaster::GUI2RendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
 				break;
 			case 6:
 				g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
-				g_pRender->SetZMode( TTRUE, D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
+				g_pRender->SetZMode( g_pRender->IsZEnabled(), D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
 				sm_fZCoordinate = 0.04f;
 				sm_bUnknownFlag = TTRUE;
 				break;
@@ -322,19 +340,19 @@ void remaster::GUI2RendererDX11::RenderRectangle( const Toshi::TVector2& a, cons
 		UpdateTransform();
 	}
 
-	sm_Vertices[ 0 ].Position = { a.x, a.y, -sm_fZCoordinate };
+	sm_Vertices[ 0 ].Position = { a.x, a.y, sm_fZCoordinate };
 	sm_Vertices[ 0 ].Colour   = m_uiColour;
 	sm_Vertices[ 0 ].UV       = { uv1.x, uv1.y };
 
-	sm_Vertices[ 1 ].Position = { b.x, a.y, -sm_fZCoordinate };
+	sm_Vertices[ 1 ].Position = { b.x, a.y, sm_fZCoordinate };
 	sm_Vertices[ 1 ].Colour   = m_uiColour;
 	sm_Vertices[ 1 ].UV       = { uv2.x, uv1.y };
 
-	sm_Vertices[ 2 ].Position = { a.x, b.y, -sm_fZCoordinate };
+	sm_Vertices[ 2 ].Position = { a.x, b.y, sm_fZCoordinate };
 	sm_Vertices[ 2 ].Colour   = m_uiColour;
 	sm_Vertices[ 2 ].UV       = { uv1.x, uv2.y };
 
-	sm_Vertices[ 3 ].Position = { b.x, b.y, -sm_fZCoordinate };
+	sm_Vertices[ 3 ].Position = { b.x, b.y, sm_fZCoordinate };
 	sm_Vertices[ 3 ].Colour   = m_uiColour;
 	sm_Vertices[ 3 ].UV       = { uv2.x, uv2.y };
 

@@ -294,7 +294,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		    D2D1::PixelFormat( DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED )
 		);
 
-		DX11_API_VALIDATE( m_pD2DFactory->CreateDxgiSurfaceRenderTarget( pBackBufferSurface, &rtProps, &m_pD2DRenderTarget ) );
+		//DX11_API_VALIDATE( m_pD2DFactory->CreateDxgiSurfaceRenderTarget( pBackBufferSurface, &rtProps, &m_pD2DRenderTarget ) );
 
 		// Create font
 		DX11_API_VALIDATE( m_pDWFactory->CreateFontFileReference(
@@ -361,7 +361,7 @@ TBOOL RenderDX11::BeginScene()
 TBOOL RenderDX11::EndScene()
 {
 	{
-		ID2D1Geometry* pTextGeometry = dx11::CreateTextGeometry( L"HELLO WORLD!" );
+		/*ID2D1Geometry* pTextGeometry = dx11::CreateTextGeometry( L"HELLO WORLD!" );
 
 		m_pD2DRenderTarget->BeginDraw();
 
@@ -396,7 +396,8 @@ TBOOL RenderDX11::EndScene()
 		pStrokeStyle->Release();
 		m_pD2DRenderTarget->EndDraw();
 
-		pTextGeometry->Release();
+		pTextGeometry->Release();*/
+
 		// Prepare Text Resources
 		//IDWriteTextFormat* pTextFormat = nullptr;
 		//m_pDWFactory->CreateTextFormat(
