@@ -115,9 +115,19 @@ MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TW
 	transform.dx = GetViewportX() + ( transform.dx + GetViewportWidth() * 0.5f );
 	transform.dy = GetViewportY() + ( transform.dy + GetViewportHeight() * 0.5f );
 
+	D2D1_RECT_F oClipRect;
+	oClipRect.left   = GetViewportX();
+	oClipRect.top    = GetViewportY();
+	oClipRect.right  = oClipRect.left + GetViewportWidth();
+	oClipRect.bottom = oClipRect.top + GetViewportHeight();
+
+	pD2DRenderTarget->SetTransform( D2D1::Matrix3x2F::Identity() );
+	pD2DRenderTarget->PushAxisAlignedClip( &oClipRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE );
+
 	pD2DRenderTarget->SetTransform( transform );
 	pD2DRenderTarget->DrawGeometry( pTextGeometry, pBlackBrush, ( a_fScale / 42.0f ) * 6.0f, pStrokeStyle );
 	pD2DRenderTarget->FillGeometry( pTextGeometry, pWhiteBrush );
+	pD2DRenderTarget->PopAxisAlignedClip();
 
 	pD2DRenderTarget->EndDraw();
 
