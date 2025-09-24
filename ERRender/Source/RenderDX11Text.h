@@ -1,5 +1,6 @@
 #pragma once
 #include "RenderDX11.h"
+#include "UI/Font.h"
 
 namespace remaster
 {
@@ -7,16 +8,9 @@ namespace remaster
 namespace dx11
 {
 
-struct GlyphMetrics
-{
-	TFLOAT flWidth;
-	TFLOAT flHeight;
-};
+ID2D1Geometry*      CreateTextGeometry( font::Font* a_pFont, const TWCHAR* a_wcsText, TSIZE a_uiTextLength, TFLOAT a_flFontSize );
+TFORCEINLINE TFLOAT ConvertDIPToPX( TFLOAT a_fDIP ) { return a_fDIP * ( 1.0f / 72.0f ) * 96.0f; }
 
-TFLOAT                      GetTextWidth( const TWCHAR* a_wcsText, TFLOAT a_flFontSize );
-ID2D1Geometry*              CreateTextGeometry( const TWCHAR* a_wcsText, TINT a_iTextLength, TFLOAT a_flFontSize );
-const GlyphMetrics*         GetLastGlyphMetrics();
+} // namespace dx11
 
-}
-
-}
+} // namespace remaster

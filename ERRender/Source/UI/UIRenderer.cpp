@@ -1,7 +1,8 @@
 #include "pch.h"
-#include "GUI2Renderer.h"
+#include "UIRenderer.h"
 #include "RenderDX11.h"
 #include "RenderDX11Utils.h"
+#include "FontRenderer.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -19,9 +20,9 @@
 
 TOSHI_NAMESPACE_USING
 
-MEMBER_HOOK( 0x0064e5c0, AGUI2Renderer, AGUI2Renderer_Constructor, remaster::GUI2RendererDX11* )
+MEMBER_HOOK( 0x0064e5c0, AGUI2Renderer, AGUI2Renderer_Constructor, remaster::UIRendererDX11* )
 {
-	return new remaster::GUI2RendererDX11();
+	return new remaster::UIRendererDX11();
 }
 
 void remaster::SetupRenderHooks_UIRenderer()
@@ -29,7 +30,9 @@ void remaster::SetupRenderHooks_UIRenderer()
 	InstallHook<AGUI2Renderer_Constructor>();
 }
 
-remaster::GUI2RendererDX11::GUI2RendererDX11()
+remaster::UIRendererDX11* remaster::g_pUIRender = TNULL;
+
+remaster::UIRendererDX11::UIRendererDX11()
 {
 	m_pTransforms       = new AGUI2Transform[ MAX_NUM_TRANSFORMS ];
 	m_iTransformCount   = 0;
@@ -57,14 +60,21 @@ remaster::GUI2RendererDX11::GUI2RendererDX11()
 	        &m_pInputLayout
 	    )
 	);
+
+	fontrenderer::Create();
+	g_pUIRender = this;
 }
 
-remaster::GUI2RendererDX11::~GUI2RendererDX11()
+remaster::UIRendererDX11::~UIRendererDX11()
 {
 	delete[] m_pTransforms;
+
+	fontrenderer::Destroy();
+
+	g_pUIRender = TNULL;
 }
 
-AGUI2Material* remaster::GUI2RendererDX11::CreateMaterial( Toshi::TTexture* a_pTexture )
+AGUI2Material* remaster::UIRendererDX11::CreateMaterial( Toshi::TTexture* a_pTexture )
 {
 	auto pMaterial = new AGUI2Material;
 
@@ -74,24 +84,24 @@ AGUI2Material* remaster::GUI2RendererDX11::CreateMaterial( Toshi::TTexture* a_pT
 	return pMaterial;
 }
 
-AGUI2Material* remaster::GUI2RendererDX11::CreateMaterialFromName( const TCHAR* a_szTextureName )
+AGUI2Material* remaster::UIRendererDX11::CreateMaterialFromName( const TCHAR* a_szTextureName )
 {
 	return CreateMaterial(
 	    GetTexture( a_szTextureName )
 	);
 }
 
-TUINT remaster::GUI2RendererDX11::GetWidth( AGUI2Material* a_pMaterial )
+TUINT remaster::UIRendererDX11::GetWidth( AGUI2Material* a_pMaterial )
 {
 	return a_pMaterial->m_pTextureResource->GetWidth();
 }
 
-TUINT remaster::GUI2RendererDX11::GetHeight( AGUI2Material* a_pMaterial )
+TUINT remaster::UIRendererDX11::GetHeight( AGUI2Material* a_pMaterial )
 {
 	return a_pMaterial->m_pTextureResource->GetHeight();
 }
 
-void remaster::GUI2RendererDX11::BeginScene()
+void remaster::UIRendererDX11::BeginScene()
 {
 	TRenderInterface::DISPLAYPARAMS* pDisplayParams = g_pRender->GetCurrentDisplayParams();
 
@@ -103,6 +113,14 @@ void remaster::GUI2RendererDX11::BeginScene()
 		.MinDepth = 0.0f,
 		.MaxDepth = 1.0f
 	};
+
+	// Calculate UI scale
+	TFLOAT flUICanvasWidth;
+	TFLOAT flUICanvasHeight;
+	AGUI2::GetSingleton()->GetDimensions( flUICanvasWidth, flUICanvasHeight );
+
+	m_flUIScaleX = ( remaster::g_pRender->GetSurfaceWidth() / flUICanvasWidth );
+	m_flUIScaleY = ( remaster::g_pRender->GetSurfaceHeight() / flUICanvasHeight );
 
 	// Update projection matrix
 	SetupProjectionMatrix( m_matProjection, 0.0f, TFLOAT( pDisplayParams->uiWidth ), 0.0f, TFLOAT( pDisplayParams->uiHeight ) );
@@ -127,15 +145,17 @@ void remaster::GUI2RendererDX11::BeginScene()
 	g_pRender->SetZMode( g_pRender->IsZEnabled(), D3D11_COMPARISON_ALWAYS, D3D11_DEPTH_WRITE_MASK_ZERO );
 }
 
-void remaster::GUI2RendererDX11::EndScene()
+void remaster::UIRendererDX11::EndScene()
+{
+	// Run garbage collection of unused font renderer objects
+	fontrenderer::Update();
+}
+
+void remaster::UIRendererDX11::ResetRenderer()
 {
 }
 
-void remaster::GUI2RendererDX11::ResetRenderer()
-{
-}
-
-void remaster::GUI2RendererDX11::PrepareRenderer()
+void remaster::UIRendererDX11::PrepareRenderer()
 {
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
 	g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
@@ -156,7 +176,7 @@ void remaster::GUI2RendererDX11::PrepareRenderer()
 	m_bIsTransformDirty = TTRUE;
 }
 
-void remaster::GUI2RendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
+void remaster::UIRendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
 {
 	if ( a_pMaterial == m_pMaterial ) return;
 
@@ -236,7 +256,7 @@ void remaster::GUI2RendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
 	m_pMaterial = a_pMaterial;
 }
 
-void remaster::GUI2RendererDX11::PushTransform( const AGUI2Transform& a_rTransform, const Toshi::TVector2& a_rVec1, const Toshi::TVector2& a_rVec2 )
+void remaster::UIRendererDX11::PushTransform( const AGUI2Transform& a_rTransform, const Toshi::TVector2& a_rVec1, const Toshi::TVector2& a_rVec2 )
 {
 	TASSERT( m_iTransformCount < MAX_NUM_TRANSFORMS );
 	auto pTransform = m_pTransforms + ( m_iTransformCount++ );
@@ -255,25 +275,25 @@ void remaster::GUI2RendererDX11::PushTransform( const AGUI2Transform& a_rTransfo
 	m_bIsTransformDirty = TTRUE;
 }
 
-void remaster::GUI2RendererDX11::PopTransform()
+void remaster::UIRendererDX11::PopTransform()
 {
 	TASSERT( m_iTransformCount >= 0 );
 	m_iTransformCount -= 1;
 	m_bIsTransformDirty = TTRUE;
 }
 
-void remaster::GUI2RendererDX11::SetTransform( const AGUI2Transform& a_rTransform )
+void remaster::UIRendererDX11::SetTransform( const AGUI2Transform& a_rTransform )
 {
 	m_pTransforms[ m_iTransformCount ] = a_rTransform;
 	m_bIsTransformDirty                = TTRUE;
 }
 
-void remaster::GUI2RendererDX11::SetColour( TUINT32 a_uiColour )
+void remaster::UIRendererDX11::SetColour( TUINT32 a_uiColour )
 {
 	m_uiColour = a_uiColour;
 }
 
-void remaster::GUI2RendererDX11::SetScissor( TFLOAT a_fVal1, TFLOAT a_fVal2, TFLOAT a_fVal3, TFLOAT a_fVal4 )
+void remaster::UIRendererDX11::SetScissor( TFLOAT a_fVal1, TFLOAT a_fVal2, TFLOAT a_fVal3, TFLOAT a_fVal4 )
 {
 	auto pDisplayParams = g_pRender->GetCurrentDisplayParams();
 	auto pTransform     = m_pTransforms + m_iTransformCount;
@@ -315,7 +335,7 @@ void remaster::GUI2RendererDX11::SetScissor( TFLOAT a_fVal1, TFLOAT a_fVal2, TFL
 	g_pRender->VSBufferSetVec4( 0, &m_matProjection, 4 );
 }
 
-void remaster::GUI2RendererDX11::ClearScissor()
+void remaster::UIRendererDX11::ClearScissor()
 {
 	auto pDisplayParams = g_pRender->GetCurrentDisplayParams();
 
@@ -334,12 +354,9 @@ void remaster::GUI2RendererDX11::ClearScissor()
 	g_pRender->VSBufferSetVec4( 0, &m_matProjection, 4 );
 }
 
-void remaster::GUI2RendererDX11::RenderRectangle( const Toshi::TVector2& a, const Toshi::TVector2& b, const Toshi::TVector2& uv1, const Toshi::TVector2& uv2 )
+void remaster::UIRendererDX11::RenderRectangle( const Toshi::TVector2& a, const Toshi::TVector2& b, const Toshi::TVector2& uv1, const Toshi::TVector2& uv2 )
 {
-	if ( m_bIsTransformDirty )
-	{
-		UpdateTransform();
-	}
+	UpdateTransform();
 
 	sm_Vertices[ 0 ].Position = { a.x, a.y, sm_fZCoordinate };
 	sm_Vertices[ 0 ].Colour   = m_uiColour;
@@ -361,32 +378,32 @@ void remaster::GUI2RendererDX11::RenderRectangle( const Toshi::TVector2& a, cons
 	g_pRender->DrawImmediately( D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP, 4, aIndices, DXGI_FORMAT_R16_UINT, &sm_Vertices, sizeof( Vertex ), 4 );
 }
 
-void remaster::GUI2RendererDX11::RenderTriStrip( Toshi::TVector2* vertices, Toshi::TVector2* UV, uint32_t numverts )
+void remaster::UIRendererDX11::RenderTriStrip( Toshi::TVector2* vertices, Toshi::TVector2* UV, uint32_t numverts )
 {
 }
 
-void remaster::GUI2RendererDX11::RenderLine( const Toshi::TVector2& a, const Toshi::TVector2& b )
+void remaster::UIRendererDX11::RenderLine( const Toshi::TVector2& a, const Toshi::TVector2& b )
 {
 }
 
-void remaster::GUI2RendererDX11::RenderOutlineRectangle( const Toshi::TVector2& a, const Toshi::TVector2& b )
+void remaster::UIRendererDX11::RenderOutlineRectangle( const Toshi::TVector2& a, const Toshi::TVector2& b )
 {
 }
 
-void remaster::GUI2RendererDX11::RenderFilledRectangle( const Toshi::TVector2& a, const Toshi::TVector2& b )
+void remaster::UIRendererDX11::RenderFilledRectangle( const Toshi::TVector2& a, const Toshi::TVector2& b )
 {
 }
 
-void remaster::GUI2RendererDX11::ScaleCoords( TFLOAT& x, TFLOAT& y )
+void remaster::UIRendererDX11::ScaleCoords( TFLOAT& x, TFLOAT& y )
 {
 }
 
-void remaster::GUI2RendererDX11::ResetZCoordinate()
+void remaster::UIRendererDX11::ResetZCoordinate()
 {
 	sm_fZCoordinate = 0.01f;
 }
 
-void remaster::GUI2RendererDX11::UpdateTransform()
+void remaster::UIRendererDX11::UpdateTransformImpl()
 {
 	AGUI2Transform* pTransform = m_pTransforms + m_iTransformCount;
 
@@ -414,7 +431,7 @@ void remaster::GUI2RendererDX11::UpdateTransform()
 	m_bIsTransformDirty = TFALSE;
 }
 
-void remaster::GUI2RendererDX11::SetupProjectionMatrix( Toshi::TMatrix44& a_rOutMatrix, TFLOAT a_iLeft, TFLOAT a_iRight, TFLOAT a_iTop, TFLOAT a_iBottom )
+void remaster::UIRendererDX11::SetupProjectionMatrix( Toshi::TMatrix44& a_rOutMatrix, TFLOAT a_iLeft, TFLOAT a_iRight, TFLOAT a_iTop, TFLOAT a_iBottom )
 {
 	auto pDisplayParams = g_pRender->GetCurrentDisplayParams();
 
@@ -426,17 +443,17 @@ void remaster::GUI2RendererDX11::SetupProjectionMatrix( Toshi::TMatrix44& a_rOut
 	};
 }
 
-void remaster::GUI2RendererDX11::RenderLine( TFLOAT x1, TFLOAT y1, TFLOAT x2, TFLOAT y2 )
+void remaster::UIRendererDX11::RenderLine( TFLOAT x1, TFLOAT y1, TFLOAT x2, TFLOAT y2 )
 {
 }
 
-void remaster::GUI2RendererDX11::DestroyMaterial( AGUI2Material* a_pMaterial )
+void remaster::UIRendererDX11::DestroyMaterial( AGUI2Material* a_pMaterial )
 {
 	if ( a_pMaterial )
 		a_pMaterial->Destroy();
 }
 
-Toshi::TTexture* remaster::GUI2RendererDX11::GetTexture( const TCHAR* a_szTextureName )
+Toshi::TTexture* remaster::UIRendererDX11::GetTexture( const TCHAR* a_szTextureName )
 {
 	return AMaterialLibraryManager::GetSingleton()->FindTexture( a_szTextureName );
 }

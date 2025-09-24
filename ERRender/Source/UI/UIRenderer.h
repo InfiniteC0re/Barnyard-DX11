@@ -9,7 +9,7 @@ namespace remaster
 
 void SetupRenderHooks_UIRenderer();
 
-class GUI2RendererDX11
+class UIRendererDX11
     : public AGUI2Renderer
 {
 public:
@@ -24,8 +24,8 @@ public:
 	};
 
 public:
-	GUI2RendererDX11();
-	~GUI2RendererDX11();
+	UIRendererDX11();
+	~UIRendererDX11();
 
 	virtual AGUI2Material*   CreateMaterialFromName( const TCHAR* a_szTextureName ) OVERRIDE;
 	virtual AGUI2Material*   CreateMaterial( Toshi::TTexture* a_pTexture ) OVERRIDE;
@@ -54,7 +54,7 @@ public:
 	virtual void             ResetZCoordinate() OVERRIDE;
 
 public:
-	void UpdateTransform();
+	void UpdateTransform() { if ( m_bIsTransformDirty ) UpdateTransformImpl(); }
 
 	const Toshi::TMatrix44& GetProjectionMatrix() const { return m_matProjection; }
 	const Toshi::TMatrix44& GetViewMatrix() const { return m_matView; }
@@ -63,6 +63,12 @@ public:
 	TFLOAT GetViewportY() const { return m_oViewport.TopLeftY; }
 	TFLOAT GetViewportWidth() const { return m_oViewport.Width; }
 	TFLOAT GetViewportHeight() const { return m_oViewport.Height; }
+
+	TFLOAT GetScaleX() const { return m_flUIScaleX; }
+	TFLOAT GetScaleY() const { return m_flUIScaleY; }
+
+private:
+	void UpdateTransformImpl();
 
 private:
 	static void SetupProjectionMatrix( Toshi::TMatrix44& a_rOutMatrix, TFLOAT a_fLeft, TFLOAT a_fRight, TFLOAT a_fTop, TFLOAT a_fBottom );
@@ -89,6 +95,11 @@ private:
 	Toshi::TMatrix44 m_matView;
 
 	D3D11_VIEWPORT m_oViewport;
+
+	TFLOAT m_flUIScaleX;
+	TFLOAT m_flUIScaleY;
 };
+
+extern UIRendererDX11* g_pUIRender;
 
 }; // namespace remaster

@@ -11,8 +11,8 @@
 #include "Resource/ClassPatcher.h"
 #include "Resource/VertexBlock.h"
 #include "Resource/IndexBlock.h"
-#include "Resource/FontResource.h"
-#include "UI/GUI2Renderer.h"
+#include "UI/UIRenderer.h"
+#include "UI/FontRenderer.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -55,8 +55,8 @@ void remaster::SetupRenderHooks()
 	SetupRenderHooks_StaticInstanceShader();
 	SetupRenderHooks_SysShader();
 	SetupRenderHooks_UIRenderer();
+	SetupRenderHooks_FontRenderer();
 	SetupRenderHooks_OrderTable();
 	SetupRenderHooks_VertexBlock();
 	SetupRenderHooks_IndexBlock();
-	SetupRenderHooks_FontResource();
 }

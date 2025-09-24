@@ -29,6 +29,8 @@ public:
 
 	TBOOL OnUpdate( TFLOAT a_fDeltaTime ) OVERRIDE
 	{
+		g_oSystemManager.Update();
+
 		return TTRUE;
 	}
 
