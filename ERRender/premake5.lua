@@ -54,7 +54,8 @@ project "ERRender"
 		defines
 		{
 			"TOSHI_SDK",
-			"TOSHI_MODLOADER_CLIENT"
+			"TOSHI_MODLOADER_CLIENT",
+			"TOSHI_PROFILER_CLIENT_DLL"
 		}
 
 	filter "files:**.c"

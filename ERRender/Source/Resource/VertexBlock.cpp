@@ -21,8 +21,7 @@ MEMBER_HOOK( 0x006c0760, Toshi::TVertexBlockResource, TVertexBlockResource_Destr
 	{
 		if ( m_HALBuffer.apVertexBuffers[ i ] )
 		{
-			TASSERT( TFALSE );
-			//m_HALBuffer.apVertexBuffers[ i ]->Release();
+			m_HALBuffer.apVertexBuffers[ i ]->Release();
 			m_HALBuffer.apVertexBuffers[ i ] = TNULL;
 		}
 	}
@@ -32,6 +31,8 @@ MEMBER_HOOK( 0x006c0760, Toshi::TVertexBlockResource, TVertexBlockResource_Destr
 
 MEMBER_HOOK( 0x006c0970, Toshi::TVertexBlockResource, TVertexBlockResource_CreateHAL, TBOOL )
 {
+	TPROFILER_SCOPE();
+
 	CALL_THIS( 0x006c0760, Toshi::TVertexBlockResource*, void, this ); // DestroyHAL()
 
 	remaster::RenderDX11*       pRenderer    = remaster::g_pRender;
@@ -70,6 +71,7 @@ MEMBER_HOOK( 0x006c0970, Toshi::TVertexBlockResource, TVertexBlockResource_Creat
 
 MEMBER_HOOK( 0x006c0810, Toshi::TVertexBlockResource, TVertexBlockResource_Lock, TBOOL, TVertexPoolResourceInterface::LockBuffer& a_rLockBuffer, TUINT32 a_uiNumVertices )
 {
+	TPROFILER_SCOPE();
 	remaster::RenderDX11* pRenderer = remaster::g_pRender;
 
 	const TVertexFactoryFormat& vertexFormat = m_pFactory->GetVertexFormat();
@@ -140,6 +142,7 @@ MEMBER_HOOK( 0x006c0810, Toshi::TVertexBlockResource, TVertexBlockResource_Lock,
 
 MEMBER_HOOK( 0x006c0620, Toshi::TVertexBlockResource, TVertexBlockResource_Unlock, void )
 {
+	TPROFILER_SCOPE();
 	TASSERT( 0 != m_uiLockCount );
 
 	if ( m_uiLockCount > 0 )

@@ -18,6 +18,7 @@ IncludeDir.byardsdk = "%{wks.location}/OpenBarnyard/SDK/BYardSDK/Source"
 IncludeDir.modcore = "%{wks.location}/OpenBarnyard/SDK/BYModCore/Include"
 IncludeDir.openbarnyard = "%{wks.location}/OpenBarnyard/OpenBarnyard/Source"
 IncludeDir.imgui = "%{wks.location}/ThirdParty/ImGui"
+IncludeDir.tracy = "%{wks.location}/OpenBarnyard/Utils/TracyProfiler/Source"
 IncludeDir.libssl = "%{wks.location}/OpenBarnyard/Toshi/Vendor/libssl/include"
 
 LibDir = {}

@@ -26,11 +26,36 @@ workspace "Barnyard Remastered"
 	{
 		"_CRT_SECURE_NO_WARNINGS",
 		"NOMINMAX",
-	--	"TMEMORY_USE_DLMALLOC",
-	--	"TOSHI_PROFILER",
-	--	"TOSHI_PROFILER_MEMORY",
-	--	"TRACY_ENABLE"
+		"BAN_OPCODE_AUTOLINK",
+		"ICE_NO_DLL",
+		"BARNYARD_COMMUNITY_PATCH",
 	}
+
+	-- Global settings for include dirs
+	includedirs
+	{
+		"%{IncludeDir.toshi}"
+	}
+	
+	filter "options:arch=x86"
+		architecture "x86"
+
+	filter { "options:profiler=perf or options:profiler=perfmem" }
+		defines
+		{
+			"TOSHI_PROFILER",
+			"TRACY_ENABLE"
+		}
+
+		links { "TracyProfiler" }
+
+		includedirs { "%{IncludeDir.tracy}" }
+
+	filter "options:profiler=perfmem"
+		defines { "TOSHI_PROFILER_MEMORY" }
+
+	filter "options:dlmalloc=yes"
+		defines { "TMEMORY_USE_DLMALLOC" }
 
 	-- Global Windows parameters
 	filter "system:windows"
@@ -82,3 +107,8 @@ group "Remaster"
 
 group "ThirdParty"
 	-- include "ThirdParty/ImGui"
+
+if _OPTIONS["profiler"] == 'perf' or _OPTIONS["profiler"] == 'perfmem' then
+	group "Utils"
+		include "OpenBarnyard/Utils/TracyProfiler"
+end

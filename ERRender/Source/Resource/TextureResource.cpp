@@ -39,39 +39,29 @@ MEMBER_HOOK( 0x006c0ef0, Toshi::TTextureResourceHAL, TTextureResourceHAL_CreateF
 
 MEMBER_HOOK( 0x00615bc0, Toshi::T2Texture, T2Texture_Load, HRESULT )
 {
+	TPROFILER_SCOPE();
 	TASSERT( m_pData != TNULL && m_uiDataSize != 0 );
 
-	HRESULT hRes = D3DXGetImageInfoFromFileInMemory( m_pData, m_uiDataSize, &m_ImageInfo );
+	TINT   iWidth, iHeight, iChannels;
+	TBYTE* pTexData = stbi_load_from_memory( (TBYTE*)m_pData, m_uiDataSize, &iWidth, &iHeight, &iChannels, 4 );
 
-	if ( hRes == S_OK )
-	{
-		if ( m_ImageInfo.ResourceType == D3DRTYPE_TEXTURE )
-		{
-			TINT   iWidth, iHeight, iChannels;
-			TBYTE* pTexData = stbi_load_from_memory( (TBYTE*)m_pData, m_uiDataSize, &iWidth, &iHeight, &iChannels, 4 );
+	m_ImageInfo.Width  = iWidth;
+	m_ImageInfo.Height = iHeight;
 
-			// Create D3D11 texture and write it to the structure
-			// We DON'T need to hook AMaterialLibrary::DestroyTextures, because VTable matches fine for releasing objects
+	// Create D3D11 texture and write it to the structure
+	// We DON'T need to hook AMaterialLibrary::DestroyTextures, because VTable matches fine for releasing objects
 
-			*(ID3D11ShaderResourceView**)( &m_pD3DTexture ) = remaster::dx11::CreateTexture(
-			    m_ImageInfo.Width,
-			    m_ImageInfo.Height,
-			    DXGI_FORMAT_R8G8B8A8_UNORM,
-			    pTexData,
-			    D3D11_USAGE_IMMUTABLE,
-			    0,
-			    1
-			);
+	*(ID3D11ShaderResourceView**)( &m_pD3DTexture ) = remaster::dx11::CreateTexture(
+	    m_ImageInfo.Width,
+	    m_ImageInfo.Height,
+	    DXGI_FORMAT_R8G8B8A8_UNORM,
+	    pTexData,
+	    D3D11_USAGE_IMMUTABLE,
+	    0,
+	    1
+	);
 
-			stbi_image_free( pTexData );
-		}
-		else
-		{
-			TASSERT( TFALSE );
-
-			return D3DERR_WRONGTEXTUREFORMAT;
-		}
-	}
+	stbi_image_free( pTexData );
 
 	return 0;
 }
