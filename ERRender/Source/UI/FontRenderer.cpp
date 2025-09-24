@@ -50,6 +50,9 @@ static TFLOAT GetViewportHeight()
 
 MEMBER_HOOK( 0x006c32b0, AGUI2Font, AGUI2Font_GetTextWidth, TFLOAT, const TWCHAR* a_wszText, TINT a_iTextLength, TFLOAT a_fScale )
 {
+	if ( !remaster::fontrenderer::IsHDEnabled() )
+		return CallOriginal( a_wszText, a_iTextLength, a_fScale );
+
 	TFLOAT flUICanvasWidth;
 	TFLOAT flUICanvasHeight;
 	AGUI2::GetSingleton()->GetDimensions( flUICanvasWidth, flUICanvasHeight );
@@ -63,6 +66,12 @@ MEMBER_HOOK( 0x006c32b0, AGUI2Font, AGUI2Font_GetTextWidth, TFLOAT, const TWCHAR
 
 MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TWCHAR* a_wszText, TINT a_iTextLength, TFLOAT a_fX, TFLOAT a_fY, TUINT32 a_uiColour, TFLOAT a_fScale, void* a_fnCallback )
 {
+	if ( !remaster::fontrenderer::IsHDEnabled() )
+	{
+		CallOriginal( a_wszText, a_iTextLength, a_fX, a_fY, a_uiColour, a_fScale, a_fnCallback );
+		return;
+	}
+
 	auto pUIRenderer      = remaster::g_pUIRender;
 	auto pD2DRenderTarget = remaster::g_pRender->GetD2DRenderTarget();
 	auto pD2DFactory      = remaster::g_pRender->GetD2DFactory();
@@ -120,6 +129,12 @@ MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TW
 
 MEMBER_HOOK( 0x006c3410, AGUI2Font, AGUI2Font_DrawTextWrapped, void, const TWCHAR* a_wszText, TFLOAT a_fX, TFLOAT a_fY, TFLOAT a_fWidth, TFLOAT a_fHeight, TUINT32 a_uiColour, TFLOAT a_fScale, AGUI2Font::TextAlign a_eAlign, void* a_fnCallback /*= TNULL*/ )
 {
+	if ( !remaster::fontrenderer::IsHDEnabled() )
+	{
+		CallOriginal( a_wszText, a_fX, a_fY, a_fWidth, a_fHeight, a_uiColour, a_fScale, a_eAlign, a_fnCallback );
+		return;
+	}
+
 	TFLOAT flUICanvasWidth;
 	TFLOAT flUICanvasHeight;
 
@@ -209,6 +224,9 @@ MEMBER_HOOK( 0x006c3410, AGUI2Font, AGUI2Font_DrawTextWrapped, void, const TWCHA
 
 MEMBER_HOOK( 0x006c2e10, AGUI2Font, AGUI2Font_GetTextHeightWrapped, TFLOAT, const TWCHAR* a_wszText, TFLOAT a_fMaxWidth, TFLOAT a_fScale )
 {
+	if ( !remaster::fontrenderer::IsHDEnabled() )
+		return CallOriginal( a_wszText, a_fMaxWidth, a_fScale );
+
 	TFLOAT flUICanvasWidth;
 	TFLOAT flUICanvasHeight;
 
@@ -294,6 +312,9 @@ MEMBER_HOOK( 0x006c2e10, AGUI2Font, AGUI2Font_GetTextHeightWrapped, TFLOAT, cons
 
 void remaster::SetupRenderHooks_FontRenderer()
 {
+	if ( !remaster::fontrenderer::IsHDEnabled() )
+		return;
+
 	InstallHook<AGUI2Font_DrawTextSingleLine>();
 	InstallHook<AGUI2Font_DrawTextWrapped>();
 	InstallHook<AGUI2Font_GetTextWidth>();
@@ -302,6 +323,9 @@ void remaster::SetupRenderHooks_FontRenderer()
 
 void remaster::fontrenderer::Create()
 {
+	if ( !remaster::fontrenderer::IsHDEnabled() )
+		return;
+
 	auto pD2DRenderTarget = remaster::g_pRender->GetD2DRenderTarget();
 	auto pD2DFactory      = remaster::g_pRender->GetD2DFactory();
 
@@ -335,4 +359,16 @@ void remaster::fontrenderer::Destroy()
 void remaster::fontrenderer::Update()
 {
 	fontcache::Update();
+}
+
+static TBOOL s_bHDEnabled = TTRUE;
+
+void remaster::fontrenderer::SetHDEnabled( TBOOL a_bEnabled )
+{
+	s_bHDEnabled = a_bEnabled;
+}
+
+TBOOL remaster::fontrenderer::IsHDEnabled()
+{
+	return s_bHDEnabled;
 }

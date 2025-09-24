@@ -4,6 +4,7 @@
 #include "RenderContentDX11.h"
 #include "RenderDX11Utils.h"
 #include "RenderDX11Text.h"
+#include "UI/FontRenderer.h"
 
 #include <BYardSDK/THookedRenderD3DInterface.h>
 #include <BYardSDK/SDKHooks.h>
@@ -36,7 +37,7 @@ RenderDX11::RenderDX11()
 	THookedRenderD3DInterface::SetSingleton( (TRenderD3DInterface*)this );
 
 	// Legacy states (TRenderD3DInterface)
-	m_pDirect3D	                         = TNULL;
+	m_pDirect3D                          = TNULL;
 	m_pDirectDevice                      = TNULL;
 	m_fPixelAspectRatio                  = 1.0f;
 	m_AcceleratorTable                   = TNULL;
@@ -170,10 +171,10 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		m_oSwapChainDesc.BufferDesc.RefreshRate.Denominator = 0;
 		m_oSwapChainDesc.BufferDesc.Format                  = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-		m_oSwapChainDesc.SampleDesc.Count = 1;
+		m_oSwapChainDesc.SampleDesc.Count   = 1;
 		m_oSwapChainDesc.SampleDesc.Quality = 0;
 
-		m_oSwapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+		m_oSwapChainDesc.BufferUsage  = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 		m_oSwapChainDesc.OutputWindow = m_Window.GetHWND();
 		m_oSwapChainDesc.Windowed     = pDisplayParams->bWindowed;
 		m_oSwapChainDesc.SwapEffect   = DXGI_SWAP_EFFECT_DISCARD;
@@ -283,37 +284,49 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		m_bDisplayCreated = TTRUE;
 
 		// Initialize Direct2D and DirectWrite
-		D2D1CreateFactory( D2D1_FACTORY_TYPE_SINGLE_THREADED, &m_pD2DFactory );
-		DWriteCreateFactory( DWRITE_FACTORY_TYPE_SHARED, __uuidof( IDWriteFactory ), (IUnknown**)&m_pDWFactory );
+		if ( remaster::fontrenderer::IsHDEnabled() )
+		{
+			D2D1CreateFactory( D2D1_FACTORY_TYPE_SINGLE_THREADED, &m_pD2DFactory );
+			DWriteCreateFactory( DWRITE_FACTORY_TYPE_SHARED, __uuidof( IDWriteFactory ), (IUnknown**)&m_pDWFactory );
 
-		IDXGISurface* pBackBufferSurface = nullptr;
-		m_pRenderTargetTexture->QueryInterface( __uuidof( IDXGISurface ), (void**)&pBackBufferSurface );
+			IDXGISurface* pBackBufferSurface = nullptr;
+			m_pRenderTargetTexture->QueryInterface( __uuidof( IDXGISurface ), (void**)&pBackBufferSurface );
 
-		D2D1_RENDER_TARGET_PROPERTIES rtProps = D2D1::RenderTargetProperties(
-		    D2D1_RENDER_TARGET_TYPE_DEFAULT,
-		    D2D1::PixelFormat( DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED )
-		);
+			D2D1_RENDER_TARGET_PROPERTIES rtProps = D2D1::RenderTargetProperties(
+			    D2D1_RENDER_TARGET_TYPE_DEFAULT,
+			    D2D1::PixelFormat( DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED )
+			);
 
-		DX11_API_VALIDATE( m_pD2DFactory->CreateDxgiSurfaceRenderTarget( pBackBufferSurface, &rtProps, &m_pD2DRenderTarget ) );
+			HRESULT hRes = m_pD2DFactory->CreateDxgiSurfaceRenderTarget( pBackBufferSurface, &rtProps, &m_pD2DRenderTarget );
 
-		// Create font
-		DX11_API_VALIDATE( m_pDWFactory->CreateFontFileReference(
-			L"CCThatsAllFolks.ttf",
-			TNULL,
-			&m_pDWFontFile
-		) );
-		DX11_API_VALIDATE( m_pDWFactory->CreateFontFace(
-		    DWRITE_FONT_FACE_TYPE_TRUETYPE,
-		    1,
-		    &m_pDWFontFile,
-		    0,
-		    DWRITE_FONT_SIMULATIONS_NONE,
-		    &m_pDWFontFace
-		) );
+			if ( SUCCEEDED( hRes ) && m_pD2DRenderTarget )
+			{
+				// Create font
+				DX11_API_VALIDATE( m_pDWFactory->CreateFontFileReference(
+				    L"CCThatsAllFolks.ttf",
+				    TNULL,
+				    &m_pDWFontFile
+				) );
+				DX11_API_VALIDATE( m_pDWFactory->CreateFontFace(
+				    DWRITE_FONT_FACE_TYPE_TRUETYPE,
+				    1,
+				    &m_pDWFontFile,
+				    0,
+				    DWRITE_FONT_SIMULATIONS_NONE,
+				    &m_pDWFontFace
+				) );
 
-		m_pDWFontFace->GetMetrics( &m_oFontMetrics );
-
-		pBackBufferSurface->Release();
+				// Get font metrics
+				m_pDWFontFace->GetMetrics( &m_oFontMetrics );
+				
+				// Release everything
+				pBackBufferSurface->Release();
+			}
+			else
+			{
+				remaster::fontrenderer::SetHDEnabled( TFALSE );
+			}
+		}
 
 		return TTRUE;
 	}
@@ -356,7 +369,7 @@ TBOOL RenderDX11::BeginScene()
 
 		return TTRUE;
 	}
-	
+
 	return TFALSE;
 }
 
@@ -567,7 +580,7 @@ TBOOL RenderDX11::Create( const TCHAR* a_pchWindowTitle )
 #if defined( TOSHI_DEBUG )
 		    | D3D11_CREATE_DEVICE_DEBUG
 #endif
-			;
+		    ;
 
 		BuildAdapterDatabase();
 		DX11_API_VALIDATE_EXIT( D3D11CreateDevice( NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, flags, NULL, 0, D3D11_SDK_VERSION, &m_pDevice, &m_eFeatureLevel, &m_pDeviceContext ) );
@@ -712,7 +725,7 @@ ID3D11SamplerState* RenderDX11::CreateSamplerState( D3D11_FILTER filter, D3D11_T
 	samplerDesc.MaxAnisotropy      = maxAnisotropy;
 
 	ID3D11SamplerState* pSamplerState;
-	HRESULT hRes = m_pDevice->CreateSamplerState( &samplerDesc, &pSamplerState );
+	HRESULT             hRes = m_pDevice->CreateSamplerState( &samplerDesc, &pSamplerState );
 
 	TASSERT( SUCCEEDED( hRes ) );
 
@@ -842,7 +855,7 @@ void RenderDX11::SetDepthClip( TBOOL a_bClip )
 void RenderDX11::DrawImmediately( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUINT a_iIndexCount, const void* a_pIndexData, DXGI_FORMAT a_eIndexFormat, const void* a_pVertexData, TUINT a_iStrideSize, TUINT a_iStrides )
 {
 	TINT iIndexSize = ( a_eIndexFormat == DXGI_FORMAT_R32_UINT ) ? 4 : ( ( a_eIndexFormat == DXGI_FORMAT_R16_UINT ) ? 2 : 0 );
-	
+
 	TASSERT( iIndexSize != 0 );
 
 	// Index buffer
@@ -1150,7 +1163,7 @@ void RenderDX11::BuildAdapterDatabase()
 	IDXGIFactory* pFactory = NULL;
 	CreateDXGIFactory( __uuidof( IDXGIFactory ), (void**)&pFactory );
 
-	IDXGIAdapter* pGIAdapter; 
+	IDXGIAdapter* pGIAdapter;
 	for ( UINT i = 0; pFactory->EnumAdapters( i, &pGIAdapter ) != DXGI_ERROR_NOT_FOUND; i++ )
 	{
 		RenderAdapterDX11* pAdapter = new RenderAdapterDX11();

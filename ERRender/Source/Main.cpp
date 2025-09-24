@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "RenderDX11.h"
+#include "UI/FontRenderer.h"
 
 #include <AImGUI.h>
 #include <ModLoader.h>
@@ -80,6 +81,8 @@ extern "C"
 		toshiParams.szLogAppName  = "ERRender";
 
 		TUtil::ToshiCreate( toshiParams );
+
+		remaster::fontrenderer::SetHDEnabled( !a_pCommandLine->HasParameter( "-nohdfonts" ) );
 
 		return new ERRenderMod();
 	}

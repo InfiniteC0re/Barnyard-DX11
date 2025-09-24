@@ -13,6 +13,9 @@ void Create();
 void Destroy();
 void Update();
 
+void  SetHDEnabled( TBOOL a_bEnabled );
+TBOOL IsHDEnabled();
+
 } // namespace fontrenderer
 
 } // namespace remaster
