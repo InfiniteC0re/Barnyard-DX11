@@ -46,7 +46,7 @@ void remaster::SetupRenderHooks()
 	InstallHook<TRenderD3DInterface_Create>();
 	InstallHook<TRenderD3DInterface_CreateObject>();
 	InstallHook<TRenderD3DInterface_BeginEndScene>();
-
+	
 	SetupRenderHooks_GrassShader();
 	SetupRenderHooks_SkinShader();
 	SetupRenderHooks_WorldShader();

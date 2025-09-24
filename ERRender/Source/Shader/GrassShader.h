@@ -34,6 +34,9 @@ public:
 	//-----------------------------------------------------------------------------
 	virtual AGrassMaterial* CreateMaterial( const TCHAR* a_szName ) OVERRIDE;
 	virtual AGrassMesh*     CreateMesh( const TCHAR* a_szName ) OVERRIDE;
+
+private:
+	TCHAR PADDING1[ 24 ];
 };
 
 }; // namespace remaster

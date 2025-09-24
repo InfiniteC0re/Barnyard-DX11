@@ -2,6 +2,8 @@
 #include "AGrassMesh.h"
 //#include "Assets/AModelLoader.h"
 
+#include <AHooks.h>
+
 #include <Render/TRenderInterface.h>
 
 //-----------------------------------------------------------------------------
@@ -55,8 +57,7 @@ void AGrassMesh::Invalidate()
 // $Barnyard: FUNCTION 005f7b50
 void AGrassMesh::OnDestroy()
 {
-	TASSERT( TFALSE );
-	//AModelLoader::DestroyMaterial( GetMaterial() );
+	CALL( 0x00611f50, void, TMaterial*, m_pMaterial ); // AModelLoader::DestroyMaterial( m_pMaterial );
 
 	if ( m_pVertexPool )
 	{

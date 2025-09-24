@@ -18,6 +18,7 @@ TDEFINE_CLASS_PATCHED( remaster::GrassShaderDX11, 0x0079aacc );
 
 MEMBER_HOOK( 0x005f7c10, AGrassShaderHAL, AGrassShaderHAL_Constructor, remaster::GrassShaderDX11* )
 {
+	TFree( this );
 	return new remaster::GrassShaderDX11();
 }
 

@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "AWorldMesh.h"
 
+#include <AHooks.h>
+
 #include <Render/TRenderInterface.h>
 
 //-----------------------------------------------------------------------------
@@ -42,10 +44,9 @@ void AWorldMesh::Invalidate()
 // $Barnyard: FUNCTION 005f5e90
 void AWorldMesh::OnDestroy()
 {
-	TASSERT( TFALSE );
-	//AModelLoader::DestroyMaterial( m_pMaterial );
-	DestroyResource();
+	CALL( 0x00611f50, void, TMaterial*, m_pMaterial ); // AModelLoader::DestroyMaterial( m_pMaterial );
 
+	DestroyResource();
 	BaseClass::OnDestroy();
 }
 

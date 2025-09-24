@@ -18,6 +18,9 @@ public:
 	// Toshi::TMesh
 	//-----------------------------------------------------------------------------
 	virtual TBOOL Render() OVERRIDE;
+
+private:
+	TCHAR PADDING[ 144 ];
 };
 
 } // namespace remaster

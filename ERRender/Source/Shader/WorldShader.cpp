@@ -19,6 +19,7 @@ TDEFINE_CLASS_PATCHED( remaster::WorldShaderDX11, 0x0079a980 );
 
 MEMBER_HOOK( 0x005f75e0, remaster::WorldShaderDX11, AWorldShaderHAL_Constructor, remaster::WorldShaderDX11* )
 {
+	TFree( this );
 	return new remaster::WorldShaderDX11();
 }
 

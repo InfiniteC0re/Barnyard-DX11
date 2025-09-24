@@ -1,6 +1,9 @@
 #include "pch.h"
 #include "ASkinMesh.h"
 
+#include <AHooks.h>
+#include <HookHelpers.h>
+
 #include <Render/TRenderInterface.h>
 
 //-----------------------------------------------------------------------------
@@ -65,8 +68,8 @@ TBOOL ASkinMesh::Render()
 // $Barnyard: FUNCTION 005f16c0
 void ASkinMesh::OnDestroy()
 {
-	TASSERT( TFALSE );
-	//AModelLoader::DestroyMaterial( m_pMaterial );
+	CALL( 0x00611f50, void, TMaterial*, m_pMaterial ); // AModelLoader::DestroyMaterial( m_pMaterial );
+
 	DestroyResource();
 	BaseClass::OnDestroy();
 }
