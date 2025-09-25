@@ -26,7 +26,7 @@ TOSHI_NAMESPACE_USING
 constexpr TFLOAT FONT_SCALE         = 38.0f;
 constexpr TFLOAT FONT_HEIGHT_FACTOR = 0.65f;
 
-static ID2D1StrokeStyle*                      s_pStrokeStyle;
+static ID2D1StrokeStyle* s_pStrokeStyle;
 
 static TFLOAT GetViewportX()
 {
@@ -82,11 +82,19 @@ MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TW
 	// Get view matrix from the AGUI2Renderer
 	D2D1_MATRIX_3X2_F matView;
 	matView.m11 = pUIRenderer->GetViewMatrix().m_f11;
-	matView.m12 = -pUIRenderer->GetViewMatrix().m_f12;
+	matView.m12 = pUIRenderer->GetViewMatrix().m_f12;
 	matView.m21 = pUIRenderer->GetViewMatrix().m_f21;
-	matView.m22 = -pUIRenderer->GetViewMatrix().m_f22;
+	matView.m22 = pUIRenderer->GetViewMatrix().m_f22;
 	matView.dx  = pUIRenderer->GetViewMatrix().m_f41;
-	matView.dy  = -pUIRenderer->GetViewMatrix().m_f42;
+	matView.dy  = pUIRenderer->GetViewMatrix().m_f42;
+
+	D2D1_MATRIX_3X2_F matProj;
+	matProj.m11 = pUIRenderer->GetProjectionMatrix().m_f11;
+	matProj.m12 = pUIRenderer->GetProjectionMatrix().m_f12;
+	matProj.m21 = pUIRenderer->GetProjectionMatrix().m_f21;
+	matProj.m22 = pUIRenderer->GetProjectionMatrix().m_f22;
+	matProj.dx  = pUIRenderer->GetProjectionMatrix().m_f41;
+	matProj.dy  = pUIRenderer->GetProjectionMatrix().m_f42;
 
 	TFLOAT flLineHeight = TFLOAT( remaster::g_pRender->GetFontMetrics().capHeight ) / remaster::g_pRender->GetFontMetrics().designUnitsPerEm / 72.0f * 96 * a_fScale * FONT_HEIGHT_FACTOR;
 
@@ -94,13 +102,13 @@ MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TW
 	TFLOAT flScaleYFactor = 1.0f / pUIRenderer->GetScaleY();
 
 	// Calculate transform
-	auto transform = D2D1::Matrix3x2F::Translation( a_fX, a_fY + flLineHeight ) * matView;
-	transform.m11 *= flScaleXFactor;
-	transform.m12 *= flScaleYFactor;
-	transform.m21 *= flScaleXFactor;
-	transform.m22 *= flScaleYFactor;
-	transform.dx = GetViewportX() + ( transform.dx + GetViewportWidth() * 0.5f );
-	transform.dy = GetViewportY() + ( transform.dy + GetViewportHeight() * 0.5f );
+	auto transform = ( D2D1::Matrix3x2F::Translation( a_fX, a_fY + flLineHeight ) * matView ) * matProj;
+	transform.m11 *= GetViewportWidth() * flScaleXFactor * 0.5f;
+	transform.m12 *= -GetViewportHeight() * flScaleYFactor * 0.5f;
+	transform.m21 *= GetViewportWidth() * flScaleXFactor * 0.5f;
+	transform.m22 *= -GetViewportHeight() * flScaleYFactor * 0.5f;
+	transform.dx = GetViewportX() + ( transform.dx + 1.0f ) * 0.5f * GetViewportWidth();
+	transform.dy = GetViewportY() + ( -transform.dy + 1.0f ) * 0.5f * GetViewportHeight();
 
 	// Initialise scissors rectangle
 	D2D1_RECT_F oClipRect;
