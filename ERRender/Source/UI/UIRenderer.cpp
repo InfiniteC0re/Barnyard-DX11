@@ -143,6 +143,8 @@ void remaster::UIRendererDX11::BeginScene()
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
 	g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
 	g_pRender->SetZMode( g_pRender->IsZEnabled(), D3D11_COMPARISON_ALWAYS, D3D11_DEPTH_WRITE_MASK_ZERO );
+	
+	SetColour( TCOLOR( 255, 255, 255 ) );
 }
 
 void remaster::UIRendererDX11::EndScene()

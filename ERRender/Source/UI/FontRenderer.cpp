@@ -24,7 +24,6 @@
 TOSHI_NAMESPACE_USING
 
 constexpr TFLOAT FONT_SCALE         = 38.0f;
-constexpr TFLOAT FONT_HEIGHT_FACTOR = 0.65f;
 
 static ID2D1StrokeStyle* s_pStrokeStyle;
 
@@ -96,17 +95,17 @@ MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TW
 	matProj.dx  = pUIRenderer->GetProjectionMatrix().m_f41;
 	matProj.dy  = pUIRenderer->GetProjectionMatrix().m_f42;
 
-	TFLOAT flLineHeight = TFLOAT( remaster::g_pRender->GetFontMetrics().capHeight ) / remaster::g_pRender->GetFontMetrics().designUnitsPerEm / 72.0f * 96 * a_fScale * FONT_HEIGHT_FACTOR;
+	TFLOAT flLineHeight = ( TFLOAT( remaster::g_pRender->GetFontMetrics().xHeight ) / remaster::g_pRender->GetFontMetrics().designUnitsPerEm ) / 72.0f * 96 * a_fScale;
 
-	TFLOAT flScaleXFactor = 1.0f / pUIRenderer->GetScaleX();
-	TFLOAT flScaleYFactor = 1.0f / pUIRenderer->GetScaleY();
+	TFLOAT flScaleXFactor = 1.0f / pUIRenderer->GetScaleX() * 0.5f;
+	TFLOAT flScaleYFactor = 1.0f / pUIRenderer->GetScaleY() * 0.5f;
 
 	// Calculate transform
 	auto transform = ( D2D1::Matrix3x2F::Translation( a_fX, a_fY + flLineHeight ) * matView ) * matProj;
-	transform.m11 *= GetViewportWidth() * flScaleXFactor * 0.5f;
-	transform.m12 *= -GetViewportHeight() * flScaleYFactor * 0.5f;
-	transform.m21 *= GetViewportWidth() * flScaleXFactor * 0.5f;
-	transform.m22 *= -GetViewportHeight() * flScaleYFactor * 0.5f;
+	transform.m11 *= GetViewportWidth() * flScaleXFactor;
+	transform.m12 *= -GetViewportHeight() * flScaleYFactor;
+	transform.m21 *= GetViewportWidth() * flScaleXFactor;
+	transform.m22 *= -GetViewportHeight() * flScaleYFactor;
 	transform.dx = GetViewportX() + ( transform.dx + 1.0f ) * 0.5f * GetViewportWidth();
 	transform.dy = GetViewportY() + ( -transform.dy + 1.0f ) * 0.5f * GetViewportHeight();
 
