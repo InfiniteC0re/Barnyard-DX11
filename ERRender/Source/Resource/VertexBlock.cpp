@@ -41,18 +41,18 @@ MEMBER_HOOK( 0x006c0970, Toshi::TVertexBlockResource, TVertexBlockResource_Creat
 
 	for ( TUINT i = 0; i < m_HALBuffer.uiNumStreams; i++ )
 	{
-		D3D11_USAGE usage = D3D11_USAGE_DEFAULT;
+		D3D11_USAGE usage = D3D11_USAGE_DYNAMIC;
 
 		if ( ISZERO( m_uiFlags & 1 ) )
 		{
-			usage      = D3D11_USAGE_DYNAMIC;
+			//usage      = D3D11_USAGE_DYNAMIC;
 			m_uiOffset = 0;
 		}
 
 		D3D11_BUFFER_DESC bufferDesc;
 		bufferDesc.ByteWidth           = vertexFormat.m_aStreamFormats[ i ].m_uiVertexSize * m_uiMaxVertices;
 		bufferDesc.Usage               = usage;
-		bufferDesc.BindFlags           = D3D11_BIND_VERTEX_BUFFER;
+		bufferDesc.BindFlags           = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_VERTEX_BUFFER;
 		bufferDesc.CPUAccessFlags      = D3D11_CPU_ACCESS_WRITE;
 		bufferDesc.MiscFlags           = 0;
 		bufferDesc.StructureByteStride = vertexFormat.m_aStreamFormats[ i ].m_uiVertexSize;
@@ -83,7 +83,7 @@ MEMBER_HOOK( 0x006c0810, Toshi::TVertexBlockResource, TVertexBlockResource_Lock,
 
 	if ( uiUnk1 == 1 )
 	{
-		uiFlags                = D3D11_MAP_WRITE;
+		uiFlags                = D3D11_MAP_WRITE_DISCARD;
 		a_rLockBuffer.uiOffset = 0;
 	}
 	else
