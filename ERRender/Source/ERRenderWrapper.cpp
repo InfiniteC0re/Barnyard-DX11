@@ -41,12 +41,23 @@ MEMBER_HOOK( 0x006c58e0, remaster::RenderDX11, TRenderD3DInterface_BeginEndScene
 {
 }
 
+MEMBER_HOOK( 0x006be990, remaster::RenderDX11, TRenderD3DInterface_FlushShaders, void )
+{
+	FlushOrderTables();
+
+	for ( auto it = TShader::sm_oShaderList.GetRootShader(); it != TNULL; it = it->GetNextShader() )
+	{
+		it->Flush();
+	}
+}
+
 void remaster::SetupRenderHooks()
 {
 	InstallHook<TRenderD3DInterface_Create>();
 	InstallHook<TRenderD3DInterface_CreateObject>();
 	InstallHook<TRenderD3DInterface_BeginEndScene>();
-	
+	InstallHook<TRenderD3DInterface_FlushShaders>();
+
 	SetupRenderHooks_GrassShader();
 	SetupRenderHooks_SkinShader();
 	SetupRenderHooks_WorldShader();

@@ -42,11 +42,10 @@ MEMBER_HOOK( 0x00615bc0, Toshi::T2Texture, T2Texture_Load, HRESULT )
 	TPROFILER_SCOPE();
 	TASSERT( m_pData != TNULL && m_uiDataSize != 0 );
 
+	HRESULT hRes = D3DXGetImageInfoFromFileInMemory( m_pData, m_uiDataSize, &m_ImageInfo );
+
 	TINT   iWidth, iHeight, iChannels;
 	TBYTE* pTexData = stbi_load_from_memory( (TBYTE*)m_pData, m_uiDataSize, &iWidth, &iHeight, &iChannels, 4 );
-
-	m_ImageInfo.Width  = iWidth;
-	m_ImageInfo.Height = iHeight;
 
 	// Create D3D11 texture and write it to the structure
 	// We DON'T need to hook AMaterialLibrary::DestroyTextures, because VTable matches fine for releasing objects

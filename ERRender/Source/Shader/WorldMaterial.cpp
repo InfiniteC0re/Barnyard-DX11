@@ -2,6 +2,9 @@
 #include "WorldMaterial.h"
 #include "WorldShader.h"
 #include "Resource/ClassPatcher.h"
+#include "RenderDX11.h"
+
+#include <Platform/DX8/TTextureResourceHAL_DX8.h>
 
 #include <Toshi/TScheduler.h>
 
@@ -54,6 +57,27 @@ void remaster::WorldMaterial::OnDestroy()
 
 void remaster::WorldMaterial::PreRender()
 {
+	// Setup textures
+	for ( TUINT i = 0; i < TARRAYSIZE( m_aTextures ); i++ )
+	{
+		auto pTexture = TSTATICCAST( TTextureResourceHAL, m_aTextures[ i ] );
+
+		if ( pTexture == TNULL )
+		{
+			g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 0, 0, TNULL );
+		}
+		else
+		{
+			pTexture->Validate();
+			auto pD3DTexture = (ID3D11ShaderResourceView*)pTexture->GetD3DTexture();
+
+			if ( pD3DTexture )
+				g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 0, 1, &pD3DTexture );
+
+			g_pRender->SetSamplerState( i, 3, TTRUE );
+		}
+	}
+
 	// Animate UV
 	TFLOAT fDeltaTime = Toshi::g_oSystemManager.GetScheduler()->GetCurrentDeltaTime();
 	m_fUVAnimX += fDeltaTime * m_fUVAnimSpeedX;
@@ -89,11 +113,31 @@ void remaster::WorldMaterial::PreRender()
 	m_aHasUVOffsets[ 0 ] = TTRUE;
 	m_aUVOffsetsX[ 0 ]   = m_fUVAnimX;
 	m_aUVOffsetsY[ 0 ]   = m_fUVAnimY;
+
+	// Apply blend settings
+	switch ( m_eBlendMode )
+	{
+		case 1:
+			g_pRender->SetBlendMode( g_pRender->IsBlendEnabled(), g_pRender->GetBlendOp(), D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
+			g_pRender->SetDepthWrite( TFALSE );
+			break;
+		case 3:
+			g_pRender->SetBlendMode( g_pRender->IsBlendEnabled(), g_pRender->GetBlendOp(), D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ONE );
+			g_pRender->SetDepthWrite( TFALSE );
+			break;
+		default:
+			g_pRender->SetBlendMode( g_pRender->IsBlendEnabled(), g_pRender->GetBlendOp(), D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
+			g_pRender->SetDepthWrite( TTRUE );
+			break;
+	}
+
+	g_pRender->SetCullMode( D3D11_CULL_NONE );
 }
 
 void remaster::WorldMaterial::PostRender()
 {
-	
+	g_pRender->SetBlendEnabled( TTRUE );
+	g_pRender->SetDepthWrite( TTRUE );
 }
 
 TBOOL remaster::WorldMaterial::Create( BLENDMODE a_eBlendMode )

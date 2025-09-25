@@ -145,10 +145,13 @@ void remaster::UIRendererDX11::BeginScene()
 	g_pRender->SetZMode( g_pRender->IsZEnabled(), D3D11_COMPARISON_ALWAYS, D3D11_DEPTH_WRITE_MASK_ZERO );
 	
 	SetColour( TCOLOR( 255, 255, 255 ) );
+	m_pMaterial = TNULL;
 }
 
 void remaster::UIRendererDX11::EndScene()
 {
+	g_pRender->SetZMode( g_pRender->IsZEnabled(), D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
+
 	// Run garbage collection of unused font renderer objects
 	fontrenderer::Update();
 }

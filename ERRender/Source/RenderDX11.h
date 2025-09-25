@@ -243,6 +243,7 @@ public:
 	void SetDepthClip( TBOOL a_bClip );
 
 	D3D11_BLEND_OP GetBlendOp() const { return m_BlendState.Parts.BlendOp; }
+	TBOOL          IsBlendEnabled() const { return m_BlendState.Parts.bBlendEnabled; }
 	TBOOL          IsZEnabled() const { return m_DepthState.first.Parts.bDepthEnable; }
 
 	void DrawImmediately( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUINT a_iIndexCount, const void* a_pIndexData, DXGI_FORMAT a_eFormat, const void* a_pVertexData, TUINT a_iStrideSize, TUINT a_iStrides );

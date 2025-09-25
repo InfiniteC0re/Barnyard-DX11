@@ -3,6 +3,19 @@
 #include "WorldMaterial.h"
 #include "WorldMesh.h"
 #include "Resource/ClassPatcher.h"
+#include "Ref/AWorld.h"
+
+#include "RenderDX11.h"
+#include "RenderDX11Utils.h"
+#include "RenderContentDX11.h"
+
+#include <Render/TRenderPacket.h>
+#include <Platform/DX8/TRenderInterface_DX8.h>
+#include <Platform/DX8/TRenderContext_DX8.h>
+#include <Platform/DX8/TVertexBlockResource_DX8.h>
+#include <Platform/DX8/TVertexPoolResource_DX8.h>
+#include <Platform/DX8/TIndexBlockResource_DX8.h>
+#include <Platform/DX8/TIndexPoolResource_DX8.h>
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -46,14 +59,28 @@ remaster::WorldShaderDX11::~WorldShaderDX11()
 
 void remaster::WorldShaderDX11::Flush()
 {
+	g_pRender->SetDepthWrite( TTRUE );
+	g_pRender->SetBlendEnabled( TTRUE );
+	g_pRender->SetCullMode( TFALSE ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
 }
 
 void remaster::WorldShaderDX11::StartFlush()
 {
+	if ( !IsValidated() ) return;
+
+	g_pRender->SetDepthWrite( TTRUE );
+	g_pRender->SetBlendEnabled( TTRUE );
+	g_pRender->SetCullMode( TFALSE ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
+
+	g_pRender->GetD3D11DeviceContext()->IASetInputLayout( m_pInputLayout );
+	g_pRender->GetD3D11DeviceContext()->PSSetShader( m_pPixelShader, TNULL, 0 );
+	g_pRender->GetD3D11DeviceContext()->VSSetShader( m_pVertexShader, TNULL, 0 );
 }
 
 void remaster::WorldShaderDX11::EndFlush()
 {
+	g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 0, 0, NULL );
+	g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 1, 0, NULL );
 }
 
 TBOOL remaster::WorldShaderDX11::Create()
@@ -72,6 +99,35 @@ TBOOL remaster::WorldShaderDX11::Create()
 
 TBOOL remaster::WorldShaderDX11::Validate()
 {
+	if ( IsValidated() )
+		return TTRUE;
+
+	m_pVSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\World.hlsl", "vs_main", "vs_5_0", TNULL );
+	m_pPSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\World.hlsl", "ps_main", "ps_5_0", TNULL );
+
+	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob );
+	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_pVertexShader ) );
+	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob->GetBufferPointer(), m_pPSShaderBlob->GetBufferSize(), &m_pPixelShader ) );
+
+	D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
+		{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+		{ .SemanticName = "NORMAL", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+		{ .SemanticName = "COLOR", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+		{ .SemanticName = "TEXCOORD", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32_FLOAT, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+	};
+
+	DX11_API_VALIDATE(
+	    g_pRender->GetD3D11Device()->CreateInputLayout(
+	        aInputElements,
+	        TARRAYSIZE( aInputElements ),
+	        m_pVSShaderBlob->GetBufferPointer(),
+	        m_pVSShaderBlob->GetBufferSize(),
+	        &m_pInputLayout
+	    )
+	);
+	
+	BaseClass::Validate();
+
 	return TFALSE;
 }
 
@@ -91,6 +147,45 @@ TBOOL remaster::WorldShaderDX11::TryValidate()
 
 void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 {
+	if ( !a_pRenderPacket || !a_pRenderPacket->GetMesh() ) return;
+
+	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
+	AWorldMeshHAL*      pMesh           = TSTATICCAST( AWorldMeshHAL, a_pRenderPacket->GetMesh() );
+	auto                pMaterial       = TSTATICCAST( AWorldMaterialHAL, pMesh->GetMaterial() );
+
+	if ( pMaterial->GetBlendMode() != 0 || a_pRenderPacket->GetAlpha() < 1.0f )
+		g_pRender->SetBlendEnabled( TTRUE );
+	else
+		g_pRender->SetBlendEnabled( TFALSE );
+
+	TMatrix44 mMVP;
+	mMVP.Multiply( pCurrentContext->GetProjectionMatrix(), a_pRenderPacket->GetModelViewMatrix() );
+
+	g_pRender->VSBufferSetVec4( 0, &mMVP, 4 );
+
+	// Set vertices
+	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
+	TIndexPoolResource*  pIndexPool  = TSTATICCAST( TIndexPoolResource, pMesh->GetSubMesh( 0 )->pIndexPool );
+	TVALIDPTR( pVertexPool );
+	TVALIDPTR( pIndexPool );
+
+	TVertexBlockResource::HALBuffer vertexBuffer;
+	CALL_THIS( 0x006d6660, TVertexPoolResource*, TBOOL, pVertexPool, TVertexBlockResource::HALBuffer&, vertexBuffer ); // pVertexPool->GetHALBuffer( &vertexBuffer );
+
+	TIndexBlockResource::HALBuffer indexBuffer;
+	CALL_THIS( 0x006d6180, TIndexPoolResource*, TBOOL, pIndexPool, TIndexBlockResource::HALBuffer&, indexBuffer ); // pIndexPool->GetHALBuffer( &indexBuffer );
+
+	// Draw mesh
+	g_pRender->DrawIndexed(
+	    D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
+	    pIndexPool->GetNumIndices(),
+	    (ID3D11Buffer*)indexBuffer.pIndexBuffer,
+	    indexBuffer.uiIndexOffset * 2,
+	    DXGI_FORMAT_R16_UINT,
+	    (ID3D11Buffer*)vertexBuffer.apVertexBuffers[ 0 ],
+	    sizeof( WorldVertex ),
+	    vertexBuffer.uiVertexOffset * sizeof(WorldVertex)
+	);
 }
 
 void remaster::WorldShaderDX11::EnableRenderEnvMap( TBOOL a_bEnable )

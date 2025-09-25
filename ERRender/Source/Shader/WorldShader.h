@@ -1,6 +1,8 @@
 #pragma once
 #include "Ref/AWorldShader/AWorldShader_DX8.h"
 
+#include <d3d11.h>
+
 namespace remaster
 {
 
@@ -91,6 +93,12 @@ private:
 	TBOOL                      m_bUnkFlag4;
 	Toshi::TVector4            m_ShadowColour;
 	Toshi::TVector4            m_AmbientColour;
+
+	ID3D11InputLayout*  m_pInputLayout;
+	ID3DBlob*           m_pVSShaderBlob;
+	ID3D11VertexShader* m_pVertexShader;
+	ID3DBlob*           m_pPSShaderBlob;
+	ID3D11PixelShader*  m_pPixelShader;
 };
 
 }; // namespace remaster
