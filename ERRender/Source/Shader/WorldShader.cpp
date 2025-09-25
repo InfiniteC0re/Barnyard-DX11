@@ -79,8 +79,9 @@ void remaster::WorldShaderDX11::StartFlush()
 
 void remaster::WorldShaderDX11::EndFlush()
 {
-	g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 0, 0, NULL );
-	g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 1, 0, NULL );
+	ID3D11ShaderResourceView* pNullTex = TNULL;
+	g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 0, 1, &pNullTex );
+	g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 1, 1, &pNullTex );
 }
 
 TBOOL remaster::WorldShaderDX11::Create()

@@ -38,12 +38,14 @@ remaster::UIRendererDX11::UIRendererDX11()
 	m_iTransformCount   = 0;
 	m_bIsTransformDirty = TFALSE;
 
-	m_pVSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "vs_main", "vs_5_0", TNULL );
-	m_pPSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main", "ps_5_0", TNULL );
+	m_pVSShaderBlob      = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "vs_main", "vs_5_0", TNULL );
+	m_pPSShaderBlob      = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main", "ps_5_0", TNULL );
+	m_pPSShaderNoImgBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main_noimg", "ps_5_0", TNULL );
 
 	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob );
 	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_pVertexShader ) );
 	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob->GetBufferPointer(), m_pPSShaderBlob->GetBufferSize(), &m_pPixelShader ) );
+	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderNoImgBlob->GetBufferPointer(), m_pPSShaderNoImgBlob->GetBufferSize(), &m_pPixelNoImgShader ) );
 
 	D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
 		{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
@@ -136,7 +138,7 @@ void remaster::UIRendererDX11::BeginScene()
 	rTransform.m_aMatrixRows[ 1 ] = { 0.0f, -TFLOAT( pDisplayParams->uiHeight ) / fRootHeight };
 	rTransform.m_vecTranslation   = { 0.0f, 0.0f };
 
-	g_pRender->GetD3D11DeviceContext()->PSSetShader( m_pPixelShader, TNULL, 0 );
+	g_pRender->GetD3D11DeviceContext()->PSSetShader( m_pPixelNoImgShader, TNULL, 0 );
 	g_pRender->GetD3D11DeviceContext()->VSSetShader( m_pVertexShader, TNULL, 0 );
 	g_pRender->GetD3D11DeviceContext()->IASetInputLayout( m_pInputLayout );
 
@@ -190,6 +192,7 @@ void remaster::UIRendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
 
 	if ( a_pMaterial == TNULL )
 	{
+		g_pRender->GetD3D11DeviceContext()->PSSetShader( m_pPixelNoImgShader, TNULL, 0 );
 		g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
 	}
 	else
@@ -256,6 +259,8 @@ void remaster::UIRendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
 		{
 			g_pRender->SetSamplerState( 0, 3, TTRUE );
 		}
+		
+		g_pRender->GetD3D11DeviceContext()->PSSetShader( m_pPixelShader, TNULL, 0 );
 	}
 
 	m_pMaterial = a_pMaterial;

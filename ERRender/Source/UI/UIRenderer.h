@@ -88,8 +88,11 @@ private:
 	ID3D11InputLayout*  m_pInputLayout;
 	ID3DBlob*           m_pVSShaderBlob;
 	ID3D11VertexShader* m_pVertexShader;
+
 	ID3DBlob*           m_pPSShaderBlob;
 	ID3D11PixelShader*  m_pPixelShader;
+	ID3DBlob*           m_pPSShaderNoImgBlob;
+	ID3D11PixelShader*  m_pPixelNoImgShader;
 
 	Toshi::TMatrix44 m_matProjection;
 	Toshi::TMatrix44 m_matView;
