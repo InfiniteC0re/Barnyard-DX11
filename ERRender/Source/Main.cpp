@@ -20,6 +20,8 @@ TOSHI_NAMESPACE_USING
 
 class ERRenderMod : public AModInstance
 {
+	TBOOL m_bDebugFontAtlas = TFALSE;
+
 public:
 	TBOOL OnLoad() OVERRIDE
 	{
@@ -52,20 +54,40 @@ public:
 
 	void OnImGuiRender( AImGUI* a_pImGui ) OVERRIDE
 	{
+		ImGui::Checkbox( "Enabled Font Atlas Debugging", &m_bDebugFontAtlas );
 	}
 
 	virtual void OnImGuiRenderOverlay( AImGUI* a_pImGui )
 	{
+		if ( m_bDebugFontAtlas )
+		{
+			ImGui::SetNextWindowPos( ImVec2( 16.0f, 16.0f ), ImGuiCond_Appearing );
+			ImGui::Begin(
+			    "Font Atlas Debugging",
+			    TNULL,
+			    ImGuiWindowFlags_NoSavedSettings
+			);
+			{
+				remaster::FontAtlas*      pFontAtlas         = remaster::g_pRender->GetFontAtlas();
+				ID3D11ShaderResourceView* pFontAtlasResource = pFontAtlas->GetTextureResource();
+
+				ImVec2 vContentSize = ImGui::GetContentRegionAvail();
+				TFLOAT flImageSize  = vContentSize.x;
+				ImGui::Image( pFontAtlasResource, ImVec2( flImageSize, flImageSize ) );
+
+				ImGui::End();
+			}
+		}
 	}
 
 	TBOOL HasSettingsUI() OVERRIDE
 	{
-		return TFALSE;
+		return TTRUE;
 	}
 
 	virtual TBOOL IsOverlayVisible() OVERRIDE
 	{
-		return TFALSE;
+		return TTRUE;
 	}
 };
 

@@ -370,13 +370,13 @@ private:
 	DXGI_SWAP_CHAIN_DESC    m_oSwapChainDesc;
 
 	// DirectWrite
-	ID2D1RenderTarget*      m_pD2DRenderTarget = TNULL;
-	IDWriteFactory*         m_pDWFactory       = TNULL;
-	ID2D1Factory*           m_pD2DFactory      = TNULL;
-	IDWriteFontFile*        m_pDWFontFile      = TNULL;
-	IDWriteFontFace*        m_pDWFontFace      = TNULL;
+	ID2D1RenderTarget*        m_pD2DRenderTarget = TNULL;
+	IDWriteFactory*           m_pDWFactory       = TNULL;
+	ID2D1Factory*             m_pD2DFactory      = TNULL;
+	IDWriteFontFile*          m_pDWFontFile      = TNULL;
+	IDWriteFontFace*          m_pDWFontFace      = TNULL;
 	ID3D11ShaderResourceView* m_pTextAtlasSRV    = TNULL;
-	DWRITE_FONT_METRICS     m_oFontMetrics;
+	DWRITE_FONT_METRICS       m_oFontMetrics;
 	FontAtlas*                m_pFontAtlas;
 	
 	// Buffers
