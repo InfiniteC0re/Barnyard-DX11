@@ -1,4 +1,6 @@
 #pragma once
+#include "UI/FontAtlas.h"
+
 #include <Toshi/TDList.h>
 #include <Toshi/T2Pair.h>
 #include <Toshi/T2Map.h>
@@ -39,8 +41,8 @@ public:
 	static constexpr TSIZE VERTEX_CONSTANT_BUFFER_SIZE  = 0x1000;
 	static constexpr TSIZE PIXEL_CONSTANT_BUFFER_SIZE   = 0x400;
 	static constexpr TSIZE NUMBUFFERS                   = 16;
-	static constexpr TSIZE IMMEDIATE_VERTEX_BUFFER_SIZE = 0x100000;
-	static constexpr TSIZE IMMEDIATE_INDEX_BUFFER_SIZE  = 0x10000;
+	static constexpr TSIZE IMMEDIATE_VERTEX_BUFFER_SIZE = 0x100;
+	static constexpr TSIZE IMMEDIATE_INDEX_BUFFER_SIZE  = 0x10;
 
 	typedef TUINT8 BlendMode;
 	enum BlendMode_ : BlendMode
@@ -256,6 +258,55 @@ public:
 	void UpdateRenderStates();
 	void FlushConstantBuffers();
 
+	void SetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY a_eCurrentTopology )
+	{
+		if ( m_eCurrentTopology != a_eCurrentTopology )
+		{
+			m_eCurrentTopology = a_eCurrentTopology;
+			m_pDeviceContext->IASetPrimitiveTopology( a_eCurrentTopology );
+		}
+	}
+
+	void SetVertexBuffer( ID3D11Buffer* a_pVertexBuffer, TUINT a_uiStride, TUINT a_uiOffset )
+	{
+		if ( a_pVertexBuffer != m_pCurrentVertexBuffer || a_uiStride != m_uiVBCurrentStride || a_uiOffset != m_uiVBCurrentOffset )
+		{
+			m_pDeviceContext->IASetVertexBuffers( 0, 1, &a_pVertexBuffer, &a_uiStride, &a_uiOffset );
+			m_pCurrentVertexBuffer = a_pVertexBuffer;
+			m_uiVBCurrentStride      = a_uiStride;
+			m_uiVBCurrentOffset      = a_uiOffset;
+		}
+	}
+
+	void SetIndexBuffer( ID3D11Buffer* a_pIndexBuffer, DXGI_FORMAT a_eFormat, TUINT a_uiOffset )
+	{
+		if ( a_pIndexBuffer != m_pCurrentIndexBuffer || a_eFormat != m_eIBCurrentFormat || a_uiOffset != m_uiIBCurrentOffset )
+		{
+			m_pDeviceContext->IASetIndexBuffer( a_pIndexBuffer, a_eFormat, a_uiOffset );
+			m_pCurrentIndexBuffer = a_pIndexBuffer;
+			m_eIBCurrentFormat    = a_eFormat;
+			m_uiIBCurrentOffset   = a_uiOffset;
+		}
+	}
+
+	void VSSetConstantBuffer( TINT a_iSlot, ID3D11Buffer* a_pBuffer )
+	{
+		if ( m_aVSCurrentConstantBuffers[ a_iSlot ] != a_pBuffer )
+		{
+			m_pDeviceContext->VSSetConstantBuffers( a_iSlot, 1, &a_pBuffer );
+			m_aVSCurrentConstantBuffers[ a_iSlot ] = a_pBuffer;
+		}
+	}
+
+	void PSSetConstantBuffer( TINT a_iSlot, ID3D11Buffer* a_pBuffer )
+	{
+		if ( m_aPSCurrentConstantBuffers[ a_iSlot ] != a_pBuffer )
+		{
+			m_pDeviceContext->PSSetConstantBuffers( a_iSlot, 1, &a_pBuffer );
+			m_aPSCurrentConstantBuffers[ a_iSlot ] = a_pBuffer;
+		}
+	}
+
 public:
 	//-----------------------------------------------------------------------------
 	// Main Getters/Setters
@@ -278,12 +329,16 @@ public:
 	TFLOAT GetSurfaceWidth() const { return TFLOAT( m_oSwapChainDesc.BufferDesc.Width ); }
 	TFLOAT GetSurfaceHeight() const { return TFLOAT( m_oSwapChainDesc.BufferDesc.Height ); }
 
+	FontAtlas* GetFontAtlas() const { return m_pFontAtlas; }
+
 private:
 	void BuildAdapterDatabase();
 
 private:
-	IDirect3D8*                          m_pDirect3D;     // Direct3D interface
-	IDirect3DDevice8*                    m_pDirectDevice; // Direct3D device
+	ID3D11Device*                        m_pDevice        = TNULL; // NOTE: DUE TO COMPATIBILITY, IT NEEDS TO BE AT THIS OFFSET!!!
+	ID3D11DeviceContext*                 m_pDeviceContext = TNULL; // NOTE: DUE TO COMPATIBILITY, IT NEEDS TO BE AT THIS OFFSET!!!
+
+	// Things left from TRenderD3DInterface (D3D8)
 	TBYTE                                PADDING1[ 84 ];
 	TFLOAT                               m_fPixelAspectRatio;               // Pixel aspect ratio
 	HACCEL                               m_AcceleratorTable;                // Accelerator table
@@ -307,8 +362,6 @@ private:
 
 	// D3D11 main objects
 	D3D_FEATURE_LEVEL       m_eFeatureLevel;
-	ID3D11Device*           m_pDevice              = TNULL;
-	ID3D11DeviceContext*    m_pDeviceContext       = TNULL;
 	IDXGISwapChain*         m_pSwapChain           = TNULL;
 	ID3D11RenderTargetView* m_pRenderTargetView    = TNULL;
 	ID3D11Texture2D*        m_pRenderTargetTexture = TNULL;
@@ -317,18 +370,21 @@ private:
 	DXGI_SWAP_CHAIN_DESC    m_oSwapChainDesc;
 
 	// DirectWrite
-	ID2D1RenderTarget*  m_pD2DRenderTarget = TNULL;
-	IDWriteFactory*     m_pDWFactory       = TNULL;
-	ID2D1Factory*       m_pD2DFactory      = TNULL;
-	IDWriteFontFile*    m_pDWFontFile      = TNULL;
-	IDWriteFontFace*    m_pDWFontFace      = TNULL;
-	DWRITE_FONT_METRICS m_oFontMetrics;
+	ID2D1RenderTarget*      m_pD2DRenderTarget = TNULL;
+	IDWriteFactory*         m_pDWFactory       = TNULL;
+	ID2D1Factory*           m_pD2DFactory      = TNULL;
+	IDWriteFontFile*        m_pDWFontFile      = TNULL;
+	IDWriteFontFace*        m_pDWFontFace      = TNULL;
+	ID3D11ShaderResourceView* m_pTextAtlasSRV    = TNULL;
+	DWRITE_FONT_METRICS     m_oFontMetrics;
+	FontAtlas*                m_pFontAtlas;
 	
 	// Buffers
 	void*         m_pVertexConstantBuffer;
 	TBOOL         m_IsVertexConstantBufferSet;
 	ID3D11Buffer* m_VertexBuffers[ NUMBUFFERS ];
 	TSIZE         m_VertexBufferIndex;
+	TSIZE         m_VertexBufferWrittenSize;
 
 	void* m_pPixelConstantBuffer;
 	TBOOL m_IsPixelConstantBufferSet;
@@ -362,6 +418,19 @@ private:
 	TFLOAT                                      m_aCurrentBlendFactor[ 4 ];
 	BlendState                                  m_PreviousBlendState;
 	TFLOAT                                      m_PreviousBlendFactor[ 4 ];
+
+	// Device states
+	D3D11_PRIMITIVE_TOPOLOGY m_eCurrentTopology;
+	ID3D11Buffer*            m_pCurrentVertexBuffer;
+	TUINT                    m_uiVBCurrentStride;
+	TUINT                    m_uiVBCurrentOffset;
+
+	ID3D11Buffer* m_pCurrentIndexBuffer;
+	DXGI_FORMAT   m_eIBCurrentFormat;
+	TUINT         m_uiIBCurrentOffset;
+
+	ID3D11Buffer* m_aVSCurrentConstantBuffers[ 16 ];
+	ID3D11Buffer* m_aPSCurrentConstantBuffers[ 16 ];
 };
 
 extern RenderDX11* g_pRender;

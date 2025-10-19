@@ -20,14 +20,22 @@ ID3D11Buffer* CreateBuffer(
     TUINT       a_eCPUAccessFlags
 );
 
+using CreateTextureFlags = TUINT32;
+enum : CreateTextureFlags
+{
+	CTF_RENDER_NONE   = 0,
+	CTF_RENDER_TARGET = BITFLAG( 0 )
+};
+
 ID3D11ShaderResourceView* CreateTexture(
-    TUINT       a_uiWidth,
-    TUINT       a_uiHeight,
-    DXGI_FORMAT a_eFormat,
-    const void* a_pData,
-    D3D11_USAGE a_eUsage,
-    TUINT32     a_eCPUAccessFlags,
-    TUINT32     a_uiSampleDescCount
+    TUINT              a_uiWidth,
+    TUINT              a_uiHeight,
+    DXGI_FORMAT        a_eFormat,
+    const void*        a_pData,
+    D3D11_USAGE        a_eUsage,
+    TUINT32            a_eCPUAccessFlags,
+    TUINT32            a_uiSampleDescCount,
+    CreateTextureFlags a_eFlags = CTF_RENDER_NONE
 );
 
 TINT GetTextureRowPitch( DXGI_FORMAT a_eFormat, TUINT a_uiWidth );

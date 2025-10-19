@@ -64,7 +64,7 @@ void remaster::WorldMaterial::PreRender()
 
 		if ( pTexture == TNULL )
 		{
-			g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 0, 0, TNULL );
+			//g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 0, 0, TNULL );
 		}
 		else
 		{

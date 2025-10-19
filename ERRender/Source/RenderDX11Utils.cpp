@@ -19,7 +19,7 @@ ID3DBlob* remaster::dx11::CompileShader( const TCHAR* a_pchSrcData, LPCSTR a_pEn
 	ID3DBlob* pShaderBlob = TNULL;
 	ID3DBlob* pErrorBlob  = TNULL;
 
-	HRESULT hRes = D3DCompile( a_pchSrcData, srcLength, NULL, a_pDefines, NULL, a_pEntrypoint, a_pTarget, D3DCOMPILE_PACK_MATRIX_ROW_MAJOR | D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY, 0, &pShaderBlob, &pErrorBlob );
+	HRESULT hRes = D3DCompile( a_pchSrcData, srcLength, NULL, a_pDefines, NULL, a_pEntrypoint, a_pTarget, D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_PACK_MATRIX_ROW_MAJOR | D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY, 0, &pShaderBlob, &pErrorBlob );
 
 	if ( !SUCCEEDED( hRes ) )
 	{
@@ -106,7 +106,7 @@ ID3D11Buffer* remaster::dx11::CreateBuffer( TUINT a_uiFlags, TUINT a_uiDataSize,
 	return pBuffer;
 }
 
-ID3D11ShaderResourceView* remaster::dx11::CreateTexture( TUINT a_uiWidth, TUINT a_uiHeight, DXGI_FORMAT a_eFormat, const void* a_pData, D3D11_USAGE a_eUsage, TUINT32 a_eCPUAccessFlags, TUINT32 a_uiSampleDescCount )
+ID3D11ShaderResourceView* remaster::dx11::CreateTexture( TUINT a_uiWidth, TUINT a_uiHeight, DXGI_FORMAT a_eFormat, const void* a_pData, D3D11_USAGE a_eUsage, TUINT32 a_eCPUAccessFlags, TUINT32 a_uiSampleDescCount, CreateTextureFlags a_eFlags )
 {
 	D3D11_SUBRESOURCE_DATA subResourceData = {};
 	D3D11_TEXTURE2D_DESC   textureDesc     = {};
@@ -122,6 +122,9 @@ ID3D11ShaderResourceView* remaster::dx11::CreateTexture( TUINT a_uiWidth, TUINT 
 	textureDesc.MipLevels          = 1;
 	textureDesc.MiscFlags          = false ? D3D11_RESOURCE_MISC_GENERATE_MIPS : 0;
 	textureDesc.BindFlags          = D3D11_BIND_SHADER_RESOURCE;
+
+	if ( a_eFlags & CTF_RENDER_TARGET )
+		textureDesc.BindFlags |= D3D11_BIND_RENDER_TARGET;
 
 	ID3D11Texture2D* pTexture = TNULL;
 

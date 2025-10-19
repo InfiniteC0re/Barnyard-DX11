@@ -2,6 +2,7 @@
 #include "FontCache.h"
 #include "RenderDX11.h"
 #include "RenderDX11Text.h"
+#include "Hash.h"
 
 #include <Toshi/T2Map.h>
 #include <Toshi/TScheduler.h>
@@ -14,38 +15,6 @@
 #include <Core/TMemoryDebugOn.h>
 
 TOSHI_NAMESPACE_USING
-
-const TUINT32 hash_32_fnv1a( const void* key, const TUINT32 len )
-{
-	const char* data  = (char*)key;
-	TUINT32     hash  = 0x811c9dc5;
-	TUINT32     prime = 0x1000193;
-
-	for ( TUINT32 i = 0; i < len; ++i )
-	{
-		uint8_t value = data[ i ];
-		hash          = hash ^ value;
-		hash *= prime;
-	}
-
-	return hash;
-}
-
-const TUINT64 hash_64_fnv1a( const void* key, const TUINT64 len )
-{
-	const char* data  = (char*)key;
-	TUINT64     hash  = 0xcbf29ce484222325;
-	TUINT64     prime = 0x100000001b3;
-
-	for ( TUINT32 i = 0; i < len; ++i )
-	{
-		uint8_t value = data[ i ];
-		hash          = hash ^ value;
-		hash *= prime;
-	}
-
-	return hash;
-}
 
 struct SolidColorBrush
 {
@@ -61,6 +30,7 @@ static TUINT16                           s_aGlyphIndices[ 65535 ];
 
 ID2D1SolidColorBrush* remaster::fontcache::GetSolidColorBrush( TUINT32 a_uiColor )
 {
+	TPROFILER_SCOPE();
 	const TFLOAT flCurrentTime = g_oSystemManager.GetScheduler()->GetTotalTime();
 
 	auto it = s_mapBrushes.Find( a_uiColor );
@@ -84,6 +54,8 @@ ID2D1SolidColorBrush* remaster::fontcache::GetSolidColorBrush( TUINT32 a_uiColor
 
 TFLOAT remaster::fontcache::GetTextWidth( font::Font* a_pFont, const TWCHAR* a_wcsText, TSIZE a_uiTextLength, TFLOAT a_flFontSize )
 {
+	TPROFILER_SCOPE();
+
 	// NOTE: calculating width is simple now, so caching is disabled
 
 #if 0
@@ -113,6 +85,15 @@ TFLOAT remaster::fontcache::GetTextWidth( font::Font* a_pFont, const TWCHAR* a_w
 	
 }
 
+TFLOAT remaster::fontcache::GetTextHeight( font::Font* a_pFont, const TWCHAR* a_wcsText, TSIZE a_uiTextLength, TFLOAT a_flFontSize )
+{
+	TFLOAT flMaxHeight = 0.0f;
+	for ( TSIZE i = 0; i < a_uiTextLength; ++i )
+		flMaxHeight = TMath::Max( flMaxHeight, s_aGlyphMetrics[ a_wcsText[ i ] ].flHeight );
+
+	return flMaxHeight * a_flFontSize;
+}
+
 const remaster::fontcache::GlyphMetrics* remaster::fontcache::GetGlyphMetrics()
 {
 	return s_aGlyphMetrics;
@@ -125,6 +106,7 @@ const TUINT16* remaster::fontcache::GetGlyphIndices()
 
 void remaster::fontcache::Create()
 {
+	TPROFILER_SCOPE();
 	auto pGlyphMetrics = new DWRITE_GLYPH_METRICS[ 65535 ];
 	auto pCharacters   = new TUINT32[ 65535 ];
 
@@ -140,7 +122,8 @@ void remaster::fontcache::Create()
 	for ( TSIZE i = 0; i < 65535; ++i )
 	{
 		s_aGlyphMetrics[ i ].flWidth  = pGlyphMetrics[ i ].advanceWidth * flUnitsScale;
-		s_aGlyphMetrics[ i ].flHeight = pGlyphMetrics[ i ].advanceHeight * flUnitsScale;
+		s_aGlyphMetrics[ i ].flHeight = pGlyphMetrics[ i ].verticalOriginY * flUnitsScale;
+		s_aGlyphMetrics[ i ].flHeight += ( ( pGlyphMetrics[ i ].topSideBearing < 0 ? -pGlyphMetrics[ i ].topSideBearing : 0 ) + ( pGlyphMetrics[ i ].bottomSideBearing < 0 ? -pGlyphMetrics[ i ].bottomSideBearing : 0 ) ) * flUnitsScale;
 	}
 
 	delete[] pCharacters;
@@ -162,6 +145,7 @@ static TFLOAT    s_flUntilGarbageCollection   = GARBAGE_COLLECTION_INTERVAL;
 
 void remaster::fontcache::Update()
 {
+	TPROFILER_SCOPE();
 	const TFLOAT flCurrentTime = g_oSystemManager.GetScheduler()->GetTotalTime();
 
 	if ( flCurrentTime > s_flUntilGarbageCollection )

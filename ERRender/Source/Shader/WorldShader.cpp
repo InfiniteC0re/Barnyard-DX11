@@ -181,11 +181,11 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	    D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
 	    pIndexPool->GetNumIndices(),
 	    (ID3D11Buffer*)indexBuffer.pIndexBuffer,
-	    indexBuffer.uiIndexOffset * 2,
+	    indexBuffer.uiIndexOffset,
 	    DXGI_FORMAT_R16_UINT,
 	    (ID3D11Buffer*)vertexBuffer.apVertexBuffers[ 0 ],
 	    sizeof( WorldVertex ),
-	    vertexBuffer.uiVertexOffset * sizeof(WorldVertex)
+	    vertexBuffer.uiVertexOffset
 	);
 }
 

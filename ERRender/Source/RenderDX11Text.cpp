@@ -15,6 +15,7 @@ static TUINT16  s_aTextIndices[ MAX_TEXT_SIZE ];
 
 ID2D1Geometry* remaster::dx11::CreateTextGeometry( font::Font* a_pFont, const TWCHAR* a_wcsText, TSIZE a_uiTextLength, TFLOAT a_flFontSize )
 {
+	TPROFILER_SCOPE();
 	if ( a_uiTextLength == 0 ) return TNULL;
 
 	auto pIndices = remaster::fontcache::GetGlyphIndices();

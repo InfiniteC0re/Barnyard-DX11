@@ -37,8 +37,6 @@ RenderDX11::RenderDX11()
 	THookedRenderD3DInterface::SetSingleton( (TRenderD3DInterface*)this );
 
 	// Legacy states (TRenderD3DInterface)
-	m_pDirect3D                          = TNULL;
-	m_pDirectDevice                      = TNULL;
 	m_fPixelAspectRatio                  = 1.0f;
 	m_AcceleratorTable                   = TNULL;
 	m_pAdapterDevice                     = TNULL;
@@ -78,6 +76,7 @@ RenderDX11::RenderDX11()
 	// Buffers
 	m_pVertexConstantBuffer     = TNULL;
 	m_IsVertexConstantBufferSet = TFALSE;
+	m_VertexBufferWrittenSize   = 0;
 	TUtil::MemClear( m_PixelBuffers, sizeof( m_PixelBuffers ) );
 
 	m_pPixelConstantBuffer     = TNULL;
@@ -242,16 +241,16 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		CreateRenderObjects();
 
 		// Handle multi-monitor setup
-		if ( uiAdapterIndex != 0 )
+		/*if ( uiAdapterIndex != 0 )
 		{
-			HMONITOR hMonitor = m_pDirect3D->GetAdapterMonitor( uiAdapterIndex );
+			HMONITOR hMonitor = m_pDevice->GetAdapterMonitor( uiAdapterIndex );
 
 			MONITORINFO monitorInfo = { .cbSize = sizeof( monitorInfo ) };
 			GetMonitorInfoA( hMonitor, &monitorInfo );
 
 			uiWindowPosX += monitorInfo.rcMonitor.left;
 			uiWindowPosY += monitorInfo.rcMonitor.right;
-		}
+		}*/
 
 		RECT oAdjustedWindowSize;
 		oAdjustedWindowSize.left   = 0;
@@ -284,13 +283,35 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		m_bDisplayCreated = TTRUE;
 
 		// Initialize Direct2D and DirectWrite
-		if ( remaster::fontrenderer::IsHDEnabled() )
+		if ( fontrenderer::IsHDEnabled() )
 		{
 			D2D1CreateFactory( D2D1_FACTORY_TYPE_SINGLE_THREADED, &m_pD2DFactory );
 			DWriteCreateFactory( DWRITE_FACTORY_TYPE_SHARED, __uuidof( IDWriteFactory ), (IUnknown**)&m_pDWFactory );
 
-			IDXGISurface* pBackBufferSurface = nullptr;
-			m_pRenderTargetTexture->QueryInterface( __uuidof( IDXGISurface ), (void**)&pBackBufferSurface );
+			m_pTextAtlasSRV = dx11::CreateTexture(
+			    1024,
+			    1024,
+			    DXGI_FORMAT_R8G8B8A8_UNORM,
+			    TNULL,
+			    D3D11_USAGE_DEFAULT,
+			    0,
+			    1,
+			    dx11::CTF_RENDER_TARGET
+			);
+
+			TVALIDPTR( m_pTextAtlasSRV );
+
+			ID3D11Resource* pResource = TNULL;
+			m_pTextAtlasSRV->GetResource( &pResource );
+
+			ID3D11Texture2D* pTextAtlasTexture = TNULL;
+			pResource->QueryInterface( __uuidof( ID3D11Texture2D ), (void**)&pTextAtlasTexture );
+			pResource->Release();
+
+			IDXGISurface* pBackBufferSurface = TNULL;
+			pTextAtlasTexture->QueryInterface( __uuidof( IDXGISurface ), (void**)&pBackBufferSurface );
+
+			// Create D2D Render Target
 
 			D2D1_RENDER_TARGET_PROPERTIES rtProps = D2D1::RenderTargetProperties(
 			    D2D1_RENDER_TARGET_TYPE_DEFAULT,
@@ -298,6 +319,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 			);
 
 			HRESULT hRes = m_pD2DFactory->CreateDxgiSurfaceRenderTarget( pBackBufferSurface, &rtProps, &m_pD2DRenderTarget );
+			pBackBufferSurface->Release();
 
 			if ( SUCCEEDED( hRes ) && m_pD2DRenderTarget )
 			{
@@ -318,14 +340,15 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 
 				// Get font metrics
 				m_pDWFontFace->GetMetrics( &m_oFontMetrics );
-				
-				// Release everything
-				pBackBufferSurface->Release();
+
+				m_pFontAtlas = new FontAtlas( m_pTextAtlasSRV, pTextAtlasTexture, 1024, 1024 );
 			}
 			else
 			{
 				remaster::fontrenderer::SetHDEnabled( TFALSE );
 			}
+
+			pTextAtlasTexture->Release();
 		}
 
 		return TTRUE;
@@ -417,7 +440,7 @@ TBOOL RenderDX11::EndScene()
 		//pTextFormat->Release();
 	}
 
-	m_pSwapChain->Present( 1, 0 );
+	m_pSwapChain->Present( 0, 0 );
 	m_bInScene = TFALSE;
 
 	return TTRUE;
@@ -706,6 +729,10 @@ void RenderDX11::CreateRenderObjects()
 	m_RasterizerState.Flags.Parts.bMultisampleEnable     = FALSE;
 	m_RasterizerState.DepthBias                          = 0;
 	m_RasterizerState.SlopeScaledDepthBias               = 0.0f;
+
+	// Other states
+	m_eCurrentTopology     = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
+	m_pCurrentVertexBuffer = TNULL;
 }
 
 ID3D11SamplerState* RenderDX11::CreateSamplerState( D3D11_FILTER filter, D3D11_TEXTURE_ADDRESS_MODE addressU, D3D11_TEXTURE_ADDRESS_MODE addressV, D3D11_TEXTURE_ADDRESS_MODE addressW, TFLOAT mipLODBias, TUINT32 borderColor, TFLOAT minLOD, TFLOAT maxLOD, TUINT maxAnisotropy )
@@ -772,6 +799,7 @@ void RenderDX11::VSBufferSetVec4( VSBufferOffset a_uiOffset, const void* a_pData
 	TASSERT( offset + size <= VERTEX_CONSTANT_BUFFER_SIZE, "Buffer size exceeded" );
 	TUtil::MemCopy( (TCHAR*)m_pVertexConstantBuffer + offset, a_pData, size );
 	m_IsVertexConstantBufferSet = TTRUE;
+	m_VertexBufferWrittenSize   = offset + size;
 }
 
 void RenderDX11::PSBufferSetVec4( PSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount /*= 1 */ )
@@ -889,10 +917,11 @@ void RenderDX11::DrawImmediately( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUI
 
 	// Drawing
 	UpdateRenderStates();
-	m_pDeviceContext->IASetVertexBuffers( 0, 1, &m_MainVertexBuffer, &a_iStrideSize, &m_iImmediateVertexCurrentOffset );
-	m_pDeviceContext->IASetIndexBuffer( m_MainIndexBuffer, a_eIndexFormat, m_iImmediateIndexCurrentOffset );
+	SetVertexBuffer( m_MainVertexBuffer, a_iStrideSize, m_iImmediateVertexCurrentOffset );
+	SetIndexBuffer( m_MainIndexBuffer, a_eIndexFormat, m_iImmediateIndexCurrentOffset );
 	FlushConstantBuffers();
-	m_pDeviceContext->IASetPrimitiveTopology( a_ePrimitiveType );
+	
+	SetPrimitiveTopology( a_ePrimitiveType );
 	m_pDeviceContext->DrawIndexed( a_iIndexCount, 0, 0 );
 	m_iImmediateIndexCurrentOffset += iIndexBufferSize;
 	m_iImmediateVertexCurrentOffset += iVertexBufferSize;
@@ -901,20 +930,20 @@ void RenderDX11::DrawImmediately( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUI
 void RenderDX11::DrawIndexed( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUINT a_uiIndexCount, ID3D11Buffer* a_pIndexBuffer, TUINT a_uiIndexBufferOffset, DXGI_FORMAT a_eIndexBufferFormat, ID3D11Buffer* a_pVertexBuffer, TUINT a_uiStrides, TUINT a_uiOffsets )
 {
 	UpdateRenderStates();
-	m_pDeviceContext->IASetVertexBuffers( 0, 1, &a_pVertexBuffer, &a_uiStrides, &a_uiOffsets );
-	m_pDeviceContext->IASetIndexBuffer( a_pIndexBuffer, a_eIndexBufferFormat, a_uiIndexBufferOffset );
+	SetVertexBuffer( a_pVertexBuffer, a_uiStrides, 0 );
+	SetIndexBuffer( a_pIndexBuffer, a_eIndexBufferFormat, 0 );
 	FlushConstantBuffers();
 
-	m_pDeviceContext->IASetPrimitiveTopology( a_ePrimitiveType );
-	m_pDeviceContext->DrawIndexed( a_uiIndexCount, 0, 0 );
+	SetPrimitiveTopology( a_ePrimitiveType );
+	m_pDeviceContext->DrawIndexed( a_uiIndexCount, a_uiIndexBufferOffset, a_uiOffsets );
 }
 
 void RenderDX11::DrawNonIndexed( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveTopology, ID3D11Buffer* a_pVertexBuffer, TUINT a_uiVertexCount, TUINT a_uiStrides, TUINT a_uiStartVertex, TUINT a_uiOffsets )
 {
 	UpdateRenderStates();
-	m_pDeviceContext->IASetVertexBuffers( 0, 1, &a_pVertexBuffer, &a_uiStrides, &a_uiOffsets );
+	SetVertexBuffer( a_pVertexBuffer, a_uiStrides, a_uiOffsets );
 	FlushConstantBuffers();
-	m_pDeviceContext->IASetPrimitiveTopology( a_ePrimitiveTopology );
+	SetPrimitiveTopology( a_ePrimitiveTopology );
 	m_pDeviceContext->Draw( a_uiVertexCount, a_uiStartVertex );
 }
 
@@ -1140,9 +1169,10 @@ void RenderDX11::FlushConstantBuffers()
 	{
 		m_VertexBufferIndex = ( m_VertexBufferIndex + 1 ) % NUMBUFFERS;
 		m_pDeviceContext->Map( m_VertexBuffers[ m_VertexBufferIndex ], 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubresources );
-		memcpy( mappedSubresources.pData, m_pVertexConstantBuffer, VERTEX_CONSTANT_BUFFER_SIZE );
+		memcpy( mappedSubresources.pData, m_pVertexConstantBuffer, m_VertexBufferWrittenSize );
 		m_pDeviceContext->Unmap( m_VertexBuffers[ m_VertexBufferIndex ], 0 );
 		m_IsVertexConstantBufferSet = TFALSE;
+		m_VertexBufferWrittenSize = 0;
 	}
 
 	if ( m_IsPixelConstantBufferSet )
@@ -1154,8 +1184,8 @@ void RenderDX11::FlushConstantBuffers()
 		m_IsPixelConstantBufferSet = TFALSE;
 	}
 
-	m_pDeviceContext->VSSetConstantBuffers( 0, 1, &m_VertexBuffers[ m_VertexBufferIndex ] );
-	m_pDeviceContext->PSSetConstantBuffers( 0, 1, &m_PixelBuffers[ m_PixelBufferIndex ] );
+	VSSetConstantBuffer( 0, m_VertexBuffers[ m_VertexBufferIndex ] );
+	PSSetConstantBuffer( 0, m_PixelBuffers[ m_PixelBufferIndex ] );
 }
 
 void RenderDX11::BuildAdapterDatabase()
@@ -1176,12 +1206,12 @@ void RenderDX11::BuildAdapterDatabase()
 		pAdapter->UpdateAdapterInfo();
 
 		TUtil::Log( "Adapter: %s\n", pAdapter->GetDescription() );
+		
 		TUtil::LogUp();
 		TUtil::Log( "Vendor: %d, Device: %d Revision: %d\n", pAdapterDesc->VendorId, pAdapterDesc->DeviceId, pAdapterDesc->Revision );
 		TUtil::Log( "DedicatedSystemMemory: %.2f MB\n", (double)pAdapterDesc->DedicatedSystemMemory / 1024 / 1024 );
 		TUtil::Log( "DedicatedVideoMemory : %.2f MB\n", (double)pAdapterDesc->DedicatedVideoMemory / 1024 / 1024 );
 		TUtil::Log( "SharedSystemMemory   : %.2f MB\n", (double)pAdapterDesc->SharedSystemMemory / 1024 / 1024 );
-
 		TUtil::LogDown();
 
 		pAdapter->SetDriver( "Unknown" );

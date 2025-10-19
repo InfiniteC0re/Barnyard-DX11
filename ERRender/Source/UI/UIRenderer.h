@@ -54,6 +54,9 @@ public:
 	virtual void             ResetZCoordinate() OVERRIDE;
 
 public:
+	void SetTextureResourceView( ID3D11ShaderResourceView* a_pTextureRV );
+	void SetPixelShader();
+
 	void UpdateTransform() { if ( m_bIsTransformDirty ) UpdateTransformImpl(); }
 
 	const Toshi::TMatrix44& GetProjectionMatrix() const { return m_matProjection; }
@@ -101,6 +104,8 @@ private:
 
 	TFLOAT m_flUIScaleX;
 	TFLOAT m_flUIScaleY;
+
+	TBOOL m_bHasTextureRV;
 };
 
 extern UIRendererDX11* g_pUIRender;

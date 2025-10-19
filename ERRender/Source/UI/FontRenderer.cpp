@@ -23,10 +23,6 @@
 
 TOSHI_NAMESPACE_USING
 
-constexpr TFLOAT FONT_SCALE         = 38.0f;
-
-static ID2D1StrokeStyle* s_pStrokeStyle;
-
 static TFLOAT GetViewportX()
 {
 	return TSTATICCAST( remaster::UIRendererDX11, AGUI2::GetRenderer() )->GetViewportX();
@@ -52,86 +48,52 @@ MEMBER_HOOK( 0x006c32b0, AGUI2Font, AGUI2Font_GetTextWidth, TFLOAT, const TWCHAR
 	if ( !remaster::fontrenderer::IsHDEnabled() )
 		return CallOriginal( a_wszText, a_iTextLength, a_fScale );
 
-	TFLOAT flUICanvasWidth;
-	TFLOAT flUICanvasHeight;
-	AGUI2::GetSingleton()->GetDimensions( flUICanvasWidth, flUICanvasHeight );
-	TFLOAT flUIScaleX = ( remaster::g_pRender->GetSurfaceWidth() / flUICanvasWidth );
-
-	// Adjust font size
-	a_fScale = FONT_SCALE * a_fScale;
-
-	return remaster::fontcache::GetTextWidth( remaster::font::GetFont( 0 ), a_wszText, a_iTextLength, a_fScale ) / flUIScaleX;
+	return remaster::g_pRender->GetFontAtlas()->GetTextWidth( a_wszText, a_iTextLength, a_fScale );
 }
 
 MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TWCHAR* a_wszText, TINT a_iTextLength, TFLOAT a_fX, TFLOAT a_fY, TUINT32 a_uiColour, TFLOAT a_fScale, void* a_fnCallback )
 {
+	TPROFILER_SCOPE();
 	if ( !remaster::fontrenderer::IsHDEnabled() )
 	{
 		CallOriginal( a_wszText, a_iTextLength, a_fX, a_fY, a_uiColour, a_fScale, a_fnCallback );
 		return;
 	}
 
-	auto pUIRenderer      = remaster::g_pUIRender;
-	auto pD2DRenderTarget = remaster::g_pRender->GetD2DRenderTarget();
-	auto pD2DFactory      = remaster::g_pRender->GetD2DFactory();
+	remaster::FontAtlas*      pFontAtlas         = remaster::g_pRender->GetFontAtlas();
+	ID3D11ShaderResourceView* pFontAtlasResource = pFontAtlas->GetTextureResource();
 
-	// Make sure transform is updated, so we can use it to render text
-	pUIRenderer->UpdateTransform();
+	remaster::g_pUIRender->SetMaterial( TNULL );
+	remaster::g_pUIRender->SetColour( a_uiColour );
+	remaster::g_pUIRender->SetTextureResourceView( pFontAtlasResource );
+	remaster::g_pUIRender->SetPixelShader();
 
-	// Get view matrix from the AGUI2Renderer
-	D2D1_MATRIX_3X2_F matView;
-	matView.m11 = pUIRenderer->GetViewMatrix().m_f11;
-	matView.m12 = pUIRenderer->GetViewMatrix().m_f12;
-	matView.m21 = pUIRenderer->GetViewMatrix().m_f21;
-	matView.m22 = pUIRenderer->GetViewMatrix().m_f22;
-	matView.dx  = pUIRenderer->GetViewMatrix().m_f41;
-	matView.dy  = pUIRenderer->GetViewMatrix().m_f42;
+	TFLOAT flScaleXFactor = 1.0f / remaster::g_pUIRender->GetScaleX();
+	TFLOAT flScaleYFactor = 1.0f / remaster::g_pUIRender->GetScaleY();
+	TFLOAT flSpriteMargin = pFontAtlas->GetSpriteMargin();
+	TFLOAT flOutline      = pFontAtlas->GetOutlineSize( a_fScale );
+	TFLOAT flHalfOutline  = 0.5f * flOutline;
 
-	D2D1_MATRIX_3X2_F matProj;
-	matProj.m11 = pUIRenderer->GetProjectionMatrix().m_f11;
-	matProj.m12 = pUIRenderer->GetProjectionMatrix().m_f12;
-	matProj.m21 = pUIRenderer->GetProjectionMatrix().m_f21;
-	matProj.m22 = pUIRenderer->GetProjectionMatrix().m_f22;
-	matProj.dx  = pUIRenderer->GetProjectionMatrix().m_f41;
-	matProj.dy  = pUIRenderer->GetProjectionMatrix().m_f42;
+	TFLOAT fX = a_fX - flHalfOutline - flSpriteMargin * 0.5f;
+	TFLOAT fY = a_fY - pFontAtlas->GetHeightOffset() - flHalfOutline - flSpriteMargin * 0.5f;
 
-	TFLOAT flLineHeight = ( TFLOAT( remaster::g_pRender->GetFontMetrics().xHeight ) / remaster::g_pRender->GetFontMetrics().designUnitsPerEm ) / 72.0f * 96 * a_fScale;
+	remaster::FontAtlas::CharInfo oCharInfo;
+	for ( TINT i = 0; i < a_iTextLength; i++ )
+	{
+		pFontAtlas->GetCharUV( a_wszText[ i ], a_fScale, oCharInfo );
 
-	TFLOAT flScaleXFactor = 1.0f / pUIRenderer->GetScaleX() * 0.5f;
-	TFLOAT flScaleYFactor = 1.0f / pUIRenderer->GetScaleY() * 0.5f;
+		TFLOAT flWidth  = oCharInfo.flWidth * flScaleXFactor;
+		TFLOAT flHeight = oCharInfo.flHeight * flScaleYFactor;
 
-	// Calculate transform
-	auto transform = ( D2D1::Matrix3x2F::Translation( a_fX, a_fY + flLineHeight ) * matView ) * matProj;
-	transform.m11 *= GetViewportWidth() * flScaleXFactor;
-	transform.m12 *= -GetViewportHeight() * flScaleYFactor;
-	transform.m21 *= GetViewportWidth() * flScaleXFactor;
-	transform.m22 *= -GetViewportHeight() * flScaleYFactor;
-	transform.dx = GetViewportX() + ( transform.dx + 1.0f ) * 0.5f * GetViewportWidth();
-	transform.dy = GetViewportY() + ( -transform.dy + 1.0f ) * 0.5f * GetViewportHeight();
+		remaster::g_pUIRender->RenderRectangle(
+		    { fX, fY },
+		    { fX + flWidth, fY + flHeight },
+		    { oCharInfo.flUV1X, oCharInfo.flUV1Y },
+		    { oCharInfo.flUV2X, oCharInfo.flUV2Y }
+		);
 
-	// Initialise scissors rectangle
-	D2D1_RECT_F oClipRect;
-	oClipRect.left   = GetViewportX();
-	oClipRect.top    = GetViewportY();
-	oClipRect.right  = oClipRect.left + GetViewportWidth();
-	oClipRect.bottom = oClipRect.top + GetViewportHeight();
-
-	// Draw the text
-	ID2D1Geometry*        pTextGeometry = remaster::dx11::CreateTextGeometry( remaster::font::GetFont( 0 ), a_wszText, a_iTextLength, a_fScale );
-	ID2D1SolidColorBrush* pOutlineBrush = remaster::fontcache::GetSolidColorBrush( TCOLOR4( 0, 0, 0, TCOLOR_GET_A( a_uiColour ) ) );
-	ID2D1SolidColorBrush* pColorBrush   = remaster::fontcache::GetSolidColorBrush( a_uiColour );
-
-	pD2DRenderTarget->BeginDraw();
-	pD2DRenderTarget->SetTransform( D2D1::Matrix3x2F::Identity() );
-	pD2DRenderTarget->PushAxisAlignedClip( &oClipRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE );
-
-	pD2DRenderTarget->SetTransform( transform );
-	pD2DRenderTarget->DrawGeometry( pTextGeometry, pOutlineBrush, a_fScale * ( 1.0f / 42.0f ) * 6.0f, s_pStrokeStyle );
-	pD2DRenderTarget->FillGeometry( pTextGeometry, pColorBrush );
-	pD2DRenderTarget->PopAxisAlignedClip();
-	pD2DRenderTarget->EndDraw();
-
-	pTextGeometry->Release();
+		fX += flWidth - flOutline;
+	}
 }
 
 MEMBER_HOOK( 0x006c3410, AGUI2Font, AGUI2Font_DrawTextWrapped, void, const TWCHAR* a_wszText, TFLOAT a_fX, TFLOAT a_fY, TFLOAT a_fWidth, TFLOAT a_fHeight, TUINT32 a_uiColour, TFLOAT a_fScale, AGUI2Font::TextAlign a_eAlign, void* a_fnCallback /*= TNULL*/ )
@@ -142,17 +104,12 @@ MEMBER_HOOK( 0x006c3410, AGUI2Font, AGUI2Font_DrawTextWrapped, void, const TWCHA
 		return;
 	}
 
-	TFLOAT flUICanvasWidth;
-	TFLOAT flUICanvasHeight;
-
-	AGUI2::GetSingleton()->GetDimensions( flUICanvasWidth, flUICanvasHeight );
-	TFLOAT flUIScaleX = ( remaster::g_pRender->GetSurfaceWidth() / flUICanvasWidth );
-	TFLOAT flUIScaleY = ( remaster::g_pRender->GetSurfaceHeight() / flUICanvasHeight );
-
-	// Adjust font size
-	a_fScale *= FONT_SCALE;
-
-	auto pTextMetrics = remaster::fontcache::GetGlyphMetrics();
+	auto                 pTextMetrics   = remaster::fontcache::GetGlyphMetrics();
+	remaster::FontAtlas* pFontAtlas     = remaster::g_pRender->GetFontAtlas();
+	TFLOAT               flUIScaleX     = remaster::g_pUIRender->GetScaleX();
+	TFLOAT               flUIScaleY     = remaster::g_pUIRender->GetScaleY();
+	TFLOAT               flSpriteMargin = pFontAtlas->GetSpriteMargin();
+	TFLOAT               flOutlineSize  = pFontAtlas->GetOutlineSize( a_fScale );
 
 	if ( a_wszText && a_wszText[ 0 ] != '\0' )
 	{
@@ -170,6 +127,8 @@ MEMBER_HOOK( 0x006c3410, AGUI2Font, AGUI2Font_DrawTextWrapped, void, const TWCHA
 
 			auto wChar  = *pTextBuffer2;
 			TINT iIndex = pTextBuffer2 - a_wszText;
+
+			TFLOAT flMaxCharHeight = 0.0f;
 
 			if ( wChar == L'\n' )
 			{
@@ -192,7 +151,11 @@ MEMBER_HOOK( 0x006c3410, AGUI2Font, AGUI2Font_DrawTextWrapped, void, const TWCHA
 						break;
 					}
 
-					fWidth1 += ( pTextMetrics[ wChar ].flWidth * a_fScale ) / flUIScaleX;
+					remaster::FontAtlas::CharInfo oCharInfo;
+					pFontAtlas->GetCharUV( wChar, a_fScale, oCharInfo );
+
+					fWidth1 += ( oCharInfo.flWidth ) / flUIScaleX - flOutlineSize - flSpriteMargin * 2 / flUIScaleY;
+					flMaxCharHeight = TMath::Max( flMaxCharHeight, oCharInfo.flHeight - flOutlineSize * flUIScaleY - flSpriteMargin * 2 * flUIScaleY );
 
 					if ( iswspace( wChar ) != 0 && *pTextBuffer3 != L'\xA0' )
 					{
@@ -220,10 +183,10 @@ MEMBER_HOOK( 0x006c3410, AGUI2Font, AGUI2Font_DrawTextWrapped, void, const TWCHA
 				else if ( a_eAlign == AGUI2Font::TextAlign_Right ) fPosX = ( a_fWidth - fWidth2 ) + a_fX;
 				else fPosX = a_fX;
 
-				( ( void( __thiscall* )( AGUI2Font*, const TWCHAR*, TINT, TFLOAT, TFLOAT, TUINT32, TFLOAT, void* ) )( 0x006c2fe0 ) )( this, pTextBuffer2, pTextBuffer - pTextBuffer2, fPosX, a_fY, a_uiColour, a_fScale, a_fnCallback );
+				TREINTERPRETCAST( AGUI2Font_DrawTextSingleLine::_hook_obj*, this )->_hook_func( pTextBuffer2, pTextBuffer - pTextBuffer2, fPosX, a_fY, a_uiColour, a_fScale, a_fnCallback );
 			}
 
-			a_fY += ( pTextMetrics[ a_wszText[ iIndex ] ].flHeight * a_fScale ) / flUIScaleX;
+			a_fY += flMaxCharHeight / flUIScaleY;
 
 		} while ( *pTextBuffer != L'\0' );
 	}
@@ -234,17 +197,12 @@ MEMBER_HOOK( 0x006c2e10, AGUI2Font, AGUI2Font_GetTextHeightWrapped, TFLOAT, cons
 	if ( !remaster::fontrenderer::IsHDEnabled() )
 		return CallOriginal( a_wszText, a_fMaxWidth, a_fScale );
 
-	TFLOAT flUICanvasWidth;
-	TFLOAT flUICanvasHeight;
-
-	AGUI2::GetSingleton()->GetDimensions( flUICanvasWidth, flUICanvasHeight );
-	TFLOAT flUIScaleX = ( remaster::g_pRender->GetSurfaceWidth() / flUICanvasWidth );
-	TFLOAT flUIScaleY = ( remaster::g_pRender->GetSurfaceHeight() / flUICanvasHeight );
-
-	// Adjust font size
-	a_fScale *= FONT_SCALE;
-
-	auto pTextMetrics = remaster::fontcache::GetGlyphMetrics();
+	auto                 pTextMetrics   = remaster::fontcache::GetGlyphMetrics();
+	remaster::FontAtlas* pFontAtlas     = remaster::g_pRender->GetFontAtlas();
+	TFLOAT               flUIScaleX     = remaster::g_pUIRender->GetScaleX();
+	TFLOAT               flUIScaleY     = remaster::g_pUIRender->GetScaleY();
+	TFLOAT               flSpriteMargin = pFontAtlas->GetSpriteMargin();
+	TFLOAT               flOutlineSize  = pFontAtlas->GetOutlineSize( a_fScale );
 
 	if ( a_wszText && a_wszText[ 0 ] != '\0' )
 	{
@@ -263,6 +221,8 @@ MEMBER_HOOK( 0x006c2e10, AGUI2Font, AGUI2Font_GetTextHeightWrapped, TFLOAT, cons
 
 			auto wChar  = *pTextBuffer2;
 			TINT iIndex = pTextBuffer2 - a_wszText;
+
+			TFLOAT flMaxCharHeight = 0.0f;
 
 			if ( wChar == L'\n' )
 			{
@@ -285,7 +245,11 @@ MEMBER_HOOK( 0x006c2e10, AGUI2Font, AGUI2Font_GetTextHeightWrapped, TFLOAT, cons
 						break;
 					}
 
-					fWidth1 += ( pTextMetrics[ wChar ].flWidth * a_fScale ) / flUIScaleX;
+					remaster::FontAtlas::CharInfo oCharInfo;
+					pFontAtlas->GetCharUV( wChar, a_fScale, oCharInfo );
+
+					fWidth1 += ( oCharInfo.flWidth ) / flUIScaleX - flOutlineSize - flSpriteMargin * 2;
+					flMaxCharHeight = TMath::Max( flMaxCharHeight, oCharInfo.flHeight - flOutlineSize * flUIScaleY - flSpriteMargin * 2 * flUIScaleY );
 
 					if ( iswspace( wChar ) != 0 && *pTextBuffer3 != L'\xA0' )
 					{
@@ -307,11 +271,11 @@ MEMBER_HOOK( 0x006c2e10, AGUI2Font, AGUI2Font_GetTextHeightWrapped, TFLOAT, cons
 				}
 			}
 
-			fHeight += ( pTextMetrics[ a_wszText[ iIndex ] ].flHeight * a_fScale ) / flUIScaleX;
+			fHeight += flMaxCharHeight;
 
 		} while ( *pTextBuffer != L'\0' );
 
-		return fHeight;
+		return ( fHeight - pFontAtlas->GetHeightOffset() ) / flUIScaleY;
 	}
 
 	return 0.0f;
@@ -336,31 +300,12 @@ void remaster::fontrenderer::Create()
 	auto pD2DRenderTarget = remaster::g_pRender->GetD2DRenderTarget();
 	auto pD2DFactory      = remaster::g_pRender->GetD2DFactory();
 
-	ID2D1StrokeStyle* pStrokeStyle;
-	pD2DFactory->CreateStrokeStyle(
-	    D2D1::StrokeStyleProperties(
-	        D2D1_CAP_STYLE_ROUND,
-	        D2D1_CAP_STYLE_ROUND,
-	        D2D1_CAP_STYLE_ROUND,
-	        D2D1_LINE_JOIN_ROUND,
-	        0.0f,
-	        D2D1_DASH_STYLE_SOLID,
-	        0.0f
-	    ),
-	    TNULL,
-	    0,
-	    &pStrokeStyle
-	);
-
 	remaster::fontcache::Create();
 }
 
 void remaster::fontrenderer::Destroy()
 {
 	fontcache::Destroy();
-
-	// Destroy main objects
-	if ( s_pStrokeStyle ) s_pStrokeStyle->Release();
 }
 
 void remaster::fontrenderer::Update()

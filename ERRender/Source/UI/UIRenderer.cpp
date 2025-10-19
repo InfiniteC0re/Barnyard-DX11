@@ -38,9 +38,14 @@ remaster::UIRendererDX11::UIRendererDX11()
 	m_iTransformCount   = 0;
 	m_bIsTransformDirty = TFALSE;
 
-	m_pVSShaderBlob      = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "vs_main", "vs_5_0", TNULL );
-	m_pPSShaderBlob      = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main", "ps_5_0", TNULL );
-	m_pPSShaderNoImgBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main_noimg", "ps_5_0", TNULL );
+	D3D_SHADER_MACRO aWithImagesMacros[] = {
+		"HAS_IMAGE", "1",
+		TNULL, TNULL
+	};
+
+	m_pVSShaderBlob      = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "vs_main", "vs_5_0", aWithImagesMacros );
+	m_pPSShaderBlob      = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main", "ps_5_0", aWithImagesMacros );
+	m_pPSShaderNoImgBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main", "ps_5_0", TNULL );
 
 	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob );
 	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_pVertexShader ) );
@@ -105,6 +110,7 @@ TUINT remaster::UIRendererDX11::GetHeight( AGUI2Material* a_pMaterial )
 
 void remaster::UIRendererDX11::BeginScene()
 {
+	TPROFILER_SCOPE();
 	TRenderInterface::DISPLAYPARAMS* pDisplayParams = g_pRender->GetCurrentDisplayParams();
 
 	m_oViewport = {
@@ -152,6 +158,8 @@ void remaster::UIRendererDX11::BeginScene()
 
 void remaster::UIRendererDX11::EndScene()
 {
+	TPROFILER_SCOPE();
+
 	g_pRender->SetZMode( g_pRender->IsZEnabled(), D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
 
 	// Run garbage collection of unused font renderer objects
@@ -192,7 +200,7 @@ void remaster::UIRendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
 
 	if ( a_pMaterial == TNULL )
 	{
-		g_pRender->GetD3D11DeviceContext()->PSSetShader( m_pPixelNoImgShader, TNULL, 0 );
+		SetTextureResourceView( TNULL );
 		g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
 	}
 	else
@@ -200,8 +208,7 @@ void remaster::UIRendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
 		auto pTexture = TSTATICCAST( Toshi::TTextureResourceHAL, a_pMaterial->m_pTextureResource );
 		pTexture->Validate();
 
-		auto pD3DTexture = (ID3D11ShaderResourceView*)pTexture->GetD3DTexture();
-		g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 0, 1, &pD3DTexture );
+		SetTextureResourceView( (ID3D11ShaderResourceView*)pTexture->GetD3DTexture() );
 
 		switch ( a_pMaterial->m_eBlendState )
 		{
@@ -259,10 +266,9 @@ void remaster::UIRendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
 		{
 			g_pRender->SetSamplerState( 0, 3, TTRUE );
 		}
-		
-		g_pRender->GetD3D11DeviceContext()->PSSetShader( m_pPixelShader, TNULL, 0 );
 	}
 
+	SetPixelShader();
 	m_pMaterial = a_pMaterial;
 }
 
@@ -411,6 +417,17 @@ void remaster::UIRendererDX11::ScaleCoords( TFLOAT& x, TFLOAT& y )
 void remaster::UIRendererDX11::ResetZCoordinate()
 {
 	sm_fZCoordinate = 0.01f;
+}
+
+void remaster::UIRendererDX11::SetTextureResourceView( ID3D11ShaderResourceView* a_pTextureRV )
+{
+	m_bHasTextureRV = a_pTextureRV != TNULL;
+	g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 0, 1, &a_pTextureRV );
+}
+
+void remaster::UIRendererDX11::SetPixelShader()
+{
+	g_pRender->GetD3D11DeviceContext()->PSSetShader( m_bHasTextureRV ? m_pPixelShader : m_pPixelNoImgShader, TNULL, 0 );
 }
 
 void remaster::UIRendererDX11::UpdateTransformImpl()
