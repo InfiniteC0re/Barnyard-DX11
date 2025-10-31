@@ -24,6 +24,7 @@ project "ERRender"
 		"%{LibDir.bink}",
 		"%{LibDir.dx8}",
 		"%{LibDir.detours}",
+		"Vendor/freetype/lib",
 	}
 
 	files
@@ -36,6 +37,7 @@ project "ERRender"
 	includedirs
 	{
 		"Source",
+		"Vendor/freetype/include",
 		"%{IncludeDir.toshi}",
 		"%{IncludeDir.byardsdk}",
 		"%{IncludeDir.modcore}",
@@ -60,3 +62,12 @@ project "ERRender"
 
 	filter "files:**.c"
 		flags { "NoPCH" }
+
+	filter "configurations:Debug"
+		links { "freetype_debug.lib" }
+
+	filter "configurations:Release"
+		links { "freetype_release.lib" }
+		
+		filter "configurations:Final"
+		links { "freetype_release.lib" }

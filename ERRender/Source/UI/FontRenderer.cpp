@@ -297,9 +297,6 @@ void remaster::fontrenderer::Create()
 	if ( !remaster::fontrenderer::IsHDEnabled() )
 		return;
 
-	auto pD2DRenderTarget = remaster::g_pRender->GetD2DRenderTarget();
-	auto pD2DFactory      = remaster::g_pRender->GetD2DFactory();
-
 	remaster::fontcache::Create();
 }
 

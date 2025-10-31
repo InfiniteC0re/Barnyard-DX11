@@ -16,6 +16,8 @@
 
 TOSHI_NAMESPACE_USING
 
+static FT_Library s_FontLibrary;
+
 remaster::FontAtlas::FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, ID3D11Texture2D* a_pAtlas, TUINT a_uiWidth, TUINT a_uiHeight )
     : m_pAtlasSRV( a_pAtlasSRV )
     , m_pAtlas( a_pAtlas )
@@ -25,6 +27,15 @@ remaster::FontAtlas::FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, ID3D11Tex
     , m_flHeightOffset( 8.0f )
     , m_flSpriteMargin( 0.0f )
 {
+	if ( !s_FontLibrary )
+	{
+		FT_Init_FreeType( &s_FontLibrary );
+	}
+
+	// Load font
+	FT_New_Face( s_FontLibrary, "C:\\Windows\\Fonts\\Arial.ttf", 0, &m_oFontFace );
+	FT_Set_Pixel_Sizes( m_oFontFace, 0, 32 );
+
 	// Add refs to the gx resources
 	m_pAtlasSRV->AddRef();
 	m_pAtlas->AddRef();
@@ -38,7 +49,7 @@ remaster::FontAtlas::FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, ID3D11Tex
 	m_oPartitionTree.root.y      = 0;
 
 	// Create stroke style for the text outline
-	g_pRender->GetD2DFactory()->CreateStrokeStyle(
+	/*g_pRender->GetD2DFactory()->CreateStrokeStyle(
 	    D2D1::StrokeStyleProperties(
 	        D2D1_CAP_STYLE_ROUND,
 	        D2D1_CAP_STYLE_ROUND,
@@ -51,7 +62,7 @@ remaster::FontAtlas::FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, ID3D11Tex
 	    TNULL,
 	    0,
 	    &m_pStrokeStyle
-	);
+	);*/
 
 	// Reset all characters in the map array
 	for ( auto& val : m_aCharMap ) val = -1;
@@ -107,31 +118,47 @@ void remaster::FontAtlas::GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo&
 	//-----------------------------------------------------------------------------
 	// 1. Draw to the atlas texture
 	//-----------------------------------------------------------------------------
-	TFLOAT flOutlineSize = GetOutlineSize( a_flScale );
-	//flOutlineSize        = 0.0f;
-	TFLOAT flScaleX      = remaster::g_pUIRender->GetScaleX();
-	TFLOAT flScaleY      = remaster::g_pUIRender->GetScaleY();
-	TFLOAT flCharWidth   = remaster::fontcache::GetTextWidth( remaster::font::GetFont( 0 ), &a_wChar, 1, flFontSize ) * flScaleY + m_flSpriteMargin * 2 + flOutlineSize * 2;
-	TFLOAT flCharHeight  = remaster::fontcache::GetTextHeight( remaster::font::GetFont( 0 ), &a_wChar, 1, flFontSize ) * flScaleY + m_flSpriteMargin * 2 + flOutlineSize * 2;
 
-	ID2D1Geometry*        pTextGeometry = remaster::dx11::CreateTextGeometry( remaster::font::GetFont( 0 ), &a_wChar, 1, flFontSize );
-	ID2D1SolidColorBrush* pOutlineBrush = remaster::fontcache::GetSolidColorBrush( TCOLOR4( 0, 0, 0, 255 ) );
-	ID2D1SolidColorBrush* pColorBrush   = remaster::fontcache::GetSolidColorBrush( TCOLOR( 255, 255, 255 ) );
+	FT_UInt  glyph_index = FT_Get_Char_Index( m_oFontFace, a_wChar );
+	FT_Error error       = FT_Load_Glyph( m_oFontFace, glyph_index, FT_LOAD_DEFAULT );
+	FT_Render_Glyph( m_oFontFace->glyph, FT_RENDER_MODE_NORMAL );
 
-	PartitionTreeNode* pTreeNode     = PartitionTree_AddNode( &m_oPartitionTree, flCharWidth, flCharHeight );
-	ID2D1RenderTarget* pRenderTarget = remaster::g_pRender->GetD2DRenderTarget();
+	TUINT uiCharWidth  = m_oFontFace->glyph->bitmap.width;
+	TUINT uiCharHeight = m_oFontFace->glyph->bitmap.rows;
 
-	D2D1::Matrix3x2F transform =
-	    D2D1::Matrix3x2F::Scale( flScaleY, flScaleY ) *
-	    D2D1::Matrix3x2F::Translation( pTreeNode->x + m_flSpriteMargin + flOutlineSize, pTreeNode->y - m_flSpriteMargin - flOutlineSize + flCharHeight );
+	PartitionTreeNode* pTreeNode = PartitionTree_AddNode( &m_oPartitionTree, TFLOAT( uiCharWidth ), TFLOAT( uiCharHeight ) );
 
-	pRenderTarget->BeginDraw();
+	if ( uiCharWidth + uiCharHeight > 0 )
+	{
+		ID3D11ShaderResourceView* pCharSRV = remaster::dx11::CreateTexture( uiCharWidth, uiCharHeight, DXGI_FORMAT_R8_UINT, m_oFontFace->glyph->bitmap.buffer, D3D11_USAGE_IMMUTABLE, 0, 1 );
 
-	pRenderTarget->SetTransform( transform );
-	pRenderTarget->DrawGeometry( pTextGeometry, pOutlineBrush, flOutlineSize, m_pStrokeStyle );
-	pRenderTarget->FillGeometry( pTextGeometry, pColorBrush );
-	pRenderTarget->EndDraw();
-	pTextGeometry->Release();
+		pCharSRV->Release();
+	}
+
+	//TFLOAT flOutlineSize = GetOutlineSize( a_flScale );
+	////flOutlineSize        = 0.0f;
+	//TFLOAT flScaleX      = remaster::g_pUIRender->GetScaleX();
+	//TFLOAT flScaleY      = remaster::g_pUIRender->GetScaleY();
+	//TFLOAT flCharWidth   = remaster::fontcache::GetTextWidth( remaster::font::GetFont( 0 ), &a_wChar, 1, flFontSize ) * flScaleY + m_flSpriteMargin * 2 + flOutlineSize * 2;
+	//TFLOAT flCharHeight  = remaster::fontcache::GetTextHeight( remaster::font::GetFont( 0 ), &a_wChar, 1, flFontSize ) * flScaleY + m_flSpriteMargin * 2 + flOutlineSize * 2;
+
+	//ID2D1Geometry*        pTextGeometry = remaster::dx11::CreateTextGeometry( remaster::font::GetFont( 0 ), &a_wChar, 1, flFontSize );
+	//ID2D1SolidColorBrush* pOutlineBrush = remaster::fontcache::GetSolidColorBrush( TCOLOR4( 0, 0, 0, 255 ) );
+	//ID2D1SolidColorBrush* pColorBrush   = remaster::fontcache::GetSolidColorBrush( TCOLOR( 255, 255, 255 ) );
+
+	//ID2D1RenderTarget* pRenderTarget = remaster::g_pRender->GetD2DRenderTarget();
+
+	//D2D1::Matrix3x2F transform =
+	//    D2D1::Matrix3x2F::Scale( flScaleY, flScaleY ) *
+	//    D2D1::Matrix3x2F::Translation( pTreeNode->x + m_flSpriteMargin + flOutlineSize, pTreeNode->y - m_flSpriteMargin - flOutlineSize + flCharHeight );
+
+	//pRenderTarget->BeginDraw();
+
+	//pRenderTarget->SetTransform( transform );
+	//pRenderTarget->DrawGeometry( pTextGeometry, pOutlineBrush, flOutlineSize, m_pStrokeStyle );
+	//pRenderTarget->FillGeometry( pTextGeometry, pColorBrush );
+	//pRenderTarget->EndDraw();
+	//pTextGeometry->Release();
 
 	//-----------------------------------------------------------------------------
 	// 2. Fill information of this cached character
@@ -142,8 +169,8 @@ void remaster::FontAtlas::GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo&
 	oScaledChar.flScale   = flFontSize;
 	oScaledChar.flUV1X    = ( pTreeNode->x ) / m_uiWidth;
 	oScaledChar.flUV1Y    = ( pTreeNode->y ) / m_uiHeight;
-	oScaledChar.flUV2X    = ( pTreeNode->x + flCharWidth ) / m_uiWidth;
-	oScaledChar.flUV2Y    = ( pTreeNode->y + flCharHeight ) / m_uiHeight;
+	oScaledChar.flUV2X    = ( pTreeNode->x + uiCharWidth ) / m_uiWidth;
+	oScaledChar.flUV2Y    = ( pTreeNode->y + uiCharHeight ) / m_uiHeight;
 	m_vecCachedChars[ rCharIndex ]->m_vecChars.Push( oScaledChar );
 
 	a_rCharInfo.flWidth  = oScaledChar.pTreeNode->width;

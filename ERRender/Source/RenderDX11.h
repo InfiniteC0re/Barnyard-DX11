@@ -319,12 +319,12 @@ public:
 	ID3D11RenderTargetView*              GetD3D11RenderTargetView() const { return m_pRenderTargetView; }
 	ID3D11DepthStencilView*              GetD3D11DepthStencilView() const { return m_pDepthStencilView; }
 
-	ID2D1Factory*      GetD2DFactory() const { return m_pD2DFactory; }
-	ID2D1RenderTarget* GetD2DRenderTarget() const { return m_pD2DRenderTarget; }
-	IDWriteFactory*    GetDWriteFactory() const { return m_pDWFactory; }
-	IDWriteFontFile*   GetDWriteFontFile() const { return m_pDWFontFile; }
-	IDWriteFontFace*   GetDWriteFontFace() const { return m_pDWFontFace; }
-	const DWRITE_FONT_METRICS& GetFontMetrics() const { return m_oFontMetrics; }
+	//ID2D1Factory*      GetD2DFactory() const { return m_pD2DFactory; }
+	//ID2D1RenderTarget* GetD2DRenderTarget() const { return m_pD2DRenderTarget; }
+	//IDWriteFactory*    GetDWriteFactory() const { return m_pDWFactory; }
+	//IDWriteFontFile*   GetDWriteFontFile() const { return m_pDWFontFile; }
+	//IDWriteFontFace*   GetDWriteFontFace() const { return m_pDWFontFace; }
+	//const DWRITE_FONT_METRICS& GetFontMetrics() const { return m_oFontMetrics; }
 
 	TFLOAT GetSurfaceWidth() const { return TFLOAT( m_oSwapChainDesc.BufferDesc.Width ); }
 	TFLOAT GetSurfaceHeight() const { return TFLOAT( m_oSwapChainDesc.BufferDesc.Height ); }
@@ -370,13 +370,13 @@ private:
 	DXGI_SWAP_CHAIN_DESC    m_oSwapChainDesc;
 
 	// DirectWrite
-	ID2D1RenderTarget*        m_pD2DRenderTarget = TNULL;
-	IDWriteFactory*           m_pDWFactory       = TNULL;
-	ID2D1Factory*             m_pD2DFactory      = TNULL;
-	IDWriteFontFile*          m_pDWFontFile      = TNULL;
-	IDWriteFontFace*          m_pDWFontFace      = TNULL;
+	//ID2D1RenderTarget*        m_pD2DRenderTarget = TNULL;
+	//IDWriteFactory*           m_pDWFactory       = TNULL;
+	//ID2D1Factory*             m_pD2DFactory      = TNULL;
+	//IDWriteFontFile*          m_pDWFontFile      = TNULL;
+	//IDWriteFontFace*          m_pDWFontFace      = TNULL;
 	ID3D11ShaderResourceView* m_pTextAtlasSRV    = TNULL;
-	DWRITE_FONT_METRICS       m_oFontMetrics;
+	//DWRITE_FONT_METRICS       m_oFontMetrics;
 	FontAtlas*                m_pFontAtlas;
 	
 	// Buffers

@@ -285,8 +285,8 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		// Initialize Direct2D and DirectWrite
 		if ( fontrenderer::IsHDEnabled() )
 		{
-			D2D1CreateFactory( D2D1_FACTORY_TYPE_SINGLE_THREADED, &m_pD2DFactory );
-			DWriteCreateFactory( DWRITE_FACTORY_TYPE_SHARED, __uuidof( IDWriteFactory ), (IUnknown**)&m_pDWFactory );
+			/*D2D1CreateFactory( D2D1_FACTORY_TYPE_SINGLE_THREADED, &m_pD2DFactory );
+			DWriteCreateFactory( DWRITE_FACTORY_TYPE_SHARED, __uuidof( IDWriteFactory ), (IUnknown**)&m_pDWFactory );*/
 
 			m_pTextAtlasSRV = dx11::CreateTexture(
 			    1024,
@@ -318,13 +318,13 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 			    D2D1::PixelFormat( DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED )
 			);
 
-			HRESULT hRes = m_pD2DFactory->CreateDxgiSurfaceRenderTarget( pBackBufferSurface, &rtProps, &m_pD2DRenderTarget );
-			pBackBufferSurface->Release();
+			/*HRESULT hRes = m_pD2DFactory->CreateDxgiSurfaceRenderTarget( pBackBufferSurface, &rtProps, &m_pD2DRenderTarget );
+			pBackBufferSurface->Release();*/
 
-			if ( SUCCEEDED( hRes ) && m_pD2DRenderTarget )
+			//if ( SUCCEEDED( hRes ) && m_pD2DRenderTarget )
 			{
 				// Create font
-				DX11_API_VALIDATE( m_pDWFactory->CreateFontFileReference(
+				/*DX11_API_VALIDATE( m_pDWFactory->CreateFontFileReference(
 				    L"CCThatsAllFolks.ttf",
 				    TNULL,
 				    &m_pDWFontFile
@@ -336,17 +336,17 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 				    0,
 				    DWRITE_FONT_SIMULATIONS_NONE,
 				    &m_pDWFontFace
-				) );
+				) );*/
 
 				// Get font metrics
-				m_pDWFontFace->GetMetrics( &m_oFontMetrics );
+				//m_pDWFontFace->GetMetrics( &m_oFontMetrics );
 
 				m_pFontAtlas = new FontAtlas( m_pTextAtlasSRV, pTextAtlasTexture, 1024, 1024 );
 			}
-			else
-			{
-				remaster::fontrenderer::SetHDEnabled( TFALSE );
-			}
+			//else
+			//{
+			//	//remaster::fontrenderer::SetHDEnabled( TFALSE );
+			//}
 
 			pTextAtlasTexture->Release();
 		}

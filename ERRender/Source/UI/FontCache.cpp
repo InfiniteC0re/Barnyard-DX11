@@ -28,27 +28,27 @@ static Toshi::T2Map<TUINT32, SolidColorBrush> s_mapFontsIndices;
 static remaster::fontcache::GlyphMetrics s_aGlyphMetrics[ 65535 ];
 static TUINT16                           s_aGlyphIndices[ 65535 ];
 
-ID2D1SolidColorBrush* remaster::fontcache::GetSolidColorBrush( TUINT32 a_uiColor )
-{
-	TPROFILER_SCOPE();
-	const TFLOAT flCurrentTime = g_oSystemManager.GetScheduler()->GetTotalTime();
-
-	auto it = s_mapBrushes.Find( a_uiColor );
-	if ( it != s_mapBrushes.End() )
-	{
-		it->second.flLastUsedTime = flCurrentTime;
-		return it->second.pBrush;
-	}
-
-	// Create new brush
-	auto pD2DRenderTarget = remaster::g_pRender->GetD2DRenderTarget();
-
-	ID2D1SolidColorBrush* pBrush = TNULL;
-	pD2DRenderTarget->CreateSolidColorBrush( D2D1::ColorF( a_uiColor, ( TCOLOR_GET_A( a_uiColor ) / 255.0f ) * ( TCOLOR_GET_A( a_uiColor ) / 255.0f ) ), &pBrush );
-
-	s_mapBrushes.Insert( a_uiColor, { pBrush, flCurrentTime } );
-	return pBrush;
-}
+//ID2D1SolidColorBrush* remaster::fontcache::GetSolidColorBrush( TUINT32 a_uiColor )
+//{
+//	TPROFILER_SCOPE();
+//	const TFLOAT flCurrentTime = g_oSystemManager.GetScheduler()->GetTotalTime();
+//
+//	auto it = s_mapBrushes.Find( a_uiColor );
+//	if ( it != s_mapBrushes.End() )
+//	{
+//		it->second.flLastUsedTime = flCurrentTime;
+//		return it->second.pBrush;
+//	}
+//
+//	// Create new brush
+//	auto pD2DRenderTarget = remaster::g_pRender->GetD2DRenderTarget();
+//
+//	ID2D1SolidColorBrush* pBrush = TNULL;
+//	pD2DRenderTarget->CreateSolidColorBrush( D2D1::ColorF( a_uiColor, ( TCOLOR_GET_A( a_uiColor ) / 255.0f ) * ( TCOLOR_GET_A( a_uiColor ) / 255.0f ) ), &pBrush );
+//
+//	s_mapBrushes.Insert( a_uiColor, { pBrush, flCurrentTime } );
+//	return pBrush;
+//}
 
 //static Toshi::T2Map<TUINT64, TFLOAT>          s_mapTextLengths[ remaster::font::MAX_NUM_FONTS ];
 
@@ -107,7 +107,7 @@ const TUINT16* remaster::fontcache::GetGlyphIndices()
 void remaster::fontcache::Create()
 {
 	TPROFILER_SCOPE();
-	auto pGlyphMetrics = new DWRITE_GLYPH_METRICS[ 65535 ];
+	/*auto pGlyphMetrics = new DWRITE_GLYPH_METRICS[ 65535 ];
 	auto pCharacters   = new TUINT32[ 65535 ];
 
 	for ( TUINT32 i = 0; i < 65535; i++ )
@@ -127,7 +127,7 @@ void remaster::fontcache::Create()
 	}
 
 	delete[] pCharacters;
-	delete[] pGlyphMetrics;
+	delete[] pGlyphMetrics;*/
 }
 
 void remaster::fontcache::Destroy()

@@ -176,7 +176,8 @@ TINT remaster::dx11::GetTextureRowPitch( DXGI_FORMAT a_eFormat, TUINT a_uiWidth 
 		case DXGI_FORMAT_R8G8B8A8_UINT:
 		case DXGI_FORMAT_D32_FLOAT:
 		case DXGI_FORMAT_B8G8R8A8_UNORM: return a_uiWidth << 2;
-		case DXGI_FORMAT_A8_UNORM: return a_uiWidth;
+		case DXGI_FORMAT_A8_UNORM:
+		case DXGI_FORMAT_R8_UINT: return a_uiWidth;
 		case DXGI_FORMAT_BC1_UNORM:
 		case DXGI_FORMAT_BC4_UNORM: return ( ( a_uiWidth + 3U ) >> 2 ) << 3;
 		case DXGI_FORMAT_BC2_UNORM:
@@ -201,6 +202,7 @@ TINT remaster::dx11::GetTextureDepthPitch( DXGI_FORMAT a_eFormat, TUINT a_uiWidt
 		case DXGI_FORMAT_R8G8B8A8_UINT:
 		case DXGI_FORMAT_D32_FLOAT:
 		case DXGI_FORMAT_B8G8R8A8_UNORM: return a_uiWidth * a_uiHeight * 4;
+		case DXGI_FORMAT_R8_UINT:;
 		case DXGI_FORMAT_A8_UNORM: return a_uiWidth * a_uiHeight;
 		case DXGI_FORMAT_BC1_UNORM:
 		case DXGI_FORMAT_BC4_UNORM: return ( ( a_uiWidth + 3U ) >> 2 ) * ( ( a_uiHeight + 3U ) >> 2 ) * 8;

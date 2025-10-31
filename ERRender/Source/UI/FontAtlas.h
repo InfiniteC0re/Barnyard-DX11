@@ -7,6 +7,8 @@
 #include <Toshi/T2SortedVector.h>
 #include <ToshiTools/T2DynamicVector.h>
 
+#include <freetype/freetype.h>
+
 #include <d2d1.h>
 #include <d3d11.h>
 
@@ -75,6 +77,8 @@ public:
 	ID3D11ShaderResourceView* GetTextureResource() const { return m_pAtlasSRV; }
 
 private:
+	FT_Face m_oFontFace;
+
 	ID3D11ShaderResourceView* m_pAtlasSRV;
 	ID3D11Texture2D*          m_pAtlas;
 	ID2D1StrokeStyle*         m_pStrokeStyle;

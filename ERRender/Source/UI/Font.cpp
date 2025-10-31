@@ -15,7 +15,7 @@ remaster::font::Font placeholderFont;
 remaster::font::Font* remaster::font::GetFont( TINT a_iIndex )
 {
 	placeholderFont.iID = a_iIndex;
-	placeholderFont.pFontFace = remaster::g_pRender->GetDWriteFontFace();
+	//placeholderFont.pFontFace = remaster::g_pRender->GetDWriteFontFace();
 
 	return &placeholderFont;
 }
