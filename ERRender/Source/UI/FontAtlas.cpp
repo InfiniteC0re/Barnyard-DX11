@@ -21,8 +21,11 @@ remaster::FontAtlas::FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, ID3D11Tex
     , m_pAtlas( a_pAtlas )
     , m_uiWidth( a_uiWidth )
     , m_uiHeight( a_uiHeight )
-    , m_flBaseScale( 32.0f )
+    , m_flBaseScale( 1.5f )
     , m_flHeightOffset( 8.0f )
+    , m_flLineHeightOffset( 8.0f )
+    , m_flSDFMarginSize( 16.0f )
+    , m_iLineSpacing( 2 * 64 )
 {
 	DX11_API_VALIDATE( g_pRender->GetD3D11Device()->CreateRenderTargetView( m_pAtlas, TNULL, &m_pAtlasTargetView ) );
 
@@ -33,7 +36,7 @@ remaster::FontAtlas::FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, ID3D11Tex
 
 	// Load font
 	FT_New_Face( s_FontLibrary, "CCThatsAllFolks.ttf", 0, &m_oFontFace );
-	FT_Set_Pixel_Sizes( m_oFontFace, 0, 64 );
+	FT_Set_Pixel_Sizes( m_oFontFace, 0, 32 );
 
 	// Add refs to the gx resources
 	m_pAtlasSRV->AddRef();
@@ -74,28 +77,18 @@ void remaster::FontAtlas::GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo&
 	}
 	else
 	{
-		// Check if there is this exact scale of the character in the cache
-
 		CachedChar* pCachedChar = m_vecCachedChars[ rCharIndex ];
-		T2_FOREACH( pCachedChar->m_vecChars, it )
-		{
-			if ( *it == flFontSize )
-			{
-				// Found the character, early out the function
-				a_rCharInfo.flWidth   = it->pTreeNode->width;
-				a_rCharInfo.flHeight  = it->pTreeNode->height;
-				a_rCharInfo.flUV1X    = it->flUV1X;
-				a_rCharInfo.flUV1Y    = it->flUV1Y;
-				a_rCharInfo.flUV2X    = it->flUV2X;
-				a_rCharInfo.flUV2Y    = it->flUV2Y;
-				a_rCharInfo.iAdvanceX = it->iAdvanceX;
-				a_rCharInfo.iAdvanceY = it->iAdvanceY;
-				a_rCharInfo.iBearingX = it->iBearingX;
-				a_rCharInfo.iBearingY = it->iBearingY;
-
-				return;
-			}
-		}
+		a_rCharInfo.flWidth     = pCachedChar->pTreeNode->width * flFontSize;
+		a_rCharInfo.flHeight    = pCachedChar->pTreeNode->height * flFontSize;
+		a_rCharInfo.flUV1X      = pCachedChar->flUV1X;
+		a_rCharInfo.flUV1Y      = pCachedChar->flUV1Y;
+		a_rCharInfo.flUV2X      = pCachedChar->flUV2X;
+		a_rCharInfo.flUV2Y      = pCachedChar->flUV2Y;
+		a_rCharInfo.iAdvanceX   = TINT( ( pCachedChar->iAdvanceX + m_iLineSpacing ) * flFontSize );
+		a_rCharInfo.iAdvanceY   = TINT( pCachedChar->iAdvanceY * flFontSize );
+		a_rCharInfo.iBearingX   = TINT( pCachedChar->iBearingX * flFontSize );
+		a_rCharInfo.iBearingY   = TINT( pCachedChar->iBearingY * flFontSize );
+		return;
 	}
 
 	///////////////////////////////////////////////////////////////////////////////
@@ -108,12 +101,12 @@ void remaster::FontAtlas::GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo&
 
 	FT_UInt  glyph_index = FT_Get_Char_Index( m_oFontFace, a_wChar );
 	FT_Error error       = FT_Load_Glyph( m_oFontFace, glyph_index, FT_LOAD_DEFAULT );
-	FT_Render_Glyph( m_oFontFace->glyph, FT_RENDER_MODE_NORMAL );
+	FT_Render_Glyph( m_oFontFace->glyph, FT_RENDER_MODE_SDF );
 
 	TUINT uiCharWidth  = m_oFontFace->glyph->bitmap.width;
 	TUINT uiCharHeight = m_oFontFace->glyph->bitmap.rows;
 	TBOOL bHasTexture  = uiCharWidth + uiCharHeight > 0;
-	
+
 	if ( !bHasTexture )
 	{
 		uiCharWidth  = 1;
@@ -138,13 +131,13 @@ void remaster::FontAtlas::GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo&
 		oBox.front  = 0;
 
 		g_pRender->GetD3D11DeviceContext()->CopySubresourceRegion(
-			m_pAtlas,
-			0,
+		    m_pAtlas,
+		    0,
 		    TUINT( pTreeNode->x ),
 		    TUINT( pTreeNode->y ),
-			0,
+		    0,
 		    pCharRes,
-			0,
+		    0,
 		    &oBox
 		);
 
@@ -156,29 +149,28 @@ void remaster::FontAtlas::GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo&
 	// 2. Fill information of this cached character
 	//-----------------------------------------------------------------------------
 
-	ScaledChar oScaledChar;
-	oScaledChar.pTreeNode = pTreeNode;
-	oScaledChar.flScale   = flFontSize;
-	oScaledChar.flUV1X    = ( pTreeNode->x ) / m_uiWidth;
-	oScaledChar.flUV1Y    = ( pTreeNode->y ) / m_uiHeight;
-	oScaledChar.flUV2X    = ( pTreeNode->x + uiCharWidth ) / m_uiWidth;
-	oScaledChar.flUV2Y    = ( pTreeNode->y + uiCharHeight ) / m_uiHeight;
-	oScaledChar.iAdvanceX = m_oFontFace->glyph->advance.x;
-	oScaledChar.iAdvanceY = m_oFontFace->glyph->advance.y;
-	oScaledChar.iBearingX = m_oFontFace->glyph->bitmap_left;
-	oScaledChar.iBearingY = m_oFontFace->glyph->bitmap_top;
-	m_vecCachedChars[ rCharIndex ]->m_vecChars.Push( oScaledChar );
+	CachedChar* pCachedChar = m_vecCachedChars[ rCharIndex ];
+	pCachedChar->pTreeNode  = pTreeNode;
+	pCachedChar->flScale    = flFontSize;
+	pCachedChar->flUV1X     = ( pTreeNode->x ) / m_uiWidth;
+	pCachedChar->flUV1Y     = ( pTreeNode->y ) / m_uiHeight;
+	pCachedChar->flUV2X     = ( pTreeNode->x + uiCharWidth ) / m_uiWidth;
+	pCachedChar->flUV2Y     = ( pTreeNode->y + uiCharHeight ) / m_uiHeight;
+	pCachedChar->iAdvanceX  = m_oFontFace->glyph->advance.x;
+	pCachedChar->iAdvanceY  = m_oFontFace->glyph->advance.y;
+	pCachedChar->iBearingX  = m_oFontFace->glyph->bitmap_left;
+	pCachedChar->iBearingY  = m_oFontFace->glyph->bitmap_top;
 
-	a_rCharInfo.flWidth   = oScaledChar.pTreeNode->width;
-	a_rCharInfo.flHeight  = oScaledChar.pTreeNode->height;
-	a_rCharInfo.flUV1X    = oScaledChar.flUV1X;
-	a_rCharInfo.flUV1Y    = oScaledChar.flUV1Y;
-	a_rCharInfo.flUV2X    = oScaledChar.flUV2X;
-	a_rCharInfo.flUV2Y    = oScaledChar.flUV2Y;
-	a_rCharInfo.iAdvanceX = oScaledChar.iAdvanceX;
-	a_rCharInfo.iAdvanceY = oScaledChar.iAdvanceY;
-	a_rCharInfo.iBearingX = oScaledChar.iBearingX;
-	a_rCharInfo.iBearingY = oScaledChar.iBearingY;
+	a_rCharInfo.flWidth   = pCachedChar->pTreeNode->width * flFontSize;
+	a_rCharInfo.flHeight  = pCachedChar->pTreeNode->height * flFontSize;
+	a_rCharInfo.flUV1X    = pCachedChar->flUV1X;
+	a_rCharInfo.flUV1Y    = pCachedChar->flUV1Y;
+	a_rCharInfo.flUV2X    = pCachedChar->flUV2X;
+	a_rCharInfo.flUV2Y    = pCachedChar->flUV2Y;
+	a_rCharInfo.iAdvanceX = TINT( ( pCachedChar->iAdvanceX + m_iLineSpacing ) * flFontSize );
+	a_rCharInfo.iAdvanceY = TINT( pCachedChar->iAdvanceY * flFontSize );
+	a_rCharInfo.iBearingX = TINT( pCachedChar->iBearingX * flFontSize );
+	a_rCharInfo.iBearingY = TINT( pCachedChar->iBearingY * flFontSize );
 }
 
 TFLOAT remaster::FontAtlas::GetTextWidth( const TWCHAR* a_wcsText, TSIZE a_uiTextLength, TFLOAT a_flScale )

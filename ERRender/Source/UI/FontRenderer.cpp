@@ -70,7 +70,7 @@ MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TW
 	TFLOAT flScaleYFactor = 1.0f / remaster::g_pUIRender->GetScaleY();
 
 	TFLOAT fX = a_fX;
-	TFLOAT fY = a_fY - pFontAtlas->GetHeightOffset();
+	TFLOAT fY = a_fY - pFontAtlas->GetLineHeightOffset() - pFontAtlas->GetSDFMarginSize() * 0.5f;
 
 	static remaster::FontAtlas::CharInfo s_aCharInfo[ 512 ];
 
@@ -250,7 +250,7 @@ MEMBER_HOOK( 0x006c2e10, AGUI2Font, AGUI2Font_GetTextHeightWrapped, TFLOAT, cons
 					remaster::FontAtlas::CharInfo oCharInfo;
 					pFontAtlas->GetCharUV( wChar, a_fScale, oCharInfo );
 
-					fWidth1 += ( oCharInfo.flWidth ) / flUIScaleX;
+					fWidth1 += ( oCharInfo.iAdvanceX >> 6 ) / flUIScaleX;
 					flMaxCharHeight = TMath::Max( flMaxCharHeight, oCharInfo.flHeight );
 
 					if ( iswspace( wChar ) != 0 && *pTextBuffer3 != L'\xA0' )
@@ -277,7 +277,7 @@ MEMBER_HOOK( 0x006c2e10, AGUI2Font, AGUI2Font_GetTextHeightWrapped, TFLOAT, cons
 
 		} while ( *pTextBuffer != L'\0' );
 
-		return ( fHeight - pFontAtlas->GetHeightOffset() ) / flUIScaleY;
+		return ( fHeight - pFontAtlas->GetHeightOffset() - pFontAtlas->GetSDFMarginSize() ) / flUIScaleY;
 	}
 
 	return 0.0f;

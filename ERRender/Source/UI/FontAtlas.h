@@ -20,7 +20,7 @@ class FontAtlas
 public:
 	inline static constexpr TFLOAT FONT_SCALE_SIMILARITY_THRESHOLD = 0.5f;
 
-	struct ScaledChar
+	struct CachedChar
 	{
 		PartitionTreeNode* pTreeNode;
 		TFLOAT             flScale;
@@ -52,7 +52,7 @@ public:
 
 	struct ScaledCharSortResults
 	{
-		TINT operator()( const ScaledChar& a_rcVal1, const ScaledChar& a_rcVal2 ) const
+		TINT operator()( const CachedChar& a_rcVal1, const CachedChar& a_rcVal2 ) const
 		{
 			if ( a_rcVal1.flScale < a_rcVal2.flScale )
 				return 1;
@@ -63,11 +63,6 @@ public:
 		}
 	};
 
-	struct CachedChar
-	{
-		Toshi::T2SortedVector<ScaledChar, Toshi::T2DynamicVector<ScaledChar>, ScaledCharSortResults> m_vecChars;
-	};
-
 public:
 	FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, ID3D11Texture2D* a_pAtlas, TUINT a_uiWidth, TUINT a_uiHeight );
 	~FontAtlas();
@@ -76,11 +71,11 @@ public:
 
 	TFLOAT GetTextWidth( const TWCHAR* a_wcsText, TSIZE a_uiTextLength, TFLOAT a_flScale );
 	TFLOAT GetTextHeight( const TWCHAR* a_wcsText, TSIZE a_uiTextLength, TFLOAT a_flScale );
-	//TFLOAT GetOutlineSize( TFLOAT a_flScale ) const { return m_flBaseScale * a_flScale * ( 1.0f / 42.0f ) * 6.0f; }
-	//TFLOAT GetOutlineSize( TFLOAT a_flScale ) const { return 0.0f; }
 
 	TFLOAT                    GetBaseScale() const { return m_flBaseScale; }
 	TFLOAT                    GetHeightOffset() const { return m_flHeightOffset; }
+	TFLOAT                    GetLineHeightOffset() const { return m_flLineHeightOffset; }
+	TFLOAT                    GetSDFMarginSize() const { return m_flSDFMarginSize; }
 	ID3D11ShaderResourceView* GetTextureResource() const { return m_pAtlasSRV; }
 
 private:
@@ -95,6 +90,10 @@ private:
 
 	TFLOAT m_flBaseScale;
 	TFLOAT m_flHeightOffset;
+	TFLOAT m_flLineHeightOffset;
+	TFLOAT m_flSDFMarginSize;
+
+	TINT m_iLineSpacing;
 
 	PartitionTree m_oPartitionTree;
 
