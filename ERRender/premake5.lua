@@ -13,9 +13,7 @@ project "ERRender"
 		"BYModCore",
 		"d3d11.lib",
 		"dxgi.lib",
-		"d3dcompiler.lib",
-		"Dwrite.lib",
-		"D2d1.lib"
+		"d3dcompiler.lib"
 	}
 	
 	libdirs

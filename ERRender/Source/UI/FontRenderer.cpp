@@ -1,9 +1,7 @@
 #include "pch.h"
 #include "FontRenderer.h"
 #include "RenderDX11.h"
-#include "RenderDX11Text.h"
 #include "UIRenderer.h"
-#include "FontCache.h"
 #include "Font.h"
 
 #include <Toshi/TScheduler.h>
@@ -70,29 +68,39 @@ MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TW
 
 	TFLOAT flScaleXFactor = 1.0f / remaster::g_pUIRender->GetScaleX();
 	TFLOAT flScaleYFactor = 1.0f / remaster::g_pUIRender->GetScaleY();
-	TFLOAT flSpriteMargin = pFontAtlas->GetSpriteMargin();
-	TFLOAT flOutline      = pFontAtlas->GetOutlineSize( a_fScale );
-	TFLOAT flHalfOutline  = 0.5f * flOutline;
 
-	TFLOAT fX = a_fX - flHalfOutline - flSpriteMargin * 0.5f;
-	TFLOAT fY = a_fY - pFontAtlas->GetHeightOffset() - flHalfOutline - flSpriteMargin * 0.5f;
+	TFLOAT fX = a_fX;
+	TFLOAT fY = a_fY - pFontAtlas->GetHeightOffset();
 
-	remaster::FontAtlas::CharInfo oCharInfo;
+	static remaster::FontAtlas::CharInfo s_aCharInfo[ 512 ];
+
+	// Calculate max height to offset the text
+	TFLOAT flMaxHeight = 0.0f;
 	for ( TINT i = 0; i < a_iTextLength; i++ )
 	{
-		pFontAtlas->GetCharUV( a_wszText[ i ], a_fScale, oCharInfo );
+		pFontAtlas->GetCharUV( a_wszText[ i ], a_fScale, s_aCharInfo[ i ] );
+		flMaxHeight = TMath::Max( flMaxHeight, ( s_aCharInfo[ i ].flHeight - ( s_aCharInfo[ i ].flHeight - s_aCharInfo[ i ].iBearingY ) ) * flScaleYFactor );
+	}
 
-		TFLOAT flWidth  = oCharInfo.flWidth * flScaleXFactor;
-		TFLOAT flHeight = oCharInfo.flHeight * flScaleYFactor;
+	// Draw text
+	for ( TINT i = 0; i < a_iTextLength; i++ )
+	{
+		remaster::FontAtlas::CharInfo& rCharInfo = s_aCharInfo[ i ];
+
+		TFLOAT flWidth  = rCharInfo.flWidth * flScaleXFactor;
+		TFLOAT flHeight = rCharInfo.flHeight * flScaleYFactor;
+
+		TFLOAT flGlyphX = fX + rCharInfo.iBearingX * flScaleXFactor;
+		TFLOAT flGlyphY = fY + ( rCharInfo.flHeight - rCharInfo.iBearingY ) * flScaleYFactor + flMaxHeight;
 
 		remaster::g_pUIRender->RenderRectangle(
-		    { fX, fY },
-		    { fX + flWidth, fY + flHeight },
-		    { oCharInfo.flUV1X, oCharInfo.flUV1Y },
-		    { oCharInfo.flUV2X, oCharInfo.flUV2Y }
+		    { flGlyphX, flGlyphY - flHeight },
+		    { flGlyphX + flWidth, flGlyphY },
+		    { rCharInfo.flUV1X, rCharInfo.flUV1Y },
+		    { rCharInfo.flUV2X, rCharInfo.flUV2Y }
 		);
 
-		fX += flWidth - flOutline;
+		fX += ( rCharInfo.iAdvanceX >> 6 ) * flScaleXFactor;
 	}
 }
 
@@ -104,12 +112,9 @@ MEMBER_HOOK( 0x006c3410, AGUI2Font, AGUI2Font_DrawTextWrapped, void, const TWCHA
 		return;
 	}
 
-	auto                 pTextMetrics   = remaster::fontcache::GetGlyphMetrics();
 	remaster::FontAtlas* pFontAtlas     = remaster::g_pRender->GetFontAtlas();
 	TFLOAT               flUIScaleX     = remaster::g_pUIRender->GetScaleX();
 	TFLOAT               flUIScaleY     = remaster::g_pUIRender->GetScaleY();
-	TFLOAT               flSpriteMargin = pFontAtlas->GetSpriteMargin();
-	TFLOAT               flOutlineSize  = pFontAtlas->GetOutlineSize( a_fScale );
 
 	if ( a_wszText && a_wszText[ 0 ] != '\0' )
 	{
@@ -154,8 +159,8 @@ MEMBER_HOOK( 0x006c3410, AGUI2Font, AGUI2Font_DrawTextWrapped, void, const TWCHA
 					remaster::FontAtlas::CharInfo oCharInfo;
 					pFontAtlas->GetCharUV( wChar, a_fScale, oCharInfo );
 
-					fWidth1 += ( oCharInfo.flWidth ) / flUIScaleX - flOutlineSize - flSpriteMargin * 2 / flUIScaleY;
-					flMaxCharHeight = TMath::Max( flMaxCharHeight, oCharInfo.flHeight - flOutlineSize * flUIScaleY - flSpriteMargin * 2 * flUIScaleY );
+					fWidth1 += ( oCharInfo.iAdvanceX >> 6 ) / flUIScaleX;
+					flMaxCharHeight = TMath::Max( flMaxCharHeight, oCharInfo.flHeight );
 
 					if ( iswspace( wChar ) != 0 && *pTextBuffer3 != L'\xA0' )
 					{
@@ -197,12 +202,9 @@ MEMBER_HOOK( 0x006c2e10, AGUI2Font, AGUI2Font_GetTextHeightWrapped, TFLOAT, cons
 	if ( !remaster::fontrenderer::IsHDEnabled() )
 		return CallOriginal( a_wszText, a_fMaxWidth, a_fScale );
 
-	auto                 pTextMetrics   = remaster::fontcache::GetGlyphMetrics();
 	remaster::FontAtlas* pFontAtlas     = remaster::g_pRender->GetFontAtlas();
 	TFLOAT               flUIScaleX     = remaster::g_pUIRender->GetScaleX();
 	TFLOAT               flUIScaleY     = remaster::g_pUIRender->GetScaleY();
-	TFLOAT               flSpriteMargin = pFontAtlas->GetSpriteMargin();
-	TFLOAT               flOutlineSize  = pFontAtlas->GetOutlineSize( a_fScale );
 
 	if ( a_wszText && a_wszText[ 0 ] != '\0' )
 	{
@@ -248,8 +250,8 @@ MEMBER_HOOK( 0x006c2e10, AGUI2Font, AGUI2Font_GetTextHeightWrapped, TFLOAT, cons
 					remaster::FontAtlas::CharInfo oCharInfo;
 					pFontAtlas->GetCharUV( wChar, a_fScale, oCharInfo );
 
-					fWidth1 += ( oCharInfo.flWidth ) / flUIScaleX - flOutlineSize - flSpriteMargin * 2;
-					flMaxCharHeight = TMath::Max( flMaxCharHeight, oCharInfo.flHeight - flOutlineSize * flUIScaleY - flSpriteMargin * 2 * flUIScaleY );
+					fWidth1 += ( oCharInfo.flWidth ) / flUIScaleX;
+					flMaxCharHeight = TMath::Max( flMaxCharHeight, oCharInfo.flHeight );
 
 					if ( iswspace( wChar ) != 0 && *pTextBuffer3 != L'\xA0' )
 					{
@@ -296,18 +298,14 @@ void remaster::fontrenderer::Create()
 {
 	if ( !remaster::fontrenderer::IsHDEnabled() )
 		return;
-
-	remaster::fontcache::Create();
 }
 
 void remaster::fontrenderer::Destroy()
 {
-	fontcache::Destroy();
 }
 
 void remaster::fontrenderer::Update()
 {
-	fontcache::Update();
 }
 
 static TBOOL s_bHDEnabled = TTRUE;

@@ -72,16 +72,13 @@ void remaster::WorldShaderDX11::StartFlush()
 	g_pRender->SetBlendEnabled( TTRUE );
 	g_pRender->SetCullMode( TFALSE ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
 
-	g_pRender->GetD3D11DeviceContext()->IASetInputLayout( m_pInputLayout );
-	g_pRender->GetD3D11DeviceContext()->PSSetShader( m_pPixelShader, TNULL, 0 );
-	g_pRender->GetD3D11DeviceContext()->VSSetShader( m_pVertexShader, TNULL, 0 );
+	g_pRender->SetShaderPipelineState( m_oShaderPipeline );
 }
 
 void remaster::WorldShaderDX11::EndFlush()
 {
-	ID3D11ShaderResourceView* pNullTex = TNULL;
-	g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 0, 1, &pNullTex );
-	g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 1, 1, &pNullTex );
+	g_pRender->SetShaderResource( 0, TNULL );
+	g_pRender->SetShaderResource( 1, TNULL );
 }
 
 TBOOL remaster::WorldShaderDX11::Create()
@@ -107,8 +104,8 @@ TBOOL remaster::WorldShaderDX11::Validate()
 	m_pPSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\World.hlsl", "ps_main", "ps_5_0", TNULL );
 
 	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob );
-	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_pVertexShader ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob->GetBufferPointer(), m_pPSShaderBlob->GetBufferSize(), &m_pPixelShader ) );
+	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_oShaderPipeline.pVertexShader ) );
+	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob->GetBufferPointer(), m_pPSShaderBlob->GetBufferSize(), &m_oShaderPipeline.pPixelShader ) );
 
 	D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
 		{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
@@ -123,7 +120,7 @@ TBOOL remaster::WorldShaderDX11::Validate()
 	        TARRAYSIZE( aInputElements ),
 	        m_pVSShaderBlob->GetBufferPointer(),
 	        m_pVSShaderBlob->GetBufferSize(),
-	        &m_pInputLayout
+	        &m_oShaderPipeline.pInputLayout
 	    )
 	);
 	

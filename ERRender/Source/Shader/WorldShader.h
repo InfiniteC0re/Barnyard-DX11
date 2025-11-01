@@ -1,4 +1,5 @@
 #pragma once
+#include "RenderDX11.h"
 #include "Ref/AWorldShader/AWorldShader_DX8.h"
 
 #include <d3d11.h>
@@ -94,11 +95,13 @@ private:
 	Toshi::TVector4            m_ShadowColour;
 	Toshi::TVector4            m_AmbientColour;
 
-	ID3D11InputLayout*  m_pInputLayout;
 	ID3DBlob*           m_pVSShaderBlob;
-	ID3D11VertexShader* m_pVertexShader;
 	ID3DBlob*           m_pPSShaderBlob;
-	ID3D11PixelShader*  m_pPixelShader;
+
+	RenderDX11::ShaderPipelineState m_oShaderPipeline;
+	//ID3D11InputLayout*  m_pInputLayout;
+	//ID3D11VertexShader* m_pVertexShader;
+	//ID3D11PixelShader*  m_pPixelShader;
 };
 
 }; // namespace remaster

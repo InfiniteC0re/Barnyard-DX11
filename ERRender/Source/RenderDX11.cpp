@@ -3,7 +3,6 @@
 #include "RenderAdapterDX11.h"
 #include "RenderContentDX11.h"
 #include "RenderDX11Utils.h"
-#include "RenderDX11Text.h"
 #include "UI/FontRenderer.h"
 
 #include <BYardSDK/THookedRenderD3DInterface.h>
@@ -11,9 +10,6 @@
 
 #include <Platform/DX8/TModel_DX8.h>
 #include <Platform/DX8/TTextureFactoryHAL_DX8.h>
-
-#include <dxgi1_2.h>
-#include <dwrite_3.h>
 
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
@@ -101,6 +97,16 @@ RenderDX11::RenderDX11()
 	m_PreviousBlendFactor[ 1 ] = 1.0f;
 	m_PreviousBlendFactor[ 2 ] = 1.0f;
 	m_PreviousBlendFactor[ 3 ] = 1.0f;
+
+	m_pCurrentRenderTargetView = TNULL;
+	m_pCurrentDepthStencilView = TNULL;
+
+	m_pCurrentVertexShader = TNULL;
+	m_pCurrentPixelShader  = TNULL;
+	m_pCurrentInputLayout  = TNULL;
+
+	for ( auto& pResource : m_apShaderResourceViews )
+		pResource = TNULL;
 
 	g_pRender = this;
 }
@@ -282,16 +288,13 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		EnableColourCorrection( TTRUE );
 		m_bDisplayCreated = TTRUE;
 
-		// Initialize Direct2D and DirectWrite
+		// Initialize HD font renderer
 		if ( fontrenderer::IsHDEnabled() )
 		{
-			/*D2D1CreateFactory( D2D1_FACTORY_TYPE_SINGLE_THREADED, &m_pD2DFactory );
-			DWriteCreateFactory( DWRITE_FACTORY_TYPE_SHARED, __uuidof( IDWriteFactory ), (IUnknown**)&m_pDWFactory );*/
-
 			m_pTextAtlasSRV = dx11::CreateTexture(
 			    1024,
 			    1024,
-			    DXGI_FORMAT_R8G8B8A8_UNORM,
+			    DXGI_FORMAT_R8_UNORM,
 			    TNULL,
 			    D3D11_USAGE_DEFAULT,
 			    0,
@@ -311,42 +314,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 			IDXGISurface* pBackBufferSurface = TNULL;
 			pTextAtlasTexture->QueryInterface( __uuidof( IDXGISurface ), (void**)&pBackBufferSurface );
 
-			// Create D2D Render Target
-
-			D2D1_RENDER_TARGET_PROPERTIES rtProps = D2D1::RenderTargetProperties(
-			    D2D1_RENDER_TARGET_TYPE_DEFAULT,
-			    D2D1::PixelFormat( DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED )
-			);
-
-			/*HRESULT hRes = m_pD2DFactory->CreateDxgiSurfaceRenderTarget( pBackBufferSurface, &rtProps, &m_pD2DRenderTarget );
-			pBackBufferSurface->Release();*/
-
-			//if ( SUCCEEDED( hRes ) && m_pD2DRenderTarget )
-			{
-				// Create font
-				/*DX11_API_VALIDATE( m_pDWFactory->CreateFontFileReference(
-				    L"CCThatsAllFolks.ttf",
-				    TNULL,
-				    &m_pDWFontFile
-				) );
-				DX11_API_VALIDATE( m_pDWFactory->CreateFontFace(
-				    DWRITE_FONT_FACE_TYPE_TRUETYPE,
-				    1,
-				    &m_pDWFontFile,
-				    0,
-				    DWRITE_FONT_SIMULATIONS_NONE,
-				    &m_pDWFontFace
-				) );*/
-
-				// Get font metrics
-				//m_pDWFontFace->GetMetrics( &m_oFontMetrics );
-
-				m_pFontAtlas = new FontAtlas( m_pTextAtlasSRV, pTextAtlasTexture, 1024, 1024 );
-			}
-			//else
-			//{
-			//	//remaster::fontrenderer::SetHDEnabled( TFALSE );
-			//}
+			m_pFontAtlas = new FontAtlas( m_pTextAtlasSRV, pTextAtlasTexture, 1024, 1024 );
 
 			pTextAtlasTexture->Release();
 		}
@@ -373,11 +341,12 @@ TBOOL RenderDX11::Update( TFLOAT a_fDeltaTime )
 
 TBOOL RenderDX11::BeginScene()
 {
+	static constexpr TFLOAT CLEAR_COLOR[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	
 	if ( BaseClass::BeginScene() )
 	{
-		TFLOAT clearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-		m_pDeviceContext->OMSetRenderTargets( 1, &m_pRenderTargetView, m_pDepthStencilView );
-		m_pDeviceContext->ClearRenderTargetView( m_pRenderTargetView, clearColor );
+		SetRenderTargetView( m_pRenderTargetView, m_pDepthStencilView );
+		ClearCurrentRenderTarget( CLEAR_COLOR );
 
 		D3D11_VIEWPORT viewport;
 		viewport.TopLeftX = 0.0f;
@@ -398,48 +367,6 @@ TBOOL RenderDX11::BeginScene()
 
 TBOOL RenderDX11::EndScene()
 {
-	{
-		// Prepare Text Resources
-		//IDWriteTextFormat* pTextFormat = nullptr;
-		//m_pDWFactory->CreateTextFormat(
-		//    L"Arial",
-		//    nullptr,
-		//    DWRITE_FONT_WEIGHT_NORMAL,
-		//    DWRITE_FONT_STYLE_NORMAL,
-		//    DWRITE_FONT_STRETCH_NORMAL,
-		//    24.0f,
-		//    L"en-us",
-		//    &pTextFormat
-		//);
-
-		//IDWriteTextLayout* pTextLayout = nullptr;
-		//const WCHAR*       text        = L"Привет";
-		//m_pDWFactory->CreateTextLayout(
-		//    text,
-		//    wcslen( text ),
-		//    pTextFormat,
-		//    500.0f, // Max width
-		//    100.0f, // Max height
-		//    &pTextLayout
-		//);
-
-		//// ... (Direct3D 11 rendering) ...
-
-		//// Render Text with Direct2D
-		//m_pD2DRenderTarget->BeginDraw();
-		//ID2D1SolidColorBrush* pBlackBrush = nullptr;
-		//m_pD2DRenderTarget->CreateSolidColorBrush( D2D1::ColorF( D2D1::ColorF::White, 0.5f ), &pBlackBrush );
-		//m_pD2DRenderTarget->DrawTextLayout( D2D1::Point2F( 10.0f, 10.0f ), pTextLayout, pBlackBrush );
-
-
-		//
-		//m_pD2DRenderTarget->EndDraw();
-
-		//pBlackBrush->Release();
-		//pTextLayout->Release();
-		//pTextFormat->Release();
-	}
-
 	m_pSwapChain->Present( 0, 0 );
 	m_bInScene = TFALSE;
 
@@ -599,7 +526,7 @@ TBOOL RenderDX11::Create( const TCHAR* a_pchWindowTitle )
 {
 	if ( TBOOL bRenderInterfaceCreated = TRenderInterface::Create() )
 	{
-		TUINT flags = D3D11_CREATE_DEVICE_SINGLETHREADED | D3D11_CREATE_DEVICE_BGRA_SUPPORT
+		TUINT flags = D3D11_CREATE_DEVICE_SINGLETHREADED
 #if defined( TOSHI_DEBUG )
 		    | D3D11_CREATE_DEVICE_DEBUG
 #endif

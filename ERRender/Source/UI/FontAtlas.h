@@ -28,6 +28,10 @@ public:
 		TFLOAT             flUV1Y;
 		TFLOAT             flUV2X;
 		TFLOAT             flUV2Y;
+		TINT               iAdvanceX;
+		TINT               iAdvanceY;
+		TINT               iBearingX;
+		TINT               iBearingY;
 
 		TBOOL operator==( TFLOAT a_flScale ) { return flScale == a_flScale; }
 	};
@@ -40,6 +44,10 @@ public:
 		TFLOAT flUV1Y;
 		TFLOAT flUV2X;
 		TFLOAT flUV2Y;
+		TINT   iAdvanceX;
+		TINT   iAdvanceY;
+		TINT   iBearingX;
+		TINT   iBearingY;
 	};
 
 	struct ScaledCharSortResults
@@ -48,7 +56,7 @@ public:
 		{
 			if ( a_rcVal1.flScale < a_rcVal2.flScale )
 				return 1;
-			else if ( fabs( a_rcVal1.flScale - a_rcVal2.flScale ) <= FONT_SCALE_SIMILARITY_THRESHOLD )
+			if ( fabs( a_rcVal1.flScale - a_rcVal2.flScale ) <= FONT_SCALE_SIMILARITY_THRESHOLD )
 				return 0;
 
 			return -1;
@@ -68,24 +76,23 @@ public:
 
 	TFLOAT GetTextWidth( const TWCHAR* a_wcsText, TSIZE a_uiTextLength, TFLOAT a_flScale );
 	TFLOAT GetTextHeight( const TWCHAR* a_wcsText, TSIZE a_uiTextLength, TFLOAT a_flScale );
-	TFLOAT GetOutlineSize( TFLOAT a_flScale ) const { return m_flBaseScale * a_flScale * ( 1.0f / 42.0f ) * 6.0f; }
+	//TFLOAT GetOutlineSize( TFLOAT a_flScale ) const { return m_flBaseScale * a_flScale * ( 1.0f / 42.0f ) * 6.0f; }
 	//TFLOAT GetOutlineSize( TFLOAT a_flScale ) const { return 0.0f; }
 
 	TFLOAT                    GetBaseScale() const { return m_flBaseScale; }
 	TFLOAT                    GetHeightOffset() const { return m_flHeightOffset; }
-	TFLOAT                    GetSpriteMargin() const { return m_flSpriteMargin; }
 	ID3D11ShaderResourceView* GetTextureResource() const { return m_pAtlasSRV; }
 
 private:
 	FT_Face m_oFontFace;
 
+	ID3D11RenderTargetView*   m_pAtlasTargetView;
 	ID3D11ShaderResourceView* m_pAtlasSRV;
 	ID3D11Texture2D*          m_pAtlas;
 	ID2D1StrokeStyle*         m_pStrokeStyle;
 	TUINT                     m_uiWidth;
 	TUINT                     m_uiHeight;
 
-	TFLOAT m_flSpriteMargin;
 	TFLOAT m_flBaseScale;
 	TFLOAT m_flHeightOffset;
 

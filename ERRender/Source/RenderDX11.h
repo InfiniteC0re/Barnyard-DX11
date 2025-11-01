@@ -11,8 +11,6 @@
 #include <Platform/DX8/TMSWindow.h>
 
 #include <d3d11.h>
-#include <d2d1_3.h>
-#include <dwrite_3.h>
 
 #define DX11_API_VALIDATE( CALL )       \
 	{                                   \
@@ -273,8 +271,8 @@ public:
 		{
 			m_pDeviceContext->IASetVertexBuffers( 0, 1, &a_pVertexBuffer, &a_uiStride, &a_uiOffset );
 			m_pCurrentVertexBuffer = a_pVertexBuffer;
-			m_uiVBCurrentStride      = a_uiStride;
-			m_uiVBCurrentOffset      = a_uiOffset;
+			m_uiVBCurrentStride    = a_uiStride;
+			m_uiVBCurrentOffset    = a_uiOffset;
 		}
 	}
 
@@ -291,6 +289,8 @@ public:
 
 	void VSSetConstantBuffer( TINT a_iSlot, ID3D11Buffer* a_pBuffer )
 	{
+		TASSERT( a_iSlot < TARRAYSIZE( m_aVSCurrentConstantBuffers ) );
+
 		if ( m_aVSCurrentConstantBuffers[ a_iSlot ] != a_pBuffer )
 		{
 			m_pDeviceContext->VSSetConstantBuffers( a_iSlot, 1, &a_pBuffer );
@@ -300,10 +300,105 @@ public:
 
 	void PSSetConstantBuffer( TINT a_iSlot, ID3D11Buffer* a_pBuffer )
 	{
+		TASSERT( a_iSlot < TARRAYSIZE( m_aPSCurrentConstantBuffers ) );
+
 		if ( m_aPSCurrentConstantBuffers[ a_iSlot ] != a_pBuffer )
 		{
 			m_pDeviceContext->PSSetConstantBuffers( a_iSlot, 1, &a_pBuffer );
 			m_aPSCurrentConstantBuffers[ a_iSlot ] = a_pBuffer;
+		}
+	}
+
+	void GetRenderTargetView( ID3D11RenderTargetView*& a_pRenderTargetView, ID3D11DepthStencilView*& a_pDepthStencilView )
+	{
+		a_pRenderTargetView = m_pCurrentRenderTargetView;
+		a_pDepthStencilView = m_pCurrentDepthStencilView;
+	}
+
+	void SetRenderTargetView( ID3D11RenderTargetView* a_pRenderTargetView, ID3D11DepthStencilView* a_pDepthStencilView )
+	{
+		if ( m_pCurrentRenderTargetView != a_pRenderTargetView || m_pCurrentDepthStencilView != a_pDepthStencilView )
+		{
+			m_pCurrentRenderTargetView = a_pRenderTargetView;
+			m_pCurrentDepthStencilView = a_pDepthStencilView;
+			m_pDeviceContext->OMSetRenderTargets( 1, &a_pRenderTargetView, a_pDepthStencilView );
+		}
+	}
+
+	void ClearRenderTarget( ID3D11RenderTargetView* a_pRenderTargetView, const TFLOAT a_pColorRGBA[ 4 ] )
+	{
+		m_pDeviceContext->ClearRenderTargetView( a_pRenderTargetView, a_pColorRGBA );
+	}
+
+	void ClearCurrentRenderTarget( const TFLOAT a_pColorRGBA[ 4 ] )
+	{
+		m_pDeviceContext->ClearRenderTargetView( m_pCurrentRenderTargetView, a_pColorRGBA );
+	}
+
+	struct ShaderPipelineState
+	{
+		ID3D11VertexShader* pVertexShader;
+		ID3D11PixelShader*  pPixelShader;
+		ID3D11InputLayout*  pInputLayout;
+	};
+
+	void GetCurrentShaderPipelineState( ShaderPipelineState& a_rOutState ) const
+	{
+		a_rOutState.pVertexShader = m_pCurrentVertexShader;
+		a_rOutState.pPixelShader  = m_pCurrentPixelShader;
+		a_rOutState.pInputLayout  = m_pCurrentInputLayout;
+	}
+
+	void SetShaderPipelineState( const ShaderPipelineState& a_rPipelineState )
+	{
+		SetInputLayout( a_rPipelineState.pInputLayout );
+		SetVertexShader( a_rPipelineState.pVertexShader );
+		SetPixelShader( a_rPipelineState.pPixelShader );
+	}
+
+	ID3D11VertexShader* GetVertexShader() const { return m_pCurrentVertexShader; }
+	ID3D11PixelShader*  GetPixelShader() const { return m_pCurrentPixelShader; }
+	ID3D11InputLayout*  GetInputLayout() const { return m_pCurrentInputLayout; }
+
+	void SetVertexShader( ID3D11VertexShader* a_pVertexShader )
+	{
+		if ( m_pCurrentVertexShader != a_pVertexShader )
+		{
+			m_pCurrentVertexShader = a_pVertexShader;
+			m_pDeviceContext->VSSetShader( a_pVertexShader, TNULL, 0 );
+		}
+	}
+
+	void SetPixelShader( ID3D11PixelShader* a_pPixelShader )
+	{
+		if ( m_pCurrentPixelShader != a_pPixelShader )
+		{
+			m_pCurrentPixelShader = a_pPixelShader;
+			m_pDeviceContext->PSSetShader( a_pPixelShader, TNULL, 0 );
+		}
+	}
+
+	void SetInputLayout( ID3D11InputLayout* a_pInputLayout )
+	{
+		if ( m_pCurrentInputLayout != a_pInputLayout )
+		{
+			m_pCurrentInputLayout = a_pInputLayout;
+			m_pDeviceContext->IASetInputLayout( a_pInputLayout );
+		}
+	}
+
+	ID3D11ShaderResourceView* GetShaderResource( TUINT a_uiSlot ) const
+	{
+		TASSERT( a_uiSlot < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT );
+		return m_apShaderResourceViews[ a_uiSlot ];
+	}
+
+	void SetShaderResource( TUINT a_uiSlot, ID3D11ShaderResourceView* a_pResourceView )
+	{
+		if ( m_apShaderResourceViews[ a_uiSlot ] != a_pResourceView )
+		{
+			m_apShaderResourceViews[ a_uiSlot ] = a_pResourceView;
+			m_pDeviceContext->PSSetShaderResources( a_uiSlot, 1, &a_pResourceView );
 		}
 	}
 
@@ -319,13 +414,6 @@ public:
 	ID3D11RenderTargetView*              GetD3D11RenderTargetView() const { return m_pRenderTargetView; }
 	ID3D11DepthStencilView*              GetD3D11DepthStencilView() const { return m_pDepthStencilView; }
 
-	//ID2D1Factory*      GetD2DFactory() const { return m_pD2DFactory; }
-	//ID2D1RenderTarget* GetD2DRenderTarget() const { return m_pD2DRenderTarget; }
-	//IDWriteFactory*    GetDWriteFactory() const { return m_pDWFactory; }
-	//IDWriteFontFile*   GetDWriteFontFile() const { return m_pDWFontFile; }
-	//IDWriteFontFace*   GetDWriteFontFace() const { return m_pDWFontFace; }
-	//const DWRITE_FONT_METRICS& GetFontMetrics() const { return m_oFontMetrics; }
-
 	TFLOAT GetSurfaceWidth() const { return TFLOAT( m_oSwapChainDesc.BufferDesc.Width ); }
 	TFLOAT GetSurfaceHeight() const { return TFLOAT( m_oSwapChainDesc.BufferDesc.Height ); }
 
@@ -335,8 +423,8 @@ private:
 	void BuildAdapterDatabase();
 
 private:
-	ID3D11Device*                        m_pDevice        = TNULL; // NOTE: DUE TO COMPATIBILITY, IT NEEDS TO BE AT THIS OFFSET!!!
-	ID3D11DeviceContext*                 m_pDeviceContext = TNULL; // NOTE: DUE TO COMPATIBILITY, IT NEEDS TO BE AT THIS OFFSET!!!
+	ID3D11Device*        m_pDevice        = TNULL; // NOTE: DUE TO COMPATIBILITY, IT NEEDS TO BE AT THIS OFFSET!!!
+	ID3D11DeviceContext* m_pDeviceContext = TNULL; // NOTE: DUE TO COMPATIBILITY, IT NEEDS TO BE AT THIS OFFSET!!!
 
 	// Things left from TRenderD3DInterface (D3D8)
 	TBYTE                                PADDING1[ 84 ];
@@ -369,16 +457,11 @@ private:
 	ID3D11DepthStencilView* m_pDepthStencilView    = TNULL;
 	DXGI_SWAP_CHAIN_DESC    m_oSwapChainDesc;
 
-	// DirectWrite
-	//ID2D1RenderTarget*        m_pD2DRenderTarget = TNULL;
-	//IDWriteFactory*           m_pDWFactory       = TNULL;
-	//ID2D1Factory*             m_pD2DFactory      = TNULL;
-	//IDWriteFontFile*          m_pDWFontFile      = TNULL;
-	//IDWriteFontFace*          m_pDWFontFace      = TNULL;
-	ID3D11ShaderResourceView* m_pTextAtlasSRV    = TNULL;
-	//DWRITE_FONT_METRICS       m_oFontMetrics;
+	// Font rendering
+	// TODO: move this away from here
+	ID3D11ShaderResourceView* m_pTextAtlasSRV = TNULL;
 	FontAtlas*                m_pFontAtlas;
-	
+
 	// Buffers
 	void*         m_pVertexConstantBuffer;
 	TBOOL         m_IsVertexConstantBufferSet;
@@ -431,6 +514,15 @@ private:
 
 	ID3D11Buffer* m_aVSCurrentConstantBuffers[ 16 ];
 	ID3D11Buffer* m_aPSCurrentConstantBuffers[ 16 ];
+
+	ID3D11RenderTargetView* m_pCurrentRenderTargetView;
+	ID3D11DepthStencilView* m_pCurrentDepthStencilView;
+
+	ID3D11VertexShader* m_pCurrentVertexShader;
+	ID3D11PixelShader*  m_pCurrentPixelShader;
+	ID3D11InputLayout*  m_pCurrentInputLayout;
+
+	ID3D11ShaderResourceView* m_apShaderResourceViews[ D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT ];
 };
 
 extern RenderDX11* g_pRender;

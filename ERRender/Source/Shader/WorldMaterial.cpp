@@ -72,7 +72,7 @@ void remaster::WorldMaterial::PreRender()
 			auto pD3DTexture = (ID3D11ShaderResourceView*)pTexture->GetD3DTexture();
 
 			if ( pD3DTexture )
-				g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 0, 1, &pD3DTexture );
+				g_pRender->SetShaderResource( 0, pD3DTexture );
 
 			g_pRender->SetSamplerState( i, 3, TTRUE );
 		}

@@ -144,9 +144,9 @@ void remaster::UIRendererDX11::BeginScene()
 	rTransform.m_aMatrixRows[ 1 ] = { 0.0f, -TFLOAT( pDisplayParams->uiHeight ) / fRootHeight };
 	rTransform.m_vecTranslation   = { 0.0f, 0.0f };
 
-	g_pRender->GetD3D11DeviceContext()->PSSetShader( m_pPixelNoImgShader, TNULL, 0 );
-	g_pRender->GetD3D11DeviceContext()->VSSetShader( m_pVertexShader, TNULL, 0 );
-	g_pRender->GetD3D11DeviceContext()->IASetInputLayout( m_pInputLayout );
+	g_pRender->SetPixelShader( m_pPixelNoImgShader );
+	g_pRender->SetVertexShader( m_pVertexShader );
+	g_pRender->SetInputLayout( m_pInputLayout );
 
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
 	g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
@@ -422,12 +422,12 @@ void remaster::UIRendererDX11::ResetZCoordinate()
 void remaster::UIRendererDX11::SetTextureResourceView( ID3D11ShaderResourceView* a_pTextureRV )
 {
 	m_bHasTextureRV = a_pTextureRV != TNULL;
-	g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 0, 1, &a_pTextureRV );
+	g_pRender->SetShaderResource( 0, a_pTextureRV );
 }
 
 void remaster::UIRendererDX11::SetPixelShader()
 {
-	g_pRender->GetD3D11DeviceContext()->PSSetShader( m_bHasTextureRV ? m_pPixelShader : m_pPixelNoImgShader, TNULL, 0 );
+	g_pRender->SetPixelShader( m_bHasTextureRV ? m_pPixelShader : m_pPixelNoImgShader );
 }
 
 void remaster::UIRendererDX11::UpdateTransformImpl()
