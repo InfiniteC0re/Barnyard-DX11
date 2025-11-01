@@ -64,7 +64,7 @@ MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TW
 	remaster::g_pUIRender->SetMaterial( TNULL );
 	remaster::g_pUIRender->SetColour( a_uiColour );
 	remaster::g_pUIRender->SetTextureResourceView( pFontAtlasResource );
-	remaster::g_pUIRender->SetPixelShader();
+	remaster::g_pUIRender->SetShaderType( remaster::UIRendererDX11::ST_FONT );
 
 	TFLOAT flScaleXFactor = 1.0f / remaster::g_pUIRender->GetScaleX();
 	TFLOAT flScaleYFactor = 1.0f / remaster::g_pUIRender->GetScaleY();

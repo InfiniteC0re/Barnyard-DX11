@@ -38,19 +38,19 @@ remaster::UIRendererDX11::UIRendererDX11()
 	m_iTransformCount   = 0;
 	m_bIsTransformDirty = TFALSE;
 
-	D3D_SHADER_MACRO aWithImagesMacros[] = {
-		"HAS_IMAGE", "1",
-		TNULL, TNULL
-	};
+	D3D_SHADER_MACRO aTexturedShaderMacro[] = { "TEXTURED", "1", TNULL, TNULL };
+	D3D_SHADER_MACRO aFontShaderMacro[]     = { "FONT", "1", TNULL, TNULL };
 
-	m_pVSShaderBlob      = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "vs_main", "vs_5_0", aWithImagesMacros );
-	m_pPSShaderBlob      = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main", "ps_5_0", aWithImagesMacros );
-	m_pPSShaderNoImgBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main", "ps_5_0", TNULL );
+	m_pVSShaderBlob          = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "vs_main", "vs_5_0", TNULL );
+	m_pPSShaderBlob_Textured = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main", "ps_5_0", aTexturedShaderMacro );
+	m_pPSShaderBlob_Font     = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main", "ps_5_0", aFontShaderMacro );
+	m_pPSShaderBlob_Solid    = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main", "ps_5_0", TNULL );
 
-	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob );
+	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob_Textured );
 	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_pVertexShader ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob->GetBufferPointer(), m_pPSShaderBlob->GetBufferSize(), &m_pPixelShader ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderNoImgBlob->GetBufferPointer(), m_pPSShaderNoImgBlob->GetBufferSize(), &m_pPixelNoImgShader ) );
+	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Textured->GetBufferPointer(), m_pPSShaderBlob_Textured->GetBufferSize(), &m_pPixelShader_Textured ) );
+	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Solid->GetBufferPointer(), m_pPSShaderBlob_Solid->GetBufferSize(), &m_pPixelShader_Solid ) );
+	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Font->GetBufferPointer(), m_pPSShaderBlob_Font->GetBufferSize(), &m_pPixelShader_Font ) );
 
 	D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
 		{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
@@ -144,14 +144,14 @@ void remaster::UIRendererDX11::BeginScene()
 	rTransform.m_aMatrixRows[ 1 ] = { 0.0f, -TFLOAT( pDisplayParams->uiHeight ) / fRootHeight };
 	rTransform.m_vecTranslation   = { 0.0f, 0.0f };
 
-	g_pRender->SetPixelShader( m_pPixelNoImgShader );
+	g_pRender->SetPixelShader( m_pPixelShader_Solid );
 	g_pRender->SetVertexShader( m_pVertexShader );
 	g_pRender->SetInputLayout( m_pInputLayout );
 
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
 	g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
 	g_pRender->SetZMode( g_pRender->IsZEnabled(), D3D11_COMPARISON_ALWAYS, D3D11_DEPTH_WRITE_MASK_ZERO );
-	
+
 	SetColour( TCOLOR( 255, 255, 255 ) );
 	m_pMaterial = TNULL;
 }
@@ -268,7 +268,7 @@ void remaster::UIRendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
 		}
 	}
 
-	SetPixelShader();
+	SetShaderType( ST_TEXTURED );
 	m_pMaterial = a_pMaterial;
 }
 
@@ -425,9 +425,20 @@ void remaster::UIRendererDX11::SetTextureResourceView( ID3D11ShaderResourceView*
 	g_pRender->SetShaderResource( 0, a_pTextureRV );
 }
 
-void remaster::UIRendererDX11::SetPixelShader()
+void remaster::UIRendererDX11::SetShaderType( SHADER_TYPE a_eShaderType )
 {
-	g_pRender->SetPixelShader( m_bHasTextureRV ? m_pPixelShader : m_pPixelNoImgShader );
+	switch ( a_eShaderType )
+	{
+		case ST_TEXTURED:
+			g_pRender->SetPixelShader( m_bHasTextureRV ? m_pPixelShader_Textured : m_pPixelShader_Solid );
+			break;
+		case ST_FONT:
+			g_pRender->SetPixelShader( m_pPixelShader_Font );
+			break;
+		case ST_SOLID:
+			g_pRender->SetPixelShader( m_pPixelShader_Solid );
+			break;
+	}
 }
 
 void remaster::UIRendererDX11::UpdateTransformImpl()

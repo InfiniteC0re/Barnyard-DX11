@@ -1,8 +1,6 @@
 #include "pch.h"
 #include "FontAtlas.h"
-#include "FontCache.h"
 #include "RenderDX11.h"
-#include "RenderDX11Text.h"
 #include "RenderDX11Utils.h"
 #include "UIRenderer.h"
 
@@ -149,6 +147,9 @@ void remaster::FontAtlas::GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo&
 			0,
 		    &oBox
 		);
+
+		pCharSRV->Release();
+		pCharRes->Release();
 	}
 
 	//-----------------------------------------------------------------------------

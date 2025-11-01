@@ -23,6 +23,14 @@ public:
 		Toshi::TVector2 UV;
 	};
 
+	enum SHADER_TYPE
+	{
+		ST_TEXTURED, // If texture is not set, changes to ST_SOLID
+		ST_FONT,     // Treats red channel as an alpha channel
+		ST_SOLID,    // Solid color, w/o textures
+		ST_NUMOF
+	};
+
 public:
 	UIRendererDX11();
 	~UIRendererDX11();
@@ -55,7 +63,7 @@ public:
 
 public:
 	void SetTextureResourceView( ID3D11ShaderResourceView* a_pTextureRV );
-	void SetPixelShader();
+	void SetShaderType( SHADER_TYPE a_eShaderType );
 
 	void UpdateTransform() { if ( m_bIsTransformDirty ) UpdateTransformImpl(); }
 
@@ -92,10 +100,14 @@ private:
 	ID3DBlob*           m_pVSShaderBlob;
 	ID3D11VertexShader* m_pVertexShader;
 
-	ID3DBlob*           m_pPSShaderBlob;
-	ID3D11PixelShader*  m_pPixelShader;
-	ID3DBlob*           m_pPSShaderNoImgBlob;
-	ID3D11PixelShader*  m_pPixelNoImgShader;
+	ID3DBlob*           m_pPSShaderBlob_Textured;
+	ID3D11PixelShader*  m_pPixelShader_Textured;
+	
+	ID3DBlob*           m_pPSShaderBlob_Solid;
+	ID3D11PixelShader*  m_pPixelShader_Solid;
+
+	ID3DBlob*           m_pPSShaderBlob_Font;
+	ID3D11PixelShader*  m_pPixelShader_Font;
 
 	Toshi::TMatrix44 m_matProjection;
 	Toshi::TMatrix44 m_matView;
