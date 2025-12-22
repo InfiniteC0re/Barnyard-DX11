@@ -93,7 +93,7 @@ private:
 	TFLOAT m_flLineHeightOffset;
 	TFLOAT m_flSDFMarginSize;
 
-	TINT m_iLineSpacing;
+	TINT m_iLetterSpacing;
 
 	PartitionTree m_oPartitionTree;
 

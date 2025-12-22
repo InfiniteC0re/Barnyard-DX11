@@ -29,6 +29,7 @@ workspace "Barnyard Remastered"
 		"BAN_OPCODE_AUTOLINK",
 		"ICE_NO_DLL",
 		"BARNYARD_COMMUNITY_PATCH",
+		"USE_ATOMIC",
 	}
 
 	-- Global settings for include dirs

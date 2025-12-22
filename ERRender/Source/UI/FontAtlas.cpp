@@ -21,11 +21,11 @@ remaster::FontAtlas::FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, ID3D11Tex
     , m_pAtlas( a_pAtlas )
     , m_uiWidth( a_uiWidth )
     , m_uiHeight( a_uiHeight )
-    , m_flBaseScale( 1.5f )
-    , m_flHeightOffset( 8.0f )
-    , m_flLineHeightOffset( 8.0f )
+    , m_flBaseScale( 1.8f )
+    , m_flHeightOffset( 14.0f )
+    , m_flLineHeightOffset( 9.0f )
     , m_flSDFMarginSize( 16.0f )
-    , m_iLineSpacing( 2 * 64 )
+    , m_iLetterSpacing( 2 * 64 )
 {
 	DX11_API_VALIDATE( g_pRender->GetD3D11Device()->CreateRenderTargetView( m_pAtlas, TNULL, &m_pAtlasTargetView ) );
 
@@ -84,7 +84,7 @@ void remaster::FontAtlas::GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo&
 		a_rCharInfo.flUV1Y      = pCachedChar->flUV1Y;
 		a_rCharInfo.flUV2X      = pCachedChar->flUV2X;
 		a_rCharInfo.flUV2Y      = pCachedChar->flUV2Y;
-		a_rCharInfo.iAdvanceX   = TINT( ( pCachedChar->iAdvanceX + m_iLineSpacing ) * flFontSize );
+		a_rCharInfo.iAdvanceX   = TINT( ( pCachedChar->iAdvanceX + m_iLetterSpacing ) * flFontSize );
 		a_rCharInfo.iAdvanceY   = TINT( pCachedChar->iAdvanceY * flFontSize );
 		a_rCharInfo.iBearingX   = TINT( pCachedChar->iBearingX * flFontSize );
 		a_rCharInfo.iBearingY   = TINT( pCachedChar->iBearingY * flFontSize );
@@ -167,7 +167,7 @@ void remaster::FontAtlas::GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo&
 	a_rCharInfo.flUV1Y    = pCachedChar->flUV1Y;
 	a_rCharInfo.flUV2X    = pCachedChar->flUV2X;
 	a_rCharInfo.flUV2Y    = pCachedChar->flUV2Y;
-	a_rCharInfo.iAdvanceX = TINT( ( pCachedChar->iAdvanceX + m_iLineSpacing ) * flFontSize );
+	a_rCharInfo.iAdvanceX = TINT( ( pCachedChar->iAdvanceX + m_iLetterSpacing ) * flFontSize );
 	a_rCharInfo.iAdvanceY = TINT( pCachedChar->iAdvanceY * flFontSize );
 	a_rCharInfo.iBearingX = TINT( pCachedChar->iBearingX * flFontSize );
 	a_rCharInfo.iBearingY = TINT( pCachedChar->iBearingY * flFontSize );
