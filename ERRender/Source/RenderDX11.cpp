@@ -291,32 +291,63 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		// Initialize HD font renderer
 		if ( fontrenderer::IsHDEnabled() )
 		{
-			m_pTextAtlasSRV = dx11::CreateTexture(
-			    1024,
-			    1024,
-			    DXGI_FORMAT_R8_UNORM,
-			    TNULL,
-			    D3D11_USAGE_DEFAULT,
-			    0,
-			    1,
-			    dx11::CTF_RENDER_TARGET
-			);
+			{
+				// Rekord26
+				ID3D11ShaderResourceView* pAtlasSRV = dx11::CreateTexture(
+				    1024,
+				    1024,
+				    DXGI_FORMAT_R8_UNORM,
+				    TNULL,
+				    D3D11_USAGE_DEFAULT,
+				    0,
+				    1,
+				    dx11::CTF_RENDER_TARGET
+				);
 
-			TVALIDPTR( m_pTextAtlasSRV );
+				TVALIDPTR( pAtlasSRV );
 
-			ID3D11Resource* pResource = TNULL;
-			m_pTextAtlasSRV->GetResource( &pResource );
+				ID3D11Resource* pResource = TNULL;
+				pAtlasSRV->GetResource( &pResource );
 
-			ID3D11Texture2D* pTextAtlasTexture = TNULL;
-			pResource->QueryInterface( __uuidof( ID3D11Texture2D ), (void**)&pTextAtlasTexture );
-			pResource->Release();
+				ID3D11Texture2D* pTextAtlasTexture = TNULL;
+				pResource->QueryInterface( __uuidof( ID3D11Texture2D ), (void**)&pTextAtlasTexture );
+				pResource->Release();
 
-			IDXGISurface* pBackBufferSurface = TNULL;
-			pTextAtlasTexture->QueryInterface( __uuidof( IDXGISurface ), (void**)&pBackBufferSurface );
+				IDXGISurface* pBackBufferSurface = TNULL;
+				pTextAtlasTexture->QueryInterface( __uuidof( IDXGISurface ), (void**)&pBackBufferSurface );
 
-			m_pFontAtlas = new FontAtlas( m_pTextAtlasSRV, pTextAtlasTexture, 1024, 1024 );
+				m_pFontAtlases[ FONT_REKORD26 ] = new FontAtlas( pAtlasSRV, ".\\Resources\\Fonts\\CCThatsAllFolks.ttf", pTextAtlasTexture, 1024, 1024 );
+				pTextAtlasTexture->Release();
+			}
 
-			pTextAtlasTexture->Release();
+			{
+				// Rekord18
+				ID3D11ShaderResourceView* pAtlasSRV = dx11::CreateTexture(
+				    1024,
+				    1024,
+				    DXGI_FORMAT_R8_UNORM,
+				    TNULL,
+				    D3D11_USAGE_DEFAULT,
+				    0,
+				    1,
+				    dx11::CTF_RENDER_TARGET
+				);
+
+				TVALIDPTR( pAtlasSRV );
+
+				ID3D11Resource* pResource = TNULL;
+				pAtlasSRV->GetResource( &pResource );
+
+				ID3D11Texture2D* pTextAtlasTexture = TNULL;
+				pResource->QueryInterface( __uuidof( ID3D11Texture2D ), (void**)&pTextAtlasTexture );
+				pResource->Release();
+
+				IDXGISurface* pBackBufferSurface = TNULL;
+				pTextAtlasTexture->QueryInterface( __uuidof( IDXGISurface ), (void**)&pBackBufferSurface );
+
+				m_pFontAtlases[ FONT_REKORD18 ] = new FontAtlas( pAtlasSRV, ".\\Resources\\Fonts\\AmmanSansPro-Bold.ttf", pTextAtlasTexture, 1024, 1024, 1.3f, 0.0f, 0.0f );
+				pTextAtlasTexture->Release();
+			}
 		}
 
 		return TTRUE;

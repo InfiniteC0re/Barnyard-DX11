@@ -163,6 +163,12 @@ public:
 
 	};
 
+	enum FONT
+	{
+		FONT_REKORD26,
+		FONT_REKORD18,
+	};
+
 public:
 	RenderDX11();
 	~RenderDX11();
@@ -430,7 +436,7 @@ public:
 	TFLOAT GetSurfaceWidth() const { return TFLOAT( m_oSwapChainDesc.BufferDesc.Width ); }
 	TFLOAT GetSurfaceHeight() const { return TFLOAT( m_oSwapChainDesc.BufferDesc.Height ); }
 
-	FontAtlas* GetFontAtlas() const { return m_pFontAtlas; }
+	FontAtlas* GetFontAtlas( FONT a_eFontIndex ) const { return m_pFontAtlases[ a_eFontIndex ]; }
 
 private:
 	void BuildAdapterDatabase();
@@ -472,8 +478,7 @@ private:
 
 	// Font rendering
 	// TODO: move this away from here
-	ID3D11ShaderResourceView* m_pTextAtlasSRV = TNULL;
-	FontAtlas*                m_pFontAtlas;
+	FontAtlas* m_pFontAtlases[ 2 ];
 
 	// Buffers
 	void*         m_pVertexConstantBuffer;

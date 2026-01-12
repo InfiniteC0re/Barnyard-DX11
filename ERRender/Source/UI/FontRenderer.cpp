@@ -41,12 +41,24 @@ static TFLOAT GetViewportHeight()
 	return TSTATICCAST( remaster::UIRendererDX11, AGUI2::GetRenderer() )->GetViewportHeight();
 }
 
+static remaster::RenderDX11::FONT GetFontIndex( AGUI2Font* a_pFont )
+{
+	static AGUI2Font* s_pRekord26 = CALL( 0x006c44d0, AGUI2Font*, const TCHAR*, "Rekord26" );
+	static AGUI2Font* s_pRekord18 = CALL( 0x006c44d0, AGUI2Font*, const TCHAR*, "Rekord18" );
+
+	if ( s_pRekord26 == a_pFont ) return remaster::RenderDX11::FONT_REKORD26;
+	if ( s_pRekord18 == a_pFont ) return remaster::RenderDX11::FONT_REKORD18;
+
+	TASSERT( !"Should never happen" );
+	return remaster::RenderDX11::FONT_REKORD26;
+}
+
 MEMBER_HOOK( 0x006c32b0, AGUI2Font, AGUI2Font_GetTextWidth, TFLOAT, const TWCHAR* a_wszText, TINT a_iTextLength, TFLOAT a_fScale )
 {
 	if ( !remaster::fontrenderer::IsHDEnabled() )
 		return CallOriginal( a_wszText, a_iTextLength, a_fScale );
 
-	return remaster::g_pRender->GetFontAtlas()->GetTextWidth( a_wszText, a_iTextLength, a_fScale );
+	return remaster::g_pRender->GetFontAtlas( GetFontIndex( this ) )->GetTextWidth( a_wszText, a_iTextLength, a_fScale );
 }
 
 MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TWCHAR* a_wszText, TINT a_iTextLength, TFLOAT a_fX, TFLOAT a_fY, TUINT32 a_uiColour, TFLOAT a_fScale, void* a_fnCallback )
@@ -58,7 +70,7 @@ MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TW
 		return;
 	}
 
-	remaster::FontAtlas*      pFontAtlas         = remaster::g_pRender->GetFontAtlas();
+	remaster::FontAtlas*      pFontAtlas         = remaster::g_pRender->GetFontAtlas( GetFontIndex( this ) );
 	ID3D11ShaderResourceView* pFontAtlasResource = pFontAtlas->GetTextureResource();
 
 	remaster::g_pUIRender->SetMaterial( TNULL );
@@ -112,9 +124,9 @@ MEMBER_HOOK( 0x006c3410, AGUI2Font, AGUI2Font_DrawTextWrapped, void, const TWCHA
 		return;
 	}
 
-	remaster::FontAtlas* pFontAtlas     = remaster::g_pRender->GetFontAtlas();
-	TFLOAT               flUIScaleX     = remaster::g_pUIRender->GetScaleX();
-	TFLOAT               flUIScaleY     = remaster::g_pUIRender->GetScaleY();
+	remaster::FontAtlas* pFontAtlas = remaster::g_pRender->GetFontAtlas( GetFontIndex( this ) );
+	TFLOAT               flUIScaleX = remaster::g_pUIRender->GetScaleX();
+	TFLOAT               flUIScaleY = remaster::g_pUIRender->GetScaleY();
 
 	if ( a_wszText && a_wszText[ 0 ] != '\0' )
 	{
@@ -202,9 +214,9 @@ MEMBER_HOOK( 0x006c2e10, AGUI2Font, AGUI2Font_GetTextHeightWrapped, TFLOAT, cons
 	if ( !remaster::fontrenderer::IsHDEnabled() )
 		return CallOriginal( a_wszText, a_fMaxWidth, a_fScale );
 
-	remaster::FontAtlas* pFontAtlas     = remaster::g_pRender->GetFontAtlas();
-	TFLOAT               flUIScaleX     = remaster::g_pUIRender->GetScaleX();
-	TFLOAT               flUIScaleY     = remaster::g_pUIRender->GetScaleY();
+	remaster::FontAtlas* pFontAtlas = remaster::g_pRender->GetFontAtlas( GetFontIndex( this ) );
+	TFLOAT               flUIScaleX = remaster::g_pUIRender->GetScaleX();
+	TFLOAT               flUIScaleY = remaster::g_pUIRender->GetScaleY();
 
 	if ( a_wszText && a_wszText[ 0 ] != '\0' )
 	{

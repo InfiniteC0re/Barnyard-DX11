@@ -16,16 +16,17 @@ TOSHI_NAMESPACE_USING
 
 static FT_Library s_FontLibrary;
 
-remaster::FontAtlas::FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, ID3D11Texture2D* a_pAtlas, TUINT a_uiWidth, TUINT a_uiHeight )
+remaster::FontAtlas::FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, const TCHAR* a_pchFileName, ID3D11Texture2D* a_pAtlas, TUINT a_uiWidth, TUINT a_uiHeight, TFLOAT a_flBaseScale, TFLOAT a_flHeightOffset, TFLOAT a_flLineHeightOffset )
     : m_pAtlasSRV( a_pAtlasSRV )
     , m_pAtlas( a_pAtlas )
     , m_uiWidth( a_uiWidth )
     , m_uiHeight( a_uiHeight )
-    , m_flBaseScale( 1.8f )
-    , m_flHeightOffset( 14.0f )
-    , m_flLineHeightOffset( 9.0f )
+    , m_flBaseScale( a_flBaseScale )
+    , m_flHeightOffset( a_flHeightOffset )
+    , m_flLineHeightOffset( a_flLineHeightOffset )
     , m_flSDFMarginSize( 16.0f )
     , m_iLetterSpacing( 2 * 64 )
+    , m_pStrokeStyle( TNULL )
 {
 	DX11_API_VALIDATE( g_pRender->GetD3D11Device()->CreateRenderTargetView( m_pAtlas, TNULL, &m_pAtlasTargetView ) );
 
@@ -35,7 +36,7 @@ remaster::FontAtlas::FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, ID3D11Tex
 	}
 
 	// Load font
-	FT_New_Face( s_FontLibrary, "CCThatsAllFolks.ttf", 0, &m_oFontFace );
+	FT_New_Face( s_FontLibrary, a_pchFileName, 0, &m_oFontFace );
 	FT_Set_Pixel_Sizes( m_oFontFace, 0, 32 );
 
 	// Add refs to the gx resources

@@ -64,7 +64,7 @@ public:
 	};
 
 public:
-	FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, ID3D11Texture2D* a_pAtlas, TUINT a_uiWidth, TUINT a_uiHeight );
+	FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, const TCHAR* a_pchFileName, ID3D11Texture2D* a_pAtlas, TUINT a_uiWidth, TUINT a_uiHeight, TFLOAT a_flBaseScale = 1.8f, TFLOAT a_flHeightOffset = 14.0f, TFLOAT a_flLineHeightOffset = 9.0f );
 	~FontAtlas();
 
 	void GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo& a_rCharInfo );

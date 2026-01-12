@@ -68,7 +68,7 @@ public:
 			    ImGuiWindowFlags_NoSavedSettings
 			);
 			{
-				remaster::FontAtlas*      pFontAtlas         = remaster::g_pRender->GetFontAtlas();
+				remaster::FontAtlas*      pFontAtlas         = remaster::g_pRender->GetFontAtlas( remaster::RenderDX11::FONT_REKORD26 );
 				ID3D11ShaderResourceView* pFontAtlasResource = pFontAtlas->GetTextureResource();
 
 				ImVec2 vContentSize = ImGui::GetContentRegionAvail();
