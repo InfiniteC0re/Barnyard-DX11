@@ -98,16 +98,21 @@ public:
 
 		TINT   DepthBias;
 		TFLOAT SlopeScaledDepthBias;
-
-		TBOOL operator==( const RasterizerId& other ) const { return Flags.Raw == other.Flags.Raw && DepthBias == other.DepthBias && SlopeScaledDepthBias == other.SlopeScaledDepthBias; }
 		TBOOL operator!=( const RasterizerId& other ) const { return Flags.Raw != other.Flags.Raw || DepthBias != other.DepthBias || SlopeScaledDepthBias != other.SlopeScaledDepthBias; }
-		TBOOL operator<( const RasterizerId& other ) const { return Flags.Raw < other.Flags.Raw && DepthBias < other.DepthBias && SlopeScaledDepthBias < other.SlopeScaledDepthBias; }
 	};
 
 	struct RasterizerIdComparator
 	{
-		static TBOOL IsEqual( const RasterizerId& a, const RasterizerId& b ) { return a == b; }
-		static TBOOL IsLess( const RasterizerId& a, const RasterizerId& b ) { return a < b; }
+		TINT operator()( const RasterizerId& a, const RasterizerId& b )
+		{
+			if ( a.Flags.Raw < b.Flags.Raw && a.DepthBias < b.DepthBias && a.SlopeScaledDepthBias < b.SlopeScaledDepthBias )
+				return 1;
+			
+			if ( a.Flags.Raw == b.Flags.Raw && a.DepthBias == b.DepthBias && a.SlopeScaledDepthBias == b.SlopeScaledDepthBias )
+				return 0;
+
+			return -1;
+		}
 	};
 
 	union DepthState
@@ -134,6 +139,14 @@ public:
 		TUINT64 Raw;
 
 		operator const TUINT64&() const { return Raw; }
+	};
+
+	struct DepthStateComparator
+	{
+		TUINT64 operator()( const DepthState& a, const DepthState& b )
+		{
+			return a.Raw - b.Raw;
+		}
 	};
 
 	using DepthPair = Toshi::T2Pair<DepthState, TUINT, Toshi::TComparator<TUINT64>>;
@@ -486,9 +499,9 @@ private:
 	ID3D11SamplerState* m_aSamplerStates[ 12 ];
 
 	// Depth states
-	Toshi::T2Map<DepthState, ID3D11DepthStencilState*> m_DepthStatesTree;
-	DepthPair                                          m_DepthState;
-	DepthPair                                          m_PreviousDepth;
+	Toshi::T2Map<DepthState, ID3D11DepthStencilState*, DepthStateComparator> m_DepthStatesTree;
+	DepthPair                                                                m_DepthState;
+	DepthPair                                                                m_PreviousDepth;
 
 	// Rasterizer states
 	Toshi::T2Map<RasterizerId, ID3D11RasterizerState*, RasterizerIdComparator> m_RasterizersTree;

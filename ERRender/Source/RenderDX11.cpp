@@ -1132,14 +1132,16 @@ void RenderDX11::BuildAdapterDatabase()
 		pAdapter->SetDescription( pAdapterDesc->Description );
 		pAdapter->UpdateAdapterInfo();
 
+#ifndef TOSHI_NO_LOGS
 		TUtil::Log( "Adapter: %s\n", pAdapter->GetDescription() );
-		
+
 		TUtil::LogUp();
 		TUtil::Log( "Vendor: %d, Device: %d Revision: %d\n", pAdapterDesc->VendorId, pAdapterDesc->DeviceId, pAdapterDesc->Revision );
 		TUtil::Log( "DedicatedSystemMemory: %.2f MB\n", (double)pAdapterDesc->DedicatedSystemMemory / 1024 / 1024 );
 		TUtil::Log( "DedicatedVideoMemory : %.2f MB\n", (double)pAdapterDesc->DedicatedVideoMemory / 1024 / 1024 );
 		TUtil::Log( "SharedSystemMemory   : %.2f MB\n", (double)pAdapterDesc->SharedSystemMemory / 1024 / 1024 );
 		TUtil::LogDown();
+#endif // TOSHI_NO_LOGS
 
 		pAdapter->SetDriver( "Unknown" );
 		pAdapter->SetDescription( pAdapterDesc->Description );

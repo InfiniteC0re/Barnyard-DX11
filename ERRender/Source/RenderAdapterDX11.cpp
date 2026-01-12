@@ -202,8 +202,10 @@ void RenderAdapterDX11::EnumerateOutputs( RenderDX11* render, IDXGIAdapter* dxgi
 		char deviceName[ 128 ];
 		TStringManager::StringUnicodeToChar( deviceName, outputDesc.DeviceName, -1 );
 
+#ifndef TOSHI_NO_LOGS
 		TUtil::Log( "Display[%d]: %s (%dx%d)\n", displayIndex, deviceName, deviceWidth, deviceHeight );
 		TUtil::LogConsole( "Display[%d]: %s (%dx%d)\n", displayIndex, deviceName, deviceWidth, deviceHeight );
+#endif // TOSHI_NO_LOGS
 
 		UINT numModes = 0;
 		dxgiOutput->GetDisplayModeList( DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_ENUM_MODES_INTERLACED, &numModes, NULL );
