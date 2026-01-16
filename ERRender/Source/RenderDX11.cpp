@@ -345,7 +345,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 				IDXGISurface* pBackBufferSurface = TNULL;
 				pTextAtlasTexture->QueryInterface( __uuidof( IDXGISurface ), (void**)&pBackBufferSurface );
 
-				m_pFontAtlases[ FONT_REKORD18 ] = new FontAtlas( pAtlasSRV, ".\\Resources\\Fonts\\AmmanSansPro-Bold.ttf", pTextAtlasTexture, 1024, 1024, 0.8f, 1.0f, 1.0f);
+				m_pFontAtlases[ FONT_REKORD18 ] = new FontAtlas( pAtlasSRV, ".\\Resources\\Fonts\\AmmanSansPro-Bold.ttf", pTextAtlasTexture, 1024, 1024, 0.8f, 0.5f, 0.5f, 0.0f, 28.0f, 8.0f );
 				pTextAtlasTexture->Release();
 			}
 		}

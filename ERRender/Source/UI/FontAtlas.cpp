@@ -16,7 +16,7 @@ TOSHI_NAMESPACE_USING
 
 static FT_Library s_FontLibrary;
 
-remaster::FontAtlas::FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, const TCHAR* a_pchFileName, ID3D11Texture2D* a_pAtlas, TUINT a_uiWidth, TUINT a_uiHeight, TFLOAT a_flBaseScale, TFLOAT a_flBaseLine, TFLOAT a_flHeightFactor, TFLOAT a_flLineGap, TFLOAT a_flLineHeightOffset, TFLOAT a_flPositionOffsetY )
+remaster::FontAtlas::FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, const TCHAR* a_pchFileName, ID3D11Texture2D* a_pAtlas, TUINT a_uiWidth, TUINT a_uiHeight, TFLOAT a_flBaseScale, TFLOAT a_flBaseLine, TFLOAT a_flHeightFactor, TFLOAT a_flLineHeightOffset, TFLOAT a_flLineGap, TFLOAT a_flPositionOffsetY )
     : m_pAtlasSRV( a_pAtlasSRV )
     , m_pAtlas( a_pAtlas )
     , m_uiWidth( a_uiWidth )

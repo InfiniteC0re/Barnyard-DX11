@@ -205,7 +205,7 @@ MEMBER_HOOK( 0x006c3410, AGUI2Font, AGUI2Font_DrawTextWrapped, void, const TWCHA
 				TREINTERPRETCAST( AGUI2Font_DrawTextSingleLine::_hook_obj*, this )->_hook_func( pTextBuffer2, pTextBuffer - pTextBuffer2, fPosX, a_fY, a_uiColour, flOriginalScale, a_fnCallback );
 			}
 
-			a_fY += ( pFontAtlas->GetLineHeight() * pFontAtlas->GetHeightFactor() + pFontAtlas->GetLineGap() ) * a_fScale / flUIScaleY;
+			a_fY += ( ( pFontAtlas->GetLineHeight() + pFontAtlas->GetLineGap() ) * pFontAtlas->GetHeightFactor() ) * a_fScale / flUIScaleY;
 
 		} while ( *pTextBuffer != L'\0' );
 	}
@@ -286,11 +286,11 @@ MEMBER_HOOK( 0x006c2e10, AGUI2Font, AGUI2Font_GetTextHeightWrapped, TFLOAT, cons
 				}
 			}
 
-			fHeight += pFontAtlas->GetLineHeight() * pFontAtlas->GetHeightFactor();
+			fHeight += pFontAtlas->GetLineHeight() + pFontAtlas->GetLineGap();
 
 		} while ( *pTextBuffer != L'\0' );
 
-		return ( fHeight + pFontAtlas->GetLineGap() ) * a_fScale / flUIScaleY;
+		return ( fHeight - pFontAtlas->GetLineGap() ) * pFontAtlas->GetHeightFactor() * a_fScale / flUIScaleY;
 	}
 
 	return 0.0f;
