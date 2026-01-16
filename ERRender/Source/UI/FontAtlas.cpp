@@ -16,15 +16,17 @@ TOSHI_NAMESPACE_USING
 
 static FT_Library s_FontLibrary;
 
-remaster::FontAtlas::FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, const TCHAR* a_pchFileName, ID3D11Texture2D* a_pAtlas, TUINT a_uiWidth, TUINT a_uiHeight, TFLOAT a_flBaseScale, TFLOAT a_flHeightOffset, TFLOAT a_flLineHeightOffset )
+remaster::FontAtlas::FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, const TCHAR* a_pchFileName, ID3D11Texture2D* a_pAtlas, TUINT a_uiWidth, TUINT a_uiHeight, TFLOAT a_flBaseScale, TFLOAT a_flBaseLine, TFLOAT a_flHeightFactor, TFLOAT a_flLineGap, TFLOAT a_flLineHeightOffset, TFLOAT a_flPositionOffsetY )
     : m_pAtlasSRV( a_pAtlasSRV )
     , m_pAtlas( a_pAtlas )
     , m_uiWidth( a_uiWidth )
     , m_uiHeight( a_uiHeight )
     , m_flBaseScale( a_flBaseScale )
-    , m_flHeightOffset( a_flHeightOffset )
-    , m_flLineHeightOffset( a_flLineHeightOffset )
-    , m_flSDFMarginSize( 16.0f )
+    , m_flBaseLine( a_flBaseLine )
+    , m_flHeightFactor( a_flHeightFactor )
+    , m_flLineGap( a_flBaseScale * a_flLineGap )
+    , m_flPositionOffsetY( a_flBaseScale * a_flPositionOffsetY )
+    , m_flSDFMarginSize( 0.0f )
     , m_iLetterSpacing( 2 * 64 )
     , m_pStrokeStyle( TNULL )
 {
@@ -38,6 +40,10 @@ remaster::FontAtlas::FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, const TCH
 	// Load font
 	FT_New_Face( s_FontLibrary, a_pchFileName, 0, &m_oFontFace );
 	FT_Set_Pixel_Sizes( m_oFontFace, 0, 32 );
+
+	m_flLineHeight = ( ( m_oFontFace->size->metrics.ascender - m_oFontFace->size->metrics.descender ) >> 6 ) * m_flBaseScale - a_flLineHeightOffset * m_flBaseScale;
+	//m_flLineHeight = ( ( m_oFontFace->size->metrics.height + 32 ) >> 6 ) * m_flBaseScale - a_flLineHeightOffset * m_flBaseScale;
+	//m_flLineHeight = ( ( m_oFontFace->height + 32 ) >> 6 ) * m_flBaseScale - a_flLineHeightOffset * m_flBaseScale;
 
 	// Add refs to the gx resources
 	m_pAtlasSRV->AddRef();
@@ -79,8 +85,8 @@ void remaster::FontAtlas::GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo&
 	else
 	{
 		CachedChar* pCachedChar = m_vecCachedChars[ rCharIndex ];
-		a_rCharInfo.flWidth     = pCachedChar->pTreeNode->width * flFontSize;
-		a_rCharInfo.flHeight    = pCachedChar->pTreeNode->height * flFontSize;
+		a_rCharInfo.flWidth     = ( pCachedChar->pTreeNode->width - m_flSDFMarginSize ) * flFontSize;
+		a_rCharInfo.flHeight    = ( pCachedChar->pTreeNode->height - m_flSDFMarginSize ) * flFontSize;
 		a_rCharInfo.flUV1X      = pCachedChar->flUV1X;
 		a_rCharInfo.flUV1Y      = pCachedChar->flUV1Y;
 		a_rCharInfo.flUV2X      = pCachedChar->flUV2X;
@@ -101,7 +107,7 @@ void remaster::FontAtlas::GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo&
 	//-----------------------------------------------------------------------------
 
 	FT_UInt  glyph_index = FT_Get_Char_Index( m_oFontFace, a_wChar );
-	FT_Error error       = FT_Load_Glyph( m_oFontFace, glyph_index, FT_LOAD_DEFAULT );
+	FT_Error error       = FT_Load_Glyph( m_oFontFace, glyph_index, FT_LOAD_RENDER );
 	FT_Render_Glyph( m_oFontFace->glyph, FT_RENDER_MODE_SDF );
 
 	TUINT uiCharWidth  = m_oFontFace->glyph->bitmap.width;
@@ -114,7 +120,7 @@ void remaster::FontAtlas::GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo&
 		uiCharHeight = 1;
 	}
 
-	PartitionTreeNode* pTreeNode = PartitionTree_AddNode( &m_oPartitionTree, TFLOAT( uiCharWidth ), TFLOAT( uiCharHeight ) );
+	PartitionTreeNode* pTreeNode = PartitionTree_AddNode( &m_oPartitionTree, TFLOAT( uiCharWidth + m_flSDFMarginSize ), TFLOAT( uiCharHeight + m_flSDFMarginSize ) );
 
 	if ( bHasTexture )
 	{
@@ -134,8 +140,8 @@ void remaster::FontAtlas::GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo&
 		g_pRender->GetD3D11DeviceContext()->CopySubresourceRegion(
 		    m_pAtlas,
 		    0,
-		    TUINT( pTreeNode->x ),
-		    TUINT( pTreeNode->y ),
+		    TUINT( pTreeNode->x + m_flSDFMarginSize * 0.5f ),
+		    TUINT( pTreeNode->y + m_flSDFMarginSize * 0.5f ),
 		    0,
 		    pCharRes,
 		    0,
@@ -153,17 +159,17 @@ void remaster::FontAtlas::GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo&
 	CachedChar* pCachedChar = m_vecCachedChars[ rCharIndex ];
 	pCachedChar->pTreeNode  = pTreeNode;
 	pCachedChar->flScale    = flFontSize;
-	pCachedChar->flUV1X     = ( pTreeNode->x ) / m_uiWidth;
-	pCachedChar->flUV1Y     = ( pTreeNode->y ) / m_uiHeight;
-	pCachedChar->flUV2X     = ( pTreeNode->x + uiCharWidth ) / m_uiWidth;
-	pCachedChar->flUV2Y     = ( pTreeNode->y + uiCharHeight ) / m_uiHeight;
+	pCachedChar->flUV1X     = ( pTreeNode->x + m_flSDFMarginSize * 0.5f ) / m_uiWidth;
+	pCachedChar->flUV1Y     = ( pTreeNode->y + m_flSDFMarginSize * 0.5f ) / m_uiHeight;
+	pCachedChar->flUV2X     = ( pTreeNode->x + m_flSDFMarginSize * 0.5f + uiCharWidth ) / m_uiWidth;
+	pCachedChar->flUV2Y     = ( pTreeNode->y + m_flSDFMarginSize * 0.5f + uiCharHeight ) / m_uiHeight;
 	pCachedChar->iAdvanceX  = m_oFontFace->glyph->advance.x;
 	pCachedChar->iAdvanceY  = m_oFontFace->glyph->advance.y;
 	pCachedChar->iBearingX  = m_oFontFace->glyph->bitmap_left;
 	pCachedChar->iBearingY  = m_oFontFace->glyph->bitmap_top;
 
-	a_rCharInfo.flWidth   = pCachedChar->pTreeNode->width * flFontSize;
-	a_rCharInfo.flHeight  = pCachedChar->pTreeNode->height * flFontSize;
+	a_rCharInfo.flWidth   = ( pCachedChar->pTreeNode->width - m_flSDFMarginSize * 0.5f ) * flFontSize;
+	a_rCharInfo.flHeight  = ( pCachedChar->pTreeNode->height - m_flSDFMarginSize * 0.5f ) * flFontSize;
 	a_rCharInfo.flUV1X    = pCachedChar->flUV1X;
 	a_rCharInfo.flUV1Y    = pCachedChar->flUV1Y;
 	a_rCharInfo.flUV2X    = pCachedChar->flUV2X;

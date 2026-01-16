@@ -176,7 +176,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		m_oSwapChainDesc.BufferDesc.RefreshRate.Denominator = 0;
 		m_oSwapChainDesc.BufferDesc.Format                  = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-		m_oSwapChainDesc.SampleDesc.Count   = 1;
+		m_oSwapChainDesc.SampleDesc.Count   = 4;
 		m_oSwapChainDesc.SampleDesc.Quality = 0;
 
 		m_oSwapChainDesc.BufferUsage  = DXGI_USAGE_RENDER_TARGET_OUTPUT;
@@ -316,7 +316,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 				IDXGISurface* pBackBufferSurface = TNULL;
 				pTextAtlasTexture->QueryInterface( __uuidof( IDXGISurface ), (void**)&pBackBufferSurface );
 
-				m_pFontAtlases[ FONT_REKORD26 ] = new FontAtlas( pAtlasSRV, ".\\Resources\\Fonts\\CCThatsAllFolks.ttf", pTextAtlasTexture, 1024, 1024 );
+				m_pFontAtlases[ FONT_REKORD26 ] = new FontAtlas( pAtlasSRV, ".\\Resources\\Fonts\\CCThatsAllFolks.ttf", pTextAtlasTexture, 1024, 1024, 1.1f, 0.6f, 0.85f );
 				pTextAtlasTexture->Release();
 			}
 
@@ -345,7 +345,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 				IDXGISurface* pBackBufferSurface = TNULL;
 				pTextAtlasTexture->QueryInterface( __uuidof( IDXGISurface ), (void**)&pBackBufferSurface );
 
-				m_pFontAtlases[ FONT_REKORD18 ] = new FontAtlas( pAtlasSRV, ".\\Resources\\Fonts\\AmmanSansPro-Bold.ttf", pTextAtlasTexture, 1024, 1024, 1.3f, 0.0f, 0.0f );
+				m_pFontAtlases[ FONT_REKORD18 ] = new FontAtlas( pAtlasSRV, ".\\Resources\\Fonts\\AmmanSansPro-Bold.ttf", pTextAtlasTexture, 1024, 1024, 0.8f, 1.0f, 1.0f);
 				pTextAtlasTexture->Release();
 			}
 		}

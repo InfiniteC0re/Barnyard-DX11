@@ -64,7 +64,7 @@ public:
 	};
 
 public:
-	FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, const TCHAR* a_pchFileName, ID3D11Texture2D* a_pAtlas, TUINT a_uiWidth, TUINT a_uiHeight, TFLOAT a_flBaseScale = 1.8f, TFLOAT a_flHeightOffset = 14.0f, TFLOAT a_flLineHeightOffset = 9.0f );
+	FontAtlas( ID3D11ShaderResourceView* a_pAtlasSRV, const TCHAR* a_pchFileName, ID3D11Texture2D* a_pAtlas, TUINT a_uiWidth, TUINT a_uiHeight, TFLOAT a_flBaseScale = 1.0f, TFLOAT a_flBaseLine = 0.5f, TFLOAT a_flHeightFactor = 1.0f, TFLOAT a_flHeightOffset = 0.0f, TFLOAT a_flLineGap = 0.0f, TFLOAT a_flPositionOffsetY = 0.0f );
 	~FontAtlas();
 
 	void GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo& a_rCharInfo );
@@ -73,8 +73,11 @@ public:
 	TFLOAT GetTextHeight( const TWCHAR* a_wcsText, TSIZE a_uiTextLength, TFLOAT a_flScale );
 
 	TFLOAT                    GetBaseScale() const { return m_flBaseScale; }
-	TFLOAT                    GetHeightOffset() const { return m_flHeightOffset; }
-	TFLOAT                    GetLineHeightOffset() const { return m_flLineHeightOffset; }
+	TFLOAT                    GetBaseLine() const { return m_flBaseLine; }
+	TFLOAT                    GetHeightFactor() const { return m_flHeightFactor; }
+	TFLOAT                    GetLineHeight() const { return m_flLineHeight; }
+	TFLOAT                    GetLineGap() const { return m_flLineGap; }
+	TFLOAT                    GetPositionOffsetY() const { return m_flPositionOffsetY; }
 	TFLOAT                    GetSDFMarginSize() const { return m_flSDFMarginSize; }
 	ID3D11ShaderResourceView* GetTextureResource() const { return m_pAtlasSRV; }
 
@@ -89,8 +92,12 @@ private:
 	TUINT                     m_uiHeight;
 
 	TFLOAT m_flBaseScale;
-	TFLOAT m_flHeightOffset;
+	TFLOAT m_flBaseLine;
+	TFLOAT m_flHeightFactor;
+	TFLOAT m_flLineGap;
+	TFLOAT m_flLineHeight;
 	TFLOAT m_flLineHeightOffset;
+	TFLOAT m_flPositionOffsetY;
 	TFLOAT m_flSDFMarginSize;
 
 	TINT m_iLetterSpacing;
