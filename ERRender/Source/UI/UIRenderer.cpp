@@ -172,6 +172,9 @@ void remaster::UIRendererDX11::ResetRenderer()
 
 void remaster::UIRendererDX11::PrepareRenderer()
 {
+	g_pRender->SetVertexShader( m_pVertexShader );
+	g_pRender->SetInputLayout( m_pInputLayout );
+
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
 	g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
 	g_pRender->SetZMode( g_pRender->IsZEnabled(), D3D11_COMPARISON_ALWAYS, D3D11_DEPTH_WRITE_MASK_ZERO );
