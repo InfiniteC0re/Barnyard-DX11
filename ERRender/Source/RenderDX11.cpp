@@ -11,6 +11,8 @@
 #include <Platform/DX8/TModel_DX8.h>
 #include <Platform/DX8/TTextureFactoryHAL_DX8.h>
 
+#include <SDL/SDL_syswm.h>
+
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
 // Note: Should be the last include!
@@ -123,7 +125,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		OnInitializationFailureDisplay();
 		return TFALSE;
 	}
-
+	
 	// Find appropriate device for the display parameters
 	m_pAdapterDevice = TSTATICCAST( RenderAdapterDX11::Mode::Device, FindDevice( a_rParams ) );
 	m_oDisplayParams = a_rParams;
@@ -132,26 +134,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 	{
 		auto pDisplayParams = GetCurrentDisplayParams();
 
-		// Get desktop window dimensions
-		RECT clientRect;
-		GetClientRect( GetDesktopWindow(), &clientRect );
-
-		// Handle large displays
-		if ( 2000 < clientRect.right )
-		{
-			clientRect.right /= 2;
-		}
-
-		TUINT32 uiWindowPosX = 0;
-		TUINT32 uiWindowPosY = 0;
-
-		// Calculate window position for windowed mode
-		if ( pDisplayParams->bWindowed )
-		{
-			auto pMode   = GetCurrentDevice()->GetMode();
-			uiWindowPosX = ( clientRect.right - pMode->GetWidth() ) / 2;
-			uiWindowPosY = ( clientRect.bottom - pMode->GetHeight() ) / 2;
-		}
+		pDisplayParams->bWindowed = TTRUE; // for now force it to be windowed
 
 		// Get device information
 		auto pDevice        = TSTATICCAST( RenderAdapterDX11::Mode::Device, GetCurrentDevice() );
@@ -179,8 +162,12 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		m_oSwapChainDesc.SampleDesc.Count   = 4;
 		m_oSwapChainDesc.SampleDesc.Quality = 0;
 
+		SDL_SysWMinfo wmInfo;
+		SDL_VERSION( &wmInfo.version );
+		SDL_GetWindowWMInfo( m_Window.GetSDLHandle(), &wmInfo );
+
 		m_oSwapChainDesc.BufferUsage  = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		m_oSwapChainDesc.OutputWindow = m_Window.GetHWND();
+		m_oSwapChainDesc.OutputWindow = wmInfo.info.win.window;
 		m_oSwapChainDesc.Windowed     = pDisplayParams->bWindowed;
 		m_oSwapChainDesc.SwapEffect   = DXGI_SWAP_EFFECT_DISCARD;
 		m_oSwapChainDesc.Flags        = 0;
@@ -233,46 +220,15 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		DX11_API_VALIDATE_EXIT( m_pDevice->CreateTexture2D( &depthBufferDesc, TNULL, &m_pDepthStencilTexture ) );
 		DX11_API_VALIDATE_EXIT( m_pDevice->CreateDepthStencilView( m_pDepthStencilTexture, &depthStencilDesc, &m_pDepthStencilView ) );
 
-		// Set window mode
-		if ( pDisplayParams->bWindowed )
-		{
-			m_Window.SetWindowed();
-		}
-		else
-		{
-			m_Window.SetFullscreen();
-		}
-
 		s_pRenderHeap = g_pMemory->CreateMemBlock( HEAPSIZE, "RenderDX11", TNULL, 0 );
 		CreateRenderObjects();
 
-		// Handle multi-monitor setup
-		/*if ( uiAdapterIndex != 0 )
-		{
-			HMONITOR hMonitor = m_pDevice->GetAdapterMonitor( uiAdapterIndex );
-
-			MONITORINFO monitorInfo = { .cbSize = sizeof( monitorInfo ) };
-			GetMonitorInfoA( hMonitor, &monitorInfo );
-
-			uiWindowPosX += monitorInfo.rcMonitor.left;
-			uiWindowPosY += monitorInfo.rcMonitor.right;
-		}*/
-
-		RECT oAdjustedWindowSize;
-		oAdjustedWindowSize.left   = 0;
-		oAdjustedWindowSize.top    = 0;
-		oAdjustedWindowSize.right  = pDisplayParams->uiWidth;
-		oAdjustedWindowSize.bottom = pDisplayParams->uiHeight;
-		AdjustWindowRect( &oAdjustedWindowSize, 0x86c00000, FALSE );
-
 		// Set window position and size
-		m_Window.SetPosition( uiWindowPosX, uiWindowPosY, oAdjustedWindowSize.right - oAdjustedWindowSize.left, oAdjustedWindowSize.bottom - oAdjustedWindowSize.top );
+		m_Window.SetPosition( SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, a_rParams.uiWidth, a_rParams.uiHeight );
 
-		// Set cursor position to center of window
-		SetCursorPos(
-		    uiWindowPosX + pDisplayParams->uiWidth / 2,
-		    uiWindowPosY + pDisplayParams->uiHeight / 2
-		);
+		// Set window mode
+		m_Window.SetFullscreen( !pDisplayParams->bWindowed );
+		m_Window.Show();
 
 		// Create invalid texture pattern
 		TUINT invalidTextureData[ 32 ];
@@ -365,7 +321,7 @@ TBOOL RenderDX11::DestroyDisplay()
 TBOOL RenderDX11::Update( TFLOAT a_fDeltaTime )
 {
 	FlushDyingResources();
-	m_Window.Update( a_fDeltaTime );
+	m_Window.Update();
 
 	return !m_bExited;
 }
@@ -1148,6 +1104,7 @@ void RenderDX11::FlushConstantBuffers()
 
 void RenderDX11::BuildAdapterDatabase()
 {
+	// TODO: use SDL!!!
 	IDXGIFactory* pFactory = NULL;
 	CreateDXGIFactory( __uuidof( IDXGIFactory ), (void**)&pFactory );
 

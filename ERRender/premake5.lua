@@ -13,7 +13,8 @@ project "ERRender"
 		"BYModCore",
 		"d3d11.lib",
 		"dxgi.lib",
-		"d3dcompiler.lib"
+		"d3dcompiler.lib",
+		"SDL2.lib"
 	}
 	
 	libdirs
@@ -22,6 +23,7 @@ project "ERRender"
 		"%{LibDir.bink}",
 		"%{LibDir.dx8}",
 		"%{LibDir.detours}",
+		"%{LibDir.sdl2}",
 		"Vendor/freetype/lib",
 	}
 
@@ -39,6 +41,7 @@ project "ERRender"
 		"%{IncludeDir.toshi}",
 		"%{IncludeDir.byardsdk}",
 		"%{IncludeDir.modcore}",
+		"%{IncludeDir.sdl2}",
 	}
 	
 	-- Modloader specific

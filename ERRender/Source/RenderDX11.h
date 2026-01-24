@@ -1,5 +1,6 @@
 #pragma once
 #include "UI/FontAtlas.h"
+#include "SDLWindow.h"
 
 #include <Toshi/TDList.h>
 #include <Toshi/T2Pair.h>
@@ -451,7 +452,8 @@ private:
 	HACCEL                               m_AcceleratorTable;                // Accelerator table
 	Toshi::TRenderAdapter::Mode::Device* m_pAdapterDevice;                  // Current device
 	DISPLAYPARAMS                        m_oDisplayParams;                  // Display parameters
-	Toshi::TMSWindow                     m_Window;                          // Window
+	
+	SDLWindow                            m_Window;                          // Window
 	TBOOL                                m_bExited;                         // Exit flag
 	TFLOAT                               m_fContrast;                       // Contrast value
 	TFLOAT                               m_fBrightness;                     // Brightness value
