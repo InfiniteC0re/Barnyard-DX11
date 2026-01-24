@@ -88,15 +88,15 @@ RenderDX11::RenderDX11()
 	TUtil::MemClear( m_aSamplerStates, sizeof( m_aSamplerStates ) );
 
 	// Default blend factor
-	m_aCurrentBlendFactor[ 0 ] = 1.0f;
-	m_aCurrentBlendFactor[ 1 ] = 1.0f;
-	m_aCurrentBlendFactor[ 2 ] = 1.0f;
-	m_aCurrentBlendFactor[ 3 ] = 1.0f;
+	m_aCurrentBlendFactor[ 0 ] = 0.0f;
+	m_aCurrentBlendFactor[ 1 ] = 0.0f;
+	m_aCurrentBlendFactor[ 2 ] = 0.0f;
+	m_aCurrentBlendFactor[ 3 ] = 0.0f;
 
-	m_PreviousBlendFactor[ 0 ] = 1.0f;
-	m_PreviousBlendFactor[ 1 ] = 1.0f;
-	m_PreviousBlendFactor[ 2 ] = 1.0f;
-	m_PreviousBlendFactor[ 3 ] = 1.0f;
+	m_PreviousBlendFactor[ 0 ] = 0.0f;
+	m_PreviousBlendFactor[ 1 ] = 0.0f;
+	m_PreviousBlendFactor[ 2 ] = 0.0f;
+	m_PreviousBlendFactor[ 3 ] = 0.0f;
 
 	m_pCurrentRenderTargetView = TNULL;
 	m_pCurrentDepthStencilView = TNULL;

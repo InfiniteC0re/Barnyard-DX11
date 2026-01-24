@@ -159,15 +159,13 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	AWorldMeshHAL*      pMesh           = TSTATICCAST( AWorldMeshHAL, a_pRenderPacket->GetMesh() );
 	AWorldMaterialHAL*  pMaterial       = TSTATICCAST( AWorldMaterialHAL, pMesh->GetMaterial() );
 
+	const TFLOAT flPacketAlpha = a_pRenderPacket->GetAlpha();
+	const TBOOL  bIsBlending   = pMaterial->GetBlendMode() != 0 || flPacketAlpha < 1.0f || pMaterial->IsBlending();
+
 	// Use either blending shader or alpharef shader
 	// The only used alpharef value is 128, so no need to dynamically change it
-	g_pRender->SetShaderPipelineState( ( pMaterial->IsBlending() ) ? m_oShaderPipeline_Blending : m_oShaderPipeline_AlphaRef );
-
-	const TFLOAT flPacketAlpha = a_pRenderPacket->GetAlpha();
-
-	g_pRender->SetBlendEnabled( pMaterial->GetBlendMode() != 0 || flPacketAlpha < 1.0f );
-
-	TASSERT( !isnan( flPacketAlpha ) );
+	g_pRender->SetShaderPipelineState( bIsBlending ? m_oShaderPipeline_Blending : m_oShaderPipeline_AlphaRef );
+	g_pRender->SetBlendEnabled( bIsBlending );
 
 	// Fill vertex constant buffer
 	// Setup model view projection matrix
@@ -185,6 +183,21 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	// Setup colors
 	g_pRender->VSBufferSetVec4( 5, &m_AmbientColour, 1 );
 	g_pRender->VSBufferSetVec4( 6, &m_ShadowColour, 1 );
+
+	// Setup material settings
+	TVector4 vMaterialSettings;
+	vMaterialSettings.x = 0.0f; // isWater
+	vMaterialSettings.y = 1.0f; // isLit
+	vMaterialSettings.z = 0.0f; // unused?
+	vMaterialSettings.w = 1.0f; // unused?
+
+	if ( pMesh->IsWater() )
+	{
+		vMaterialSettings.x = 1.0f; // isWater
+		vMaterialSettings.y = 0.0f; // isLit
+	}
+
+	g_pRender->VSBufferSetVec4( 7, &vMaterialSettings, 1 );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
