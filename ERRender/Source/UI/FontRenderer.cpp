@@ -46,8 +46,9 @@ static remaster::RenderDX11::FONT GetFontIndex( AGUI2Font* a_pFont )
 	static AGUI2Font* s_pRekord26 = CALL( 0x006c44d0, AGUI2Font*, const TCHAR*, "Rekord26" );
 	static AGUI2Font* s_pRekord18 = CALL( 0x006c44d0, AGUI2Font*, const TCHAR*, "Rekord18" );
 
-	if ( s_pRekord26->m_pFontDef->szTextureNames == a_pFont->m_pFontDef->szTextureNames ) return remaster::RenderDX11::FONT_REKORD26;
-	if ( s_pRekord18->m_pFontDef->szTextureNames == a_pFont->m_pFontDef->szTextureNames ) return remaster::RenderDX11::FONT_REKORD18;
+	// NOTE: for some reason comparing addresses of the fonts doesn't work all of the time, there's probably something duplicating the fonts
+	if ( s_pRekord26->GetFontDef()->szTextureNames == a_pFont->GetFontDef()->szTextureNames ) return remaster::RenderDX11::FONT_REKORD26;
+	if ( s_pRekord18->GetFontDef()->szTextureNames == a_pFont->GetFontDef()->szTextureNames ) return remaster::RenderDX11::FONT_REKORD18;
 
 	TASSERT( !"Should never happen" );
 	return remaster::RenderDX11::FONT_REKORD26;
