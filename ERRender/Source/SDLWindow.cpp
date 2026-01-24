@@ -2,6 +2,8 @@
 #include "SDLWindow.h"
 #include "Toshi/TApplication.h"
 
+#include <SDL/SDL_syswm.h>
+
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
 // Note: Should be the last include!
@@ -44,6 +46,11 @@ TBOOL SDLWindow::Create( RenderDX11* a_pRender, const TCHAR* a_szTitle )
 	SDL_HideWindow( m_pWindow );
 	SDL_SetRelativeMouseMode( SDL_TRUE );
 
+	SDL_SysWMinfo wmInfo;
+	SDL_VERSION( &wmInfo.version );
+	SDL_GetWindowWMInfo( GetSDLHandle(), &wmInfo );
+	m_hHandle = wmInfo.info.win.window;
+
 	return m_pWindow != TNULL;
 }
 
@@ -64,7 +71,6 @@ void SDLWindow::Update()
 void SDLWindow::SetFullscreen( TBOOL a_bFullScreen )
 {
 	SDL_SetWindowFullscreen( m_pWindow, a_bFullScreen ? SDL_WINDOW_FULLSCREEN : 0 );
-	m_bFullscreen = a_bFullScreen;
 }
 
 void SDLWindow::SetPosition( TINT a_iX, TINT a_iY, TINT a_iWidth, TINT a_iHeight )

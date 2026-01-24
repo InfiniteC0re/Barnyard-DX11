@@ -11,8 +11,6 @@
 #include <Platform/DX8/TModel_DX8.h>
 #include <Platform/DX8/TTextureFactoryHAL_DX8.h>
 
-#include <SDL/SDL_syswm.h>
-
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
 // Note: Should be the last include!
@@ -162,12 +160,8 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		m_oSwapChainDesc.SampleDesc.Count   = 4;
 		m_oSwapChainDesc.SampleDesc.Quality = 0;
 
-		SDL_SysWMinfo wmInfo;
-		SDL_VERSION( &wmInfo.version );
-		SDL_GetWindowWMInfo( m_Window.GetSDLHandle(), &wmInfo );
-
 		m_oSwapChainDesc.BufferUsage  = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		m_oSwapChainDesc.OutputWindow = wmInfo.info.win.window;
+		m_oSwapChainDesc.OutputWindow = m_Window.GetWin32Handle();
 		m_oSwapChainDesc.Windowed     = pDisplayParams->bWindowed;
 		m_oSwapChainDesc.SwapEffect   = DXGI_SWAP_EFFECT_DISCARD;
 		m_oSwapChainDesc.Flags        = 0;
@@ -301,7 +295,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 				IDXGISurface* pBackBufferSurface = TNULL;
 				pTextAtlasTexture->QueryInterface( __uuidof( IDXGISurface ), (void**)&pBackBufferSurface );
 
-				m_pFontAtlases[ FONT_REKORD18 ] = new FontAtlas( pAtlasSRV, ".\\Resources\\Fonts\\AmmanSansPro-Bold.ttf", pTextAtlasTexture, 1024, 1024, 0.8f, 0.5f, 0.5f, 0.0f, 28.0f, 8.0f );
+				m_pFontAtlases[ FONT_REKORD18 ] = new FontAtlas( pAtlasSRV, ".\\Resources\\Fonts\\AmmanSansPro-Bold.ttf", pTextAtlasTexture, 1024, 1024, 0.8f, 0.5f, 0.8f, 0.0f, 0.0f, 6.0f );
 				pTextAtlasTexture->Release();
 			}
 		}

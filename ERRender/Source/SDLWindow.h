@@ -24,11 +24,13 @@ public:
 	void Show();
 
 	SDL_Window* GetSDLHandle() const { return m_pWindow; }
+	HWND        GetWin32Handle() const { return m_hHandle; }
 
 private:
-	SDL_Window*    m_pWindow;
+	// NOTE: m_hHandle should match TMSWindow!!!
+	HWND           m_hHandle;
 	RenderDX11*    m_pRender;
-	TBOOL          m_bFullscreen = TFALSE;
+	SDL_Window*    m_pWindow;
 	HMODULE        m_ModuleHandle;
 };
 
