@@ -58,8 +58,6 @@ void ASysMesh::Invalidate()
 
 void ASysMesh::DestroyResources()
 {
-	TRenderInterface::GetSingleton()->BeginEndSceneHAL();
-
 	if ( m_pVertexPool )
 	{
 		TRenderInterface::GetSingleton()->DestroyResource( m_pVertexPool );
