@@ -1,7 +1,7 @@
-﻿# Barnyard Mod Template
-[OpenBarnyard](https://github.com/InfiniteC0re/OpenBarnyard) | [Barnyard Launcher](https://github.com/InfiniteC0re/BarnyardLauncher) | [YouTube](https://www.youtube.com/@infc0re) | [Discord](https://discord.gg/3bMq8hWvFX)
+﻿# Barnyard DirectX 11
+[OpenBarnyard](https://github.com/InfiniteC0re/OpenBarnyard) | [Barnyard Launcher](https://github.com/InfiniteC0re/BarnyardLauncher) | [YouTube](https://www.youtube.com/@infc0re) | [Discord](https://discord.gg/j7vbsNP4my)
 
-A template you can use to set up blank mod projects for Barnyard the video game.
+A mod which replaces DirectX 8.1 with DirectX 11 in Barnyard the video game.
 Requires BYModLoader in order to start the mod.
 
 ## Notes
