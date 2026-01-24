@@ -95,13 +95,12 @@ private:
 	Toshi::TVector4            m_ShadowColour;
 	Toshi::TVector4            m_AmbientColour;
 
-	ID3DBlob*           m_pVSShaderBlob;
-	ID3DBlob*           m_pPSShaderBlob;
+	ID3DBlob* m_pVSShaderBlob;
+	ID3DBlob* m_pPSShaderBlob_AlphaRef;
+	ID3DBlob* m_pPSShaderBlob_Blending;
 
-	RenderDX11::ShaderPipelineState m_oShaderPipeline;
-	//ID3D11InputLayout*  m_pInputLayout;
-	//ID3D11VertexShader* m_pVertexShader;
-	//ID3D11PixelShader*  m_pPixelShader;
+	RenderDX11::ShaderPipelineState m_oShaderPipeline_AlphaRef;
+	RenderDX11::ShaderPipelineState m_oShaderPipeline_Blending;
 };
 
 }; // namespace remaster

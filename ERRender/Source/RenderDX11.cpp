@@ -701,21 +701,42 @@ ID3D11SamplerState* RenderDX11::CreateSamplerStateAutoAnisotropy( D3D11_FILTER f
 	return pSamplerState;
 }
 
-void RenderDX11::VSBufferSetVec4( VSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount /*= 1 */ )
+void RenderDX11::VSBufferSetVec2( VSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount /*= 1 */ )
 {
-	TUINT offset = a_uiOffset * 16;
-	TUINT size   = a_iCount * 16;
+	const TUINT offset = a_uiOffset * sizeof( TVector4 );
+	const TUINT size   = a_iCount * sizeof( TVector2 );
 
 	TASSERT( offset + size <= VERTEX_CONSTANT_BUFFER_SIZE, "Buffer size exceeded" );
 	TUtil::MemCopy( (TCHAR*)m_pVertexConstantBuffer + offset, a_pData, size );
+	m_VertexBufferWrittenSize   = TMath::Max( m_VertexBufferWrittenSize, offset + size );
 	m_IsVertexConstantBufferSet = TTRUE;
-	m_VertexBufferWrittenSize   = offset + size;
+}
+
+void RenderDX11::VSBufferSetVec4( VSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount /*= 1 */ )
+{
+	const TUINT offset = a_uiOffset * sizeof( TVector4 );
+	const TUINT size   = a_iCount * sizeof( TVector4 );
+
+	TASSERT( offset + size <= VERTEX_CONSTANT_BUFFER_SIZE, "Buffer size exceeded" );
+	TUtil::MemCopy( (TCHAR*)m_pVertexConstantBuffer + offset, a_pData, size );
+	m_VertexBufferWrittenSize   = TMath::Max( m_VertexBufferWrittenSize, offset + size );
+	m_IsVertexConstantBufferSet = TTRUE;
+}
+
+void RenderDX11::PSBufferSetVec2( PSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount /*= 1 */ )
+{
+	const TUINT offset = a_uiOffset * sizeof( TVector4 );
+	const TUINT size   = a_iCount * sizeof( TVector4 );
+
+	TASSERT( offset + size <= PIXEL_CONSTANT_BUFFER_SIZE, "Buffer size exceeded" );
+	TUtil::MemCopy( (TCHAR*)m_pPixelConstantBuffer + offset, a_pData, size );
+	m_IsPixelConstantBufferSet = TTRUE;
 }
 
 void RenderDX11::PSBufferSetVec4( PSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount /*= 1 */ )
 {
-	TUINT offset = a_uiOffset * 16;
-	TUINT size   = a_iCount * 16;
+	const TUINT offset = a_uiOffset * sizeof( TVector4 );
+	const TUINT size   = a_iCount * sizeof( TVector4 );
 
 	TASSERT( offset + size <= PIXEL_CONSTANT_BUFFER_SIZE, "Buffer size exceeded" );
 	TUtil::MemCopy( (TCHAR*)m_pPixelConstantBuffer + offset, a_pData, size );

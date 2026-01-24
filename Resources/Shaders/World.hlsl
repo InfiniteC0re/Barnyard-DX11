@@ -19,6 +19,7 @@ struct PS_IN
 cbuffer ConstantBuffer : register(b0)
 {
     float4x4 cb_matMVP;
+	float2 cb_TexCoordOffset;
 };
 
 PS_IN vs_main(VS_IN input)
@@ -26,9 +27,8 @@ PS_IN vs_main(VS_IN input)
     PS_IN output;
 
     output.position = mul(float4(input.position, 1.0f), cb_matMVP);
-    // output.position = mul(mul(float4(input.position, 1.0f), cb_modelview), cb_mat_MVP);
     output.color = input.color;
-    output.texcoord = input.texcoord;
+    output.texcoord = input.texcoord + cb_TexCoordOffset;
 
     return output;
 }
@@ -40,7 +40,9 @@ float4 ps_main(PS_IN input) : SV_TARGET
 {
     float4 tex_color = albedo_texture.Sample(albedo_texture_sampler, input.texcoord);
     
-    if (tex_color.a < 0.1f) discard;
+#ifdef ALPHAREF
+    if (tex_color.a < 0.5f) discard;
+#endif
 
     return tex_color * input.color;
 }

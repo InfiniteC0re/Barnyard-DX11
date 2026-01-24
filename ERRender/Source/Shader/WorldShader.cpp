@@ -72,7 +72,7 @@ void remaster::WorldShaderDX11::StartFlush()
 	g_pRender->SetBlendEnabled( TTRUE );
 	g_pRender->SetCullMode( TFALSE ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
 
-	g_pRender->SetShaderPipelineState( m_oShaderPipeline );
+	g_pRender->SetShaderPipelineState( m_oShaderPipeline_AlphaRef );
 }
 
 void remaster::WorldShaderDX11::EndFlush()
@@ -100,12 +100,16 @@ TBOOL remaster::WorldShaderDX11::Validate()
 	if ( IsValidated() )
 		return TTRUE;
 
-	m_pVSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\World.hlsl", "vs_main", "vs_5_0", TNULL );
-	m_pPSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\World.hlsl", "ps_main", "ps_5_0", TNULL );
+	D3D_SHADER_MACRO aAlphaRefShaderMacro[] = { "ALPHAREF", "1", TNULL, TNULL };
 
-	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob );
-	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_oShaderPipeline.pVertexShader ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob->GetBufferPointer(), m_pPSShaderBlob->GetBufferSize(), &m_oShaderPipeline.pPixelShader ) );
+	m_pVSShaderBlob          = dx11::CompileShaderFromFile( "Data\\Shaders\\World.hlsl", "vs_main", "vs_5_0", TNULL );
+	m_pPSShaderBlob_Blending = dx11::CompileShaderFromFile( "Data\\Shaders\\World.hlsl", "ps_main", "ps_5_0", TNULL );
+	m_pPSShaderBlob_AlphaRef = dx11::CompileShaderFromFile( "Data\\Shaders\\World.hlsl", "ps_main", "ps_5_0", aAlphaRefShaderMacro );
+
+	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob_Blending && m_pPSShaderBlob_AlphaRef );
+	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_oShaderPipeline_AlphaRef.pVertexShader ) );
+	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_AlphaRef->GetBufferPointer(), m_pPSShaderBlob_AlphaRef->GetBufferSize(), &m_oShaderPipeline_AlphaRef.pPixelShader ) );
+	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Blending->GetBufferPointer(), m_pPSShaderBlob_Blending->GetBufferSize(), &m_oShaderPipeline_Blending.pPixelShader ) );
 
 	D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
 		{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
@@ -120,9 +124,13 @@ TBOOL remaster::WorldShaderDX11::Validate()
 	        TARRAYSIZE( aInputElements ),
 	        m_pVSShaderBlob->GetBufferPointer(),
 	        m_pVSShaderBlob->GetBufferSize(),
-	        &m_oShaderPipeline.pInputLayout
+	        &m_oShaderPipeline_AlphaRef.pInputLayout
 	    )
 	);
+
+	// Both shaders share the same vertex shader and input layout
+	m_oShaderPipeline_Blending.pVertexShader = m_oShaderPipeline_AlphaRef.pVertexShader;
+	m_oShaderPipeline_Blending.pInputLayout  = m_oShaderPipeline_AlphaRef.pInputLayout;
 	
 	BaseClass::Validate();
 
@@ -149,17 +157,28 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
 	AWorldMeshHAL*      pMesh           = TSTATICCAST( AWorldMeshHAL, a_pRenderPacket->GetMesh() );
-	auto                pMaterial       = TSTATICCAST( AWorldMaterialHAL, pMesh->GetMaterial() );
+	AWorldMaterialHAL*  pMaterial       = TSTATICCAST( AWorldMaterialHAL, pMesh->GetMaterial() );
+
+	// Use either blending shader or alpharef shader
+	// The only used alpharef value is 128, so no need to dynamically change it
+	g_pRender->SetShaderPipelineState( ( pMaterial->IsBlending() ) ? m_oShaderPipeline_Blending : m_oShaderPipeline_AlphaRef );
 
 	if ( pMaterial->GetBlendMode() != 0 || a_pRenderPacket->GetAlpha() < 1.0f )
 		g_pRender->SetBlendEnabled( TTRUE );
 	else
 		g_pRender->SetBlendEnabled( TFALSE );
 
+	// Fill vertex constant buffer
+	// Setup model view projection matrix
 	TMatrix44 mMVP;
 	mMVP.Multiply( pCurrentContext->GetProjectionMatrix(), a_pRenderPacket->GetModelViewMatrix() );
-
 	g_pRender->VSBufferSetVec4( 0, &mMVP, 4 );
+	
+	// Setup UV offset
+	TVector2 vecUVOffset;
+	vecUVOffset.x = pMaterial->GetUVOffsetX( 0 );
+	vecUVOffset.y = pMaterial->GetUVOffsetX( 1 );
+	g_pRender->VSBufferSetVec2( 4, &vecUVOffset, 1 );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );

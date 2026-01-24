@@ -246,7 +246,9 @@ public:
 	// Buffers management
 	//-----------------------------------------------------------------------------
 
+	void VSBufferSetVec2( VSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount = 1 );
 	void VSBufferSetVec4( VSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount = 1 );
+	void PSBufferSetVec2( PSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount = 1 );
 	void PSBufferSetVec4( PSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount = 1 );
 
 public:
