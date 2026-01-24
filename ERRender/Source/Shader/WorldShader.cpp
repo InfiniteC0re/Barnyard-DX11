@@ -163,10 +163,11 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	// The only used alpharef value is 128, so no need to dynamically change it
 	g_pRender->SetShaderPipelineState( ( pMaterial->IsBlending() ) ? m_oShaderPipeline_Blending : m_oShaderPipeline_AlphaRef );
 
-	if ( pMaterial->GetBlendMode() != 0 || a_pRenderPacket->GetAlpha() < 1.0f )
-		g_pRender->SetBlendEnabled( TTRUE );
-	else
-		g_pRender->SetBlendEnabled( TFALSE );
+	const TFLOAT flPacketAlpha = a_pRenderPacket->GetAlpha();
+
+	g_pRender->SetBlendEnabled( pMaterial->GetBlendMode() != 0 || flPacketAlpha < 1.0f );
+
+	TASSERT( !isnan( flPacketAlpha ) );
 
 	// Fill vertex constant buffer
 	// Setup model view projection matrix
@@ -174,11 +175,16 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	mMVP.Multiply( pCurrentContext->GetProjectionMatrix(), a_pRenderPacket->GetModelViewMatrix() );
 	g_pRender->VSBufferSetVec4( 0, &mMVP, 4 );
 	
-	// Setup UV offset
-	TVector2 vecUVOffset;
-	vecUVOffset.x = pMaterial->GetUVOffsetX( 0 );
-	vecUVOffset.y = pMaterial->GetUVOffsetX( 1 );
-	g_pRender->VSBufferSetVec2( 4, &vecUVOffset, 1 );
+	// Setup UV offset and alpha
+	TVector4 vecUVOffsetAndAlpha;
+	vecUVOffsetAndAlpha.x = pMaterial->GetUVOffsetX( 0 );
+	vecUVOffsetAndAlpha.y = pMaterial->GetUVOffsetY( 0 );
+	vecUVOffsetAndAlpha.z = flPacketAlpha;
+	g_pRender->VSBufferSetVec4( 4, &vecUVOffsetAndAlpha, 1 );
+
+	// Setup colors
+	g_pRender->VSBufferSetVec4( 5, &m_AmbientColour, 1 );
+	g_pRender->VSBufferSetVec4( 6, &m_ShadowColour, 1 );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );

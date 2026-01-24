@@ -1106,17 +1106,21 @@ void RenderDX11::FlushConstantBuffers()
 		m_VertexBufferWrittenSize = 0;
 	}
 
-	if ( m_IsPixelConstantBufferSet )
-	{
-		m_PixelBufferIndex = ( m_PixelBufferIndex + 1 ) % NUMBUFFERS;
-		m_pDeviceContext->Map( m_PixelBuffers[ m_PixelBufferIndex ], 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubresources );
-		memcpy( mappedSubresources.pData, m_pPixelConstantBuffer, PIXEL_CONSTANT_BUFFER_SIZE );
-		m_pDeviceContext->Unmap( m_PixelBuffers[ m_PixelBufferIndex ], 0 );
-		m_IsPixelConstantBufferSet = TFALSE;
-	}
+// 	if ( m_IsPixelConstantBufferSet )
+// 	{
+// 		m_PixelBufferIndex = ( m_PixelBufferIndex + 1 ) % NUMBUFFERS;
+// 		m_pDeviceContext->Map( m_PixelBuffers[ m_PixelBufferIndex ], 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubresources );
+// 		memcpy( mappedSubresources.pData, m_pPixelConstantBuffer, PIXEL_CONSTANT_BUFFER_SIZE );
+// 		m_pDeviceContext->Unmap( m_PixelBuffers[ m_PixelBufferIndex ], 0 );
+// 		m_IsPixelConstantBufferSet = TFALSE;
+// 	}
 
+	// [1/24/2026 InfiniteC0re]
+	// I doubt there is a case to use separate pixel buffer, at least for now
+	TASSERT( m_IsPixelConstantBufferSet == TFALSE );
 	VSSetConstantBuffer( 0, m_VertexBuffers[ m_VertexBufferIndex ] );
-	PSSetConstantBuffer( 0, m_PixelBuffers[ m_PixelBufferIndex ] );
+	PSSetConstantBuffer( 0, m_VertexBuffers[ m_VertexBufferIndex ] );
+	//PSSetConstantBuffer( 0, m_PixelBuffers[ m_PixelBufferIndex ] );
 }
 
 void RenderDX11::BuildAdapterDatabase()

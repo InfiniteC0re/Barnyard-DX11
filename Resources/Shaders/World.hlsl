@@ -19,7 +19,9 @@ struct PS_IN
 cbuffer ConstantBuffer : register(b0)
 {
     float4x4 cb_matMVP;
-	float2 cb_TexCoordOffset;
+	float4 cb_TexCoordOffsetAndAlpha;
+	float4 cb_AmbientColor;
+	float4 cb_ShadowColor;
 };
 
 PS_IN vs_main(VS_IN input)
@@ -27,8 +29,8 @@ PS_IN vs_main(VS_IN input)
     PS_IN output;
 
     output.position = mul(float4(input.position, 1.0f), cb_matMVP);
-    output.color = input.color;
-    output.texcoord = input.texcoord + cb_TexCoordOffset;
+    output.color = lerp(cb_ShadowColor, cb_AmbientColor, input.color);
+    output.texcoord = input.texcoord + cb_TexCoordOffsetAndAlpha.xy;
 
     return output;
 }
@@ -40,6 +42,8 @@ float4 ps_main(PS_IN input) : SV_TARGET
 {
     float4 tex_color = albedo_texture.Sample(albedo_texture_sampler, input.texcoord);
     
+	tex_color.a *= cb_TexCoordOffsetAndAlpha.z;
+	
 #ifdef ALPHAREF
     if (tex_color.a < 0.5f) discard;
 #endif
