@@ -276,6 +276,17 @@ public:
 	void UpdateRenderStates();
 	void FlushConstantBuffers();
 
+	void ClearStateCache()
+	{
+		m_eCurrentTopology     = decltype( m_eCurrentTopology )( ~TUINT( m_eCurrentTopology ) );
+		m_pCurrentVertexBuffer = decltype( m_pCurrentVertexBuffer )( ~TUINT( m_pCurrentVertexBuffer ) );
+		m_uiVBCurrentStride    = decltype( m_uiVBCurrentStride )( ~TUINT( m_uiVBCurrentStride ) );
+		m_uiVBCurrentOffset    = decltype( m_uiVBCurrentOffset )( ~TUINT( m_uiVBCurrentOffset ) );
+		m_pCurrentIndexBuffer  = decltype( m_pCurrentIndexBuffer )( ~TUINT( m_pCurrentIndexBuffer ) );
+		m_eIBCurrentFormat     = decltype( m_eIBCurrentFormat )( ~TUINT( m_eIBCurrentFormat ) );
+		m_uiIBCurrentOffset    = decltype( m_uiIBCurrentOffset )( ~TUINT( m_uiIBCurrentOffset ) );
+	}
+
 	void SetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY a_eCurrentTopology )
 	{
 		if ( m_eCurrentTopology != a_eCurrentTopology )

@@ -326,6 +326,8 @@ TBOOL RenderDX11::BeginScene()
 	
 	if ( BaseClass::BeginScene() )
 	{
+		ClearStateCache();
+
 		SetRenderTargetView( m_pRenderTargetView, m_pDepthStencilView );
 		ClearCurrentRenderTarget( CLEAR_COLOR );
 
