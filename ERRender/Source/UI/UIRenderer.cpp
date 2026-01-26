@@ -179,6 +179,8 @@ void remaster::UIRendererDX11::PrepareRenderer()
 	g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
 	g_pRender->SetZMode( g_pRender->IsZEnabled(), D3D11_COMPARISON_ALWAYS, D3D11_DEPTH_WRITE_MASK_ZERO );
 
+	g_pRender->VSBufferSetMat4( 0, m_matProjection );
+
 	sm_fZCoordinate = 0.1f;
 
 	// Force material to update
