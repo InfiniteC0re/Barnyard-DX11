@@ -132,9 +132,7 @@ TBOOL remaster::WorldShaderDX11::Validate()
 	m_oShaderPipeline_Blending.pVertexShader = m_oShaderPipeline_AlphaRef.pVertexShader;
 	m_oShaderPipeline_Blending.pInputLayout  = m_oShaderPipeline_AlphaRef.pInputLayout;
 	
-	BaseClass::Validate();
-
-	return TFALSE;
+	return BaseClass::Validate();
 }
 
 void remaster::WorldShaderDX11::Invalidate()
@@ -171,18 +169,18 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	// Setup model view projection matrix
 	TMatrix44 mMVP;
 	mMVP.Multiply( pCurrentContext->GetProjectionMatrix(), a_pRenderPacket->GetModelViewMatrix() );
-	g_pRender->VSBufferSetVec4( 0, &mMVP, 4 );
+	g_pRender->VSBufferSetMat4( 0, mMVP );
 	
 	// Setup UV offset and alpha
 	TVector4 vecUVOffsetAndAlpha;
 	vecUVOffsetAndAlpha.x = pMaterial->GetUVOffsetX( 0 );
 	vecUVOffsetAndAlpha.y = pMaterial->GetUVOffsetY( 0 );
 	vecUVOffsetAndAlpha.z = flPacketAlpha;
-	g_pRender->VSBufferSetVec4( 4, &vecUVOffsetAndAlpha, 1 );
+	g_pRender->VSBufferSetVec4( 4, vecUVOffsetAndAlpha );
 
 	// Setup colors
-	g_pRender->VSBufferSetVec4( 5, &m_AmbientColour, 1 );
-	g_pRender->VSBufferSetVec4( 6, &m_ShadowColour, 1 );
+	g_pRender->VSBufferSetVec4( 5, m_AmbientColour );
+	g_pRender->VSBufferSetVec4( 6, m_ShadowColour );
 
 	// Setup material settings
 	TVector4 vMaterialSettings;
@@ -197,7 +195,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		vMaterialSettings.y = 0.0f; // isLit
 	}
 
-	g_pRender->VSBufferSetVec4( 7, &vMaterialSettings, 1 );
+	g_pRender->VSBufferSetVec4( 7, vMaterialSettings );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );

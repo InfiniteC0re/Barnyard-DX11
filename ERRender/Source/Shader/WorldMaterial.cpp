@@ -75,9 +75,9 @@ void remaster::WorldMaterial::PreRender()
 				g_pRender->SetShaderResource( 0, pD3DTexture );
 
 			if ( pTexture->GetAddressUState() == ADDRESSINGMODE_CLAMP && pTexture->GetAddressVState() == ADDRESSINGMODE_CLAMP )
-				g_pRender->SetSamplerState( i, 1, TTRUE );
+				g_pRender->PSSetSamplerState( i, 1 );
 			else
-				g_pRender->SetSamplerState( i, 3, TTRUE );
+				g_pRender->PSSetSamplerState( i, 3 );
 		}
 	}
 

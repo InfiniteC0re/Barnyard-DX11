@@ -132,7 +132,7 @@ void remaster::UIRendererDX11::BeginScene()
 
 	// Update projection matrix
 	SetupProjectionMatrix( m_matProjection, 0.0f, TFLOAT( pDisplayParams->uiWidth ), 0.0f, TFLOAT( pDisplayParams->uiHeight ) );
-	g_pRender->VSBufferSetVec4( 0, &m_matProjection, 4 );
+	g_pRender->VSBufferSetMat4( 0, m_matProjection );
 
 	// Initialise first root transform
 	TFLOAT fRootWidth;
@@ -259,15 +259,15 @@ void remaster::UIRendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
 
 		if ( a_pMaterial->m_eTextureAddress == 1 )
 		{
-			g_pRender->SetSamplerState( 0, 1, TTRUE );
+			g_pRender->PSSetSamplerState( 0, 1 );
 		}
 		else if ( a_pMaterial->m_eTextureAddress == 2 )
 		{
-			g_pRender->SetSamplerState( 0, 4, TTRUE );
+			g_pRender->PSSetSamplerState( 0, 4 );
 		}
 		else
 		{
-			g_pRender->SetSamplerState( 0, 3, TTRUE );
+			g_pRender->PSSetSamplerState( 0, 3 );
 		}
 	}
 
@@ -351,7 +351,7 @@ void remaster::UIRendererDX11::SetScissor( TFLOAT a_fVal1, TFLOAT a_fVal2, TFLOA
 	g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &m_oViewport );
 
 	SetupProjectionMatrix( m_matProjection, TFLOAT( iLeft ), TFLOAT( iRight ), TFLOAT( iTop ), TFLOAT( iBottom ) );
-	g_pRender->VSBufferSetVec4( 0, &m_matProjection, 4 );
+	g_pRender->VSBufferSetMat4( 0, m_matProjection );
 }
 
 void remaster::UIRendererDX11::ClearScissor()
@@ -370,7 +370,7 @@ void remaster::UIRendererDX11::ClearScissor()
 	g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &m_oViewport );
 
 	SetupProjectionMatrix( m_matProjection, m_oViewport.TopLeftX, m_oViewport.Width + m_oViewport.TopLeftX, m_oViewport.TopLeftY, m_oViewport.Height + m_oViewport.TopLeftY );
-	g_pRender->VSBufferSetVec4( 0, &m_matProjection, 4 );
+	g_pRender->VSBufferSetMat4( 0, m_matProjection );
 }
 
 void remaster::UIRendererDX11::RenderRectangle( const Toshi::TVector2& a, const Toshi::TVector2& b, const Toshi::TVector2& uv1, const Toshi::TVector2& uv2 )
@@ -468,7 +468,7 @@ void remaster::UIRendererDX11::UpdateTransformImpl()
 	m_matView.m_f43 = 0.0f;
 	m_matView.m_f44 = 1.0f;
 
-	g_pRender->VSBufferSetVec4( 4, &m_matView, 4 );
+	g_pRender->VSBufferSetMat4( 4, m_matView );
 	m_bIsTransformDirty = TFALSE;
 }
 

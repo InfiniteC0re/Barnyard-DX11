@@ -70,9 +70,9 @@ RenderDX11::RenderDX11()
 	m_PreviousRasterizerId.SlopeScaledDepthBias = 0.0f;
 
 	// Buffers
-	m_pVertexConstantBuffer     = TNULL;
-	m_IsVertexConstantBufferSet = TFALSE;
-	m_VertexBufferWrittenSize   = 0;
+	m_pVertexConstantBuffer         = TNULL;
+	m_IsVertexConstantBufferUpdated = TFALSE;
+	m_VertexBufferWrittenSize       = 0;
 	TUtil::MemClear( m_PixelBuffers, sizeof( m_PixelBuffers ) );
 
 	m_pPixelConstantBuffer     = TNULL;
@@ -123,7 +123,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		OnInitializationFailureDisplay();
 		return TFALSE;
 	}
-	
+
 	// Find appropriate device for the display parameters
 	m_pAdapterDevice = TSTATICCAST( RenderAdapterDX11::Mode::Device, FindDevice( a_rParams ) );
 	m_oDisplayParams = a_rParams;
@@ -323,7 +323,7 @@ TBOOL RenderDX11::Update( TFLOAT a_fDeltaTime )
 TBOOL RenderDX11::BeginScene()
 {
 	static constexpr TFLOAT CLEAR_COLOR[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-	
+
 	if ( BaseClass::BeginScene() )
 	{
 		ClearStateCache();
@@ -554,9 +554,9 @@ void RenderDX11::CreateRenderObjects()
 		DX11_API_VALIDATE( m_pDevice->CreateBuffer( &bufferDesc, NULL, &m_VertexBuffers[ i ] ) );
 	}
 
-	m_pVertexConstantBuffer     = TMalloc( VERTEX_CONSTANT_BUFFER_SIZE, s_pRenderHeap );
-	m_IsVertexConstantBufferSet = TFALSE;
-	m_VertexBufferIndex         = 0;
+	m_pVertexConstantBuffer         = TMemalign( 16, VERTEX_CONSTANT_BUFFER_SIZE, s_pRenderHeap );
+	m_IsVertexConstantBufferUpdated = TFALSE;
+	m_VertexBufferIndex             = 0;
 
 	// Pixel buffers
 	for ( size_t i = 0; i < NUMBUFFERS; i++ )
@@ -701,46 +701,43 @@ ID3D11SamplerState* RenderDX11::CreateSamplerStateAutoAnisotropy( D3D11_FILTER f
 	return pSamplerState;
 }
 
-void RenderDX11::VSBufferSetVec2( VSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount /*= 1 */ )
+void RenderDX11::VSBufferSetVec4( VSBufferOffset a_uiOffset, __m128 a_vData )
 {
-	const TUINT offset = a_uiOffset * sizeof( TVector4 );
-	const TUINT size   = a_iCount * sizeof( TVector2 );
+	const TUINT uiOffset = a_uiOffset * sizeof( TVector4 );
+	const TUINT uiSize   = sizeof( TVector4 );
+	TASSERT( uiOffset + uiSize <= VERTEX_CONSTANT_BUFFER_SIZE, "Buffer size exceeded" );
 
-	TASSERT( offset + size <= VERTEX_CONSTANT_BUFFER_SIZE, "Buffer size exceeded" );
-	TUtil::MemCopy( (TCHAR*)m_pVertexConstantBuffer + offset, a_pData, size );
-	m_VertexBufferWrittenSize   = TMath::Max( m_VertexBufferWrittenSize, offset + size );
-	m_IsVertexConstantBufferSet = TTRUE;
+	__m128* pCurrent          = TCAST( __m128*, m_pVertexConstantBuffer ) + a_uiOffset;
+	m_VertexBufferWrittenSize = TMath::Max( m_VertexBufferWrittenSize, uiOffset + uiSize );
+
+	if ( !m_IsVertexConstantBufferUpdated )
+	{
+		// Make sure the data has actually been changed to reduce RAM->GPU bandwidth
+		__m128 mask = _mm_cmpeq_ps( *pCurrent, a_vData );
+
+		if ( _mm_movemask_epi8( _mm_castps_si128( mask ) ) != 0xFFFF )
+		{
+			_mm_store_ps( TREINTERPRETCAST( TFLOAT*, pCurrent ), a_vData );
+			m_IsVertexConstantBufferUpdated = TTRUE;
+		}
+	}
+	else
+	{
+		// The data has been changed before, so just copy new data
+		_mm_store_ps( TREINTERPRETCAST( TFLOAT*, pCurrent ), a_vData );
+	}
 }
 
-void RenderDX11::VSBufferSetVec4( VSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount /*= 1 */ )
+void RenderDX11::PSBufferSetVec4( PSBufferOffset a_uiOffset, __m128 a_vData )
 {
-	const TUINT offset = a_uiOffset * sizeof( TVector4 );
-	const TUINT size   = a_iCount * sizeof( TVector4 );
+	TASSERT( TFALSE );
 
-	TASSERT( offset + size <= VERTEX_CONSTANT_BUFFER_SIZE, "Buffer size exceeded" );
-	TUtil::MemCopy( (TCHAR*)m_pVertexConstantBuffer + offset, a_pData, size );
-	m_VertexBufferWrittenSize   = TMath::Max( m_VertexBufferWrittenSize, offset + size );
-	m_IsVertexConstantBufferSet = TTRUE;
-}
-
-void RenderDX11::PSBufferSetVec2( PSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount /*= 1 */ )
-{
-	const TUINT offset = a_uiOffset * sizeof( TVector4 );
-	const TUINT size   = a_iCount * sizeof( TVector4 );
-
-	TASSERT( offset + size <= PIXEL_CONSTANT_BUFFER_SIZE, "Buffer size exceeded" );
-	TUtil::MemCopy( (TCHAR*)m_pPixelConstantBuffer + offset, a_pData, size );
-	m_IsPixelConstantBufferSet = TTRUE;
-}
-
-void RenderDX11::PSBufferSetVec4( PSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount /*= 1 */ )
-{
-	const TUINT offset = a_uiOffset * sizeof( TVector4 );
-	const TUINT size   = a_iCount * sizeof( TVector4 );
-
-	TASSERT( offset + size <= PIXEL_CONSTANT_BUFFER_SIZE, "Buffer size exceeded" );
-	TUtil::MemCopy( (TCHAR*)m_pPixelConstantBuffer + offset, a_pData, size );
-	m_IsPixelConstantBufferSet = TTRUE;
+	// 	const TUINT offset = a_uiOffset * sizeof( TVector4 );
+	// 	const TUINT size   = a_iCount * sizeof( TVector4 );
+	//
+	// 	TASSERT( offset + size <= PIXEL_CONSTANT_BUFFER_SIZE, "Buffer size exceeded" );
+	// 	TUtil::MemCopy( (TCHAR*)m_pPixelConstantBuffer + offset, a_pData, size );
+	// 	m_IsPixelConstantBufferSet = TTRUE;
 }
 
 void RenderDX11::SetDstAlpha( TFLOAT a_fAlpha )
@@ -851,7 +848,7 @@ void RenderDX11::DrawImmediately( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUI
 	SetVertexBuffer( m_MainVertexBuffer, a_iStrideSize, m_iImmediateVertexCurrentOffset );
 	SetIndexBuffer( m_MainIndexBuffer, a_eIndexFormat, m_iImmediateIndexCurrentOffset );
 	FlushConstantBuffers();
-	
+
 	SetPrimitiveTopology( a_ePrimitiveType );
 	m_pDeviceContext->DrawIndexed( a_iIndexCount, 0, 0 );
 	m_iImmediateIndexCurrentOffset += iIndexBufferSize;
@@ -911,20 +908,6 @@ void RenderDX11::CopyDataToTexture( ID3D11ShaderResourceView* a_pSRTex, TUINT a_
 
 	m_pDeviceContext->Unmap( pTexture, 0 );
 	pTexture->Release();
-}
-
-void RenderDX11::SetSamplerState( TUINT a_uiStartSlot, TINT a_iSamplerId, BOOL a_bSetForPS )
-{
-	auto pSampler = m_aSamplerStates[ a_iSamplerId ];
-
-	if ( a_bSetForPS == TRUE )
-	{
-		m_pDeviceContext->PSSetSamplers( a_uiStartSlot, 1, &pSampler );
-	}
-	else
-	{
-		m_pDeviceContext->VSSetSamplers( a_uiStartSlot, 1, &pSampler );
-	}
 }
 
 void RenderDX11::WaitForEndOfRender()
@@ -1096,31 +1079,38 @@ void RenderDX11::FlushConstantBuffers()
 {
 	D3D11_MAPPED_SUBRESOURCE mappedSubresources;
 
-	if ( m_IsVertexConstantBufferSet )
+	// Send new data to GPU
+	if ( m_IsVertexConstantBufferUpdated )
 	{
 		m_VertexBufferIndex = ( m_VertexBufferIndex + 1 ) % NUMBUFFERS;
 		m_pDeviceContext->Map( m_VertexBuffers[ m_VertexBufferIndex ], 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubresources );
 		memcpy( mappedSubresources.pData, m_pVertexConstantBuffer, m_VertexBufferWrittenSize );
 		m_pDeviceContext->Unmap( m_VertexBuffers[ m_VertexBufferIndex ], 0 );
-		m_IsVertexConstantBufferSet = TFALSE;
+
 		m_VertexBufferWrittenSize = 0;
 	}
 
-// 	if ( m_IsPixelConstantBufferSet )
-// 	{
-// 		m_PixelBufferIndex = ( m_PixelBufferIndex + 1 ) % NUMBUFFERS;
-// 		m_pDeviceContext->Map( m_PixelBuffers[ m_PixelBufferIndex ], 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubresources );
-// 		memcpy( mappedSubresources.pData, m_pPixelConstantBuffer, PIXEL_CONSTANT_BUFFER_SIZE );
-// 		m_pDeviceContext->Unmap( m_PixelBuffers[ m_PixelBufferIndex ], 0 );
-// 		m_IsPixelConstantBufferSet = TFALSE;
-// 	}
+	// 	if ( m_IsPixelConstantBufferSet )
+	// 	{
+	// 		m_PixelBufferIndex = ( m_PixelBufferIndex + 1 ) % NUMBUFFERS;
+	// 		m_pDeviceContext->Map( m_PixelBuffers[ m_PixelBufferIndex ], 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubresources );
+	// 		memcpy( mappedSubresources.pData, m_pPixelConstantBuffer, PIXEL_CONSTANT_BUFFER_SIZE );
+	// 		m_pDeviceContext->Unmap( m_PixelBuffers[ m_PixelBufferIndex ], 0 );
+	// 		m_IsPixelConstantBufferSet = TFALSE;
+	// 	}
 
 	// [1/24/2026 InfiniteC0re]
-	// I doubt there is a case to use separate pixel buffer, at least for now
+	// I doubt there is a reason to use separate pixel buffer, at least for now
 	TASSERT( m_IsPixelConstantBufferSet == TFALSE );
-	VSSetConstantBuffer( 0, m_VertexBuffers[ m_VertexBufferIndex ] );
-	PSSetConstantBuffer( 0, m_VertexBuffers[ m_VertexBufferIndex ] );
-	//PSSetConstantBuffer( 0, m_PixelBuffers[ m_PixelBufferIndex ] );
+
+	if ( m_IsVertexConstantBufferUpdated )
+	{
+		m_IsVertexConstantBufferUpdated = TFALSE;
+
+		VSSetConstantBuffer( 0, m_VertexBuffers[ m_VertexBufferIndex ] );
+		PSSetConstantBuffer( 0, m_VertexBuffers[ m_VertexBufferIndex ] );
+		//PSSetConstantBuffer( 0, m_PixelBuffers[ m_PixelBufferIndex ] );
+	}
 }
 
 void RenderDX11::BuildAdapterDatabase()

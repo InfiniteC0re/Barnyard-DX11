@@ -5,12 +5,14 @@
 #include <Toshi/TDList.h>
 #include <Toshi/T2Pair.h>
 #include <Toshi/T2Map.h>
+#include <Math/TMatrix44.h>
 #include <Render/TRenderInterface.h>
 #include <Render/TRenderContext.h>
 #include <Render/TRenderAdapter.h>
 #include <Render/TOrderTable.h>
 #include <Platform/DX8/TMSWindow.h>
 
+#include <xmmintrin.h>
 #include <d3d11.h>
 
 #define DX11_API_VALIDATE( CALL )       \
@@ -246,10 +248,22 @@ public:
 	// Buffers management
 	//-----------------------------------------------------------------------------
 
-	void VSBufferSetVec2( VSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount = 1 );
-	void VSBufferSetVec4( VSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount = 1 );
-	void PSBufferSetVec2( PSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount = 1 );
-	void PSBufferSetVec4( PSBufferOffset a_uiOffset, const void* a_pData, TINT a_iCount = 1 );
+
+
+	void VSBufferSetVec4( VSBufferOffset a_uiOffset, __m128 a_vData );
+	void PSBufferSetVec4( PSBufferOffset a_uiOffset, __m128 a_vData );
+
+	// TVector4 -> __m128 helpers
+	void VSBufferSetMat4( VSBufferOffset a_uiOffset, const Toshi::TMatrix44& a_rData )
+	{
+		VSBufferSetVec4( a_uiOffset + 0, _mm_load_ps( &a_rData.m_f11 ) );
+		VSBufferSetVec4( a_uiOffset + 1, _mm_load_ps( &a_rData.m_f21 ) );
+		VSBufferSetVec4( a_uiOffset + 2, _mm_load_ps( &a_rData.m_f31 ) );
+		VSBufferSetVec4( a_uiOffset + 3, _mm_load_ps( &a_rData.m_f41 ) );
+	}
+
+	void VSBufferSetVec4( VSBufferOffset a_uiOffset, const Toshi::TVector4& a_rData ) { VSBufferSetVec4( a_uiOffset, _mm_load_ps( &a_rData.x ) ); }
+	void PSBufferSetVec4( VSBufferOffset a_uiOffset, const Toshi::TVector4& a_rData ) { PSBufferSetVec4( a_uiOffset, _mm_load_ps( &a_rData.x ) ); }
 
 public:
 	//-----------------------------------------------------------------------------
@@ -272,7 +286,6 @@ public:
 	void DrawIndexed( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUINT a_uiIndexCount, ID3D11Buffer* a_pIndexBuffer, TUINT a_uiIndexBufferOffset, DXGI_FORMAT a_eIndexBufferFormat, ID3D11Buffer* a_pVertexBuffer, TUINT a_pStrides, TUINT a_pOffsets );
 	void DrawNonIndexed( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveTopology, ID3D11Buffer* a_pVertexBuffer, TUINT a_uiVertexCount, TUINT a_uiStrides, TUINT a_uiStartVertex, TUINT a_uiOffsets );
 	void CopyDataToTexture( ID3D11ShaderResourceView* a_pSRTex, TUINT a_uiDataSize, const void* a_pData, TUINT a_uiTextureSize );
-	void SetSamplerState( TUINT a_uiStartSlot, TINT a_iSamplerId, BOOL a_bSetForPS );
 	void SetCullMode( D3D11_CULL_MODE a_eMode ) { m_RasterizerState.Flags.Parts.CullMode = a_eMode; }
 	void WaitForEndOfRender();
 	void UpdateRenderStates();
@@ -355,6 +368,28 @@ public:
 			m_pCurrentRenderTargetView = a_pRenderTargetView;
 			m_pCurrentDepthStencilView = a_pDepthStencilView;
 			m_pDeviceContext->OMSetRenderTargets( 1, &a_pRenderTargetView, a_pDepthStencilView );
+		}
+	}
+
+	void VSSetSamplerState( TUINT a_uiStartSlot, TINT a_iSamplerId )
+	{
+		auto pSampler = m_aSamplerStates[ a_iSamplerId ];
+
+		if ( m_aVSCurrentSampleStates[ a_uiStartSlot ] != pSampler )
+		{
+			m_pDeviceContext->VSSetSamplers( a_uiStartSlot, 1, &pSampler );
+			m_aVSCurrentSampleStates[ a_uiStartSlot ] = pSampler;
+		}
+	}
+
+	void PSSetSamplerState( TUINT a_uiStartSlot, TINT a_iSamplerId )
+	{
+		auto pSampler = m_aSamplerStates[ a_iSamplerId ];
+
+		if ( m_aPSCurrentSampleStates[ a_uiStartSlot ] != pSampler )
+		{
+			m_pDeviceContext->PSSetSamplers( a_uiStartSlot, 1, &pSampler );
+			m_aPSCurrentSampleStates[ a_uiStartSlot ] = pSampler;
 		}
 	}
 
@@ -497,7 +532,7 @@ private:
 
 	// Buffers
 	void*         m_pVertexConstantBuffer;
-	TBOOL         m_IsVertexConstantBufferSet;
+	TBOOL         m_IsVertexConstantBufferUpdated;
 	ID3D11Buffer* m_VertexBuffers[ NUMBUFFERS ];
 	TSIZE         m_VertexBufferIndex;
 	TSIZE         m_VertexBufferWrittenSize;
@@ -547,6 +582,9 @@ private:
 
 	ID3D11Buffer* m_aVSCurrentConstantBuffers[ 16 ];
 	ID3D11Buffer* m_aPSCurrentConstantBuffers[ 16 ];
+
+	ID3D11SamplerState* m_aVSCurrentSampleStates[ D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT ];
+	ID3D11SamplerState* m_aPSCurrentSampleStates[ D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT ];
 
 	ID3D11RenderTargetView* m_pCurrentRenderTargetView;
 	ID3D11DepthStencilView* m_pCurrentDepthStencilView;
