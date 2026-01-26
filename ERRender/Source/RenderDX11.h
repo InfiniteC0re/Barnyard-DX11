@@ -41,7 +41,7 @@ public:
 	static constexpr TSIZE HEAPSIZE                     = 0x10000;
 	static constexpr TSIZE VERTEX_CONSTANT_BUFFER_SIZE  = 0x1000;
 	static constexpr TSIZE PIXEL_CONSTANT_BUFFER_SIZE   = 0x400;
-	static constexpr TSIZE NUMBUFFERS                   = 16;
+	static constexpr TSIZE NUMBUFFERS                   = 1;
 	static constexpr TSIZE IMMEDIATE_VERTEX_BUFFER_SIZE = 0x100;
 	static constexpr TSIZE IMMEDIATE_INDEX_BUFFER_SIZE  = 0x10;
 
@@ -247,13 +247,9 @@ public:
 	//-----------------------------------------------------------------------------
 	// Buffers management
 	//-----------------------------------------------------------------------------
-
-
-
 	void VSBufferSetVec4( VSBufferOffset a_uiOffset, __m128 a_vData );
 	void PSBufferSetVec4( PSBufferOffset a_uiOffset, __m128 a_vData );
 
-	// TVector4 -> __m128 helpers
 	void VSBufferSetMat4( VSBufferOffset a_uiOffset, const Toshi::TMatrix44& a_rData )
 	{
 		VSBufferSetVec4( a_uiOffset + 0, _mm_load_ps( &a_rData.m_f11 ) );
@@ -262,6 +258,7 @@ public:
 		VSBufferSetVec4( a_uiOffset + 3, _mm_load_ps( &a_rData.m_f41 ) );
 	}
 
+	// TVector4 -> __m128 helpers
 	void VSBufferSetVec4( VSBufferOffset a_uiOffset, const Toshi::TVector4& a_rData ) { VSBufferSetVec4( a_uiOffset, _mm_load_ps( &a_rData.x ) ); }
 	void PSBufferSetVec4( VSBufferOffset a_uiOffset, const Toshi::TVector4& a_rData ) { PSBufferSetVec4( a_uiOffset, _mm_load_ps( &a_rData.x ) ); }
 
@@ -535,7 +532,8 @@ private:
 	TBOOL         m_IsVertexConstantBufferUpdated;
 	ID3D11Buffer* m_VertexBuffers[ NUMBUFFERS ];
 	TSIZE         m_VertexBufferIndex;
-	TSIZE         m_VertexBufferWrittenSize;
+	TSIZE         m_VertexBufferNewSize;
+	TSIZE         m_VertexBufferCurSize;
 
 	void* m_pPixelConstantBuffer;
 	TBOOL m_IsPixelConstantBufferSet;

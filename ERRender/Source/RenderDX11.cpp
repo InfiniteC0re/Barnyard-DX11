@@ -72,7 +72,8 @@ RenderDX11::RenderDX11()
 	// Buffers
 	m_pVertexConstantBuffer         = TNULL;
 	m_IsVertexConstantBufferUpdated = TFALSE;
-	m_VertexBufferWrittenSize       = 0;
+	m_VertexBufferNewSize           = 0;
+	m_VertexBufferCurSize           = 0;
 	TUtil::MemClear( m_PixelBuffers, sizeof( m_PixelBuffers ) );
 
 	m_pPixelConstantBuffer     = TNULL;
@@ -708,7 +709,7 @@ void RenderDX11::VSBufferSetVec4( VSBufferOffset a_uiOffset, __m128 a_vData )
 	TASSERT( uiOffset + uiSize <= VERTEX_CONSTANT_BUFFER_SIZE, "Buffer size exceeded" );
 
 	__m128* pCurrent          = TCAST( __m128*, m_pVertexConstantBuffer ) + a_uiOffset;
-	m_VertexBufferWrittenSize = TMath::Max( m_VertexBufferWrittenSize, uiOffset + uiSize );
+	m_VertexBufferNewSize = TMath::Max( m_VertexBufferNewSize, uiOffset + uiSize );
 
 	if ( !m_IsVertexConstantBufferUpdated )
 	{
@@ -1079,15 +1080,19 @@ void RenderDX11::FlushConstantBuffers()
 {
 	D3D11_MAPPED_SUBRESOURCE mappedSubresources;
 
-	// Send new data to GPU
-	if ( m_IsVertexConstantBufferUpdated )
+	// Send new data to GPU if it changed or some more data was written
+	if ( m_IsVertexConstantBufferUpdated || m_VertexBufferNewSize > m_VertexBufferCurSize )
 	{
+		// Ping-pong buffers
 		m_VertexBufferIndex = ( m_VertexBufferIndex + 1 ) % NUMBUFFERS;
+		
+		// Copy buffers data
 		m_pDeviceContext->Map( m_VertexBuffers[ m_VertexBufferIndex ], 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubresources );
-		memcpy( mappedSubresources.pData, m_pVertexConstantBuffer, m_VertexBufferWrittenSize );
+		memcpy( mappedSubresources.pData, m_pVertexConstantBuffer, m_VertexBufferNewSize );
 		m_pDeviceContext->Unmap( m_VertexBuffers[ m_VertexBufferIndex ], 0 );
 
-		m_VertexBufferWrittenSize = 0;
+		m_IsVertexConstantBufferUpdated = TFALSE;
+		m_VertexBufferCurSize           = m_VertexBufferNewSize;
 	}
 
 	// 	if ( m_IsPixelConstantBufferSet )
@@ -1102,15 +1107,10 @@ void RenderDX11::FlushConstantBuffers()
 	// [1/24/2026 InfiniteC0re]
 	// I doubt there is a reason to use separate pixel buffer, at least for now
 	TASSERT( m_IsPixelConstantBufferSet == TFALSE );
+	m_VertexBufferNewSize = 0;
 
-	if ( m_IsVertexConstantBufferUpdated )
-	{
-		m_IsVertexConstantBufferUpdated = TFALSE;
-
-		VSSetConstantBuffer( 0, m_VertexBuffers[ m_VertexBufferIndex ] );
-		PSSetConstantBuffer( 0, m_VertexBuffers[ m_VertexBufferIndex ] );
-		//PSSetConstantBuffer( 0, m_PixelBuffers[ m_PixelBufferIndex ] );
-	}
+	VSSetConstantBuffer( 0, m_VertexBuffers[ m_VertexBufferIndex ] );
+	PSSetConstantBuffer( 0, m_VertexBuffers[ m_VertexBufferIndex ] );
 }
 
 void RenderDX11::BuildAdapterDatabase()

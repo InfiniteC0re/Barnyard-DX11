@@ -4,6 +4,19 @@
 #include "SkinMesh.h"
 #include "Resource/ClassPatcher.h"
 
+#include "RenderDX11.h"
+#include "RenderDX11Utils.h"
+#include "RenderContentDX11.h"
+
+#include <Render/TTMDWin.h>
+#include <Render/TRenderPacket.h>
+#include <Platform/DX8/TRenderInterface_DX8.h>
+#include <Platform/DX8/TRenderContext_DX8.h>
+#include <Platform/DX8/TVertexBlockResource_DX8.h>
+#include <Platform/DX8/TVertexPoolResource_DX8.h>
+#include <Platform/DX8/TIndexBlockResource_DX8.h>
+#include <Platform/DX8/TIndexPoolResource_DX8.h>
+
 #include <AHooks.h>
 #include <HookHelpers.h>
 
@@ -60,6 +73,34 @@ TBOOL remaster::SkinShaderDX11::Create()
 
 TBOOL remaster::SkinShaderDX11::Validate()
 {
+	if ( IsValidated() )
+		return TTRUE;
+
+	m_pVSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "vs_main", "vs_5_0", TNULL );
+	m_pPSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "ps_main", "ps_5_0", TNULL );
+
+	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob );
+	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_oShaderPipeline.pVertexShader ) );
+	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob->GetBufferPointer(), m_pPSShaderBlob->GetBufferSize(), &m_oShaderPipeline.pPixelShader ) );
+
+	D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
+		{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+		{ .SemanticName = "NORMAL", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+		{ .SemanticName = "BLENDWEIGHT", .SemanticIndex = 0, .Format = DXGI_FORMAT_R8G8B8A8_UNORM, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+		{ .SemanticName = "BLENDINDICES", .SemanticIndex = 0, .Format = DXGI_FORMAT_R8G8B8A8_UNORM, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+		{ .SemanticName = "TEXCOORD", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32_FLOAT, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+	};
+
+	DX11_API_VALIDATE(
+	    g_pRender->GetD3D11Device()->CreateInputLayout(
+	        aInputElements,
+	        TARRAYSIZE( aInputElements ),
+	        m_pVSShaderBlob->GetBufferPointer(),
+	        m_pVSShaderBlob->GetBufferSize(),
+	        &m_oShaderPipeline.pInputLayout
+	    )
+	);
+
 	return BaseClass::Validate();
 }
 
@@ -82,6 +123,59 @@ TBOOL remaster::SkinShaderDX11::TryValidate()
 
 void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 {
+	if ( !a_pRenderPacket || !a_pRenderPacket->GetMesh() ) return;
+
+	TSkeletonInstance*  pSkeletonInstance = a_pRenderPacket->GetSkeletonInstance();
+	RenderContextD3D11* pCurrentContext   = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
+	ASkinMeshHAL*       pMesh             = TSTATICCAST( ASkinMeshHAL, a_pRenderPacket->GetMesh() );
+	ASkinMaterialHAL*   pMaterial         = TSTATICCAST( ASkinMaterialHAL, pMesh->GetMaterial() );
+
+	const TFLOAT flPacketAlpha = a_pRenderPacket->GetAlpha();
+	const TBOOL  bIsBlending   = pMaterial->GetBlendMode() != 0 || flPacketAlpha < 1.0f || pMaterial->IsBlending();
+
+	g_pRender->SetShaderPipelineState( m_oShaderPipeline );
+	//g_pRender->SetBlendEnabled( bIsBlending );
+
+	// Fill vertex constant buffer
+	// Setup model view projection matrix
+	TMatrix44 mMVP;
+	mMVP.Multiply( pCurrentContext->GetProjectionMatrix(), a_pRenderPacket->GetModelViewMatrix() );
+	g_pRender->VSBufferSetMat4( 0, mMVP );
+
+	// Set vertices
+	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
+	TVALIDPTR( pVertexPool );
+
+	for (TINT i = 0; i < pMesh->GetNumSubMeshes(); i++)
+	{
+		ASkinSubMesh* pSubMesh = pMesh->GetSubMesh( i );
+
+		TIndexPoolResource* pIndexPool = TSTATICCAST( TIndexPoolResource, pSubMesh->pIndexPool );
+		TVALIDPTR( pIndexPool );
+
+		TVertexBlockResource::HALBuffer vertexBuffer;
+		CALL_THIS( 0x006d6660, TVertexPoolResource*, TBOOL, pVertexPool, TVertexBlockResource::HALBuffer&, vertexBuffer ); // pVertexPool->GetHALBuffer( &vertexBuffer );
+
+		TIndexBlockResource::HALBuffer indexBuffer;
+		CALL_THIS( 0x006d6180, TIndexPoolResource*, TBOOL, pIndexPool, TIndexBlockResource::HALBuffer&, indexBuffer ); // pIndexPool->GetHALBuffer( &indexBuffer );
+
+		// TODO: use separate buffer for bone matrices to reduce bandwidth
+		// Get all bones into render buffer
+		for ( TINT k = 0; k < pSubMesh->uiNumBones; k++ )
+			g_pRender->VSBufferSetMat4( 4 + k * 4, pSkeletonInstance->GetBone( pSubMesh->aBones[ k ] ).m_Transform );
+
+		// Draw mesh
+		g_pRender->DrawIndexed(
+		    D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
+		    pIndexPool->GetNumIndices(),
+		    (ID3D11Buffer*)indexBuffer.pIndexBuffer,
+		    indexBuffer.uiIndexOffset,
+		    DXGI_FORMAT_R16_UINT,
+		    (ID3D11Buffer*)vertexBuffer.apVertexBuffers[ 0 ],
+		    sizeof( TTMDWin::SkinVertex ),
+		    vertexBuffer.uiVertexOffset
+		);
+	}
 }
 
 void remaster::SkinShaderDX11::EnableRenderEnvMap( TBOOL a_bEnable )

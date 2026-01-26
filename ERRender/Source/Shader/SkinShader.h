@@ -1,5 +1,8 @@
 #pragma once
+#include "RenderDX11.h"
 #include "Ref/ASkinShader/ASkinShader_DX8.h"
+
+#include <d3d11.h>
 
 namespace remaster
 {
@@ -84,6 +87,11 @@ private:
 	TBOOL                      m_bCPUSupportsFeature1;
 	TBOOL                      m_bCPUSupportsFeature2;
 	TBOOL                      m_bUnkFlag;
+
+
+	ID3DBlob* m_pVSShaderBlob;
+	ID3DBlob* m_pPSShaderBlob;
+	RenderDX11::ShaderPipelineState m_oShaderPipeline;
 };
 
 }; // namespace remaster
