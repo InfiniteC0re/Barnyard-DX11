@@ -32,6 +32,16 @@ public:
 	//-----------------------------------------------------------------------------
 	virtual void CopyToAlphaBlendMaterial();
 
+	SkinMaterial* GetAlphaBlendMaterial() const { return m_pAlphaBlendMaterial; }
+	void          SetAlphaBlendMaterial( SkinMaterial* val ) { m_pAlphaBlendMaterial = val; }
+
+	TBOOL IsHDLighting() const { return m_bIsHDLighting; }
+	void  SetHDLighting( TBOOL a_bIsHDLighting ) { m_bIsHDLighting = a_bIsHDLighting; }
+	TBOOL HasLighting1Tex() const { return m_bHasLighting1Tex; }
+	TBOOL HasLighting2Tex() const { return m_bHasLighting2Tex; }
+
+	Toshi::TTextureResourceHAL* GetSomeTexture() const;
+
 public:
 	void SetOrderTable( Toshi::TOrderTable* a_pOrderTable );
 	

@@ -92,6 +92,9 @@ private:
 	ID3DBlob* m_pVSShaderBlob;
 	ID3DBlob* m_pPSShaderBlob;
 	RenderDX11::ShaderPipelineState m_oShaderPipeline;
+
+	Toshi::TMatrix44 m_oWorldViewMatrix;
+	Toshi::TMatrix44 m_oViewWorldMatrix;
 };
 
 }; // namespace remaster

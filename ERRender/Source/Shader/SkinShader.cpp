@@ -57,6 +57,8 @@ void remaster::SkinShaderDX11::Flush()
 
 void remaster::SkinShaderDX11::StartFlush()
 {
+	m_oWorldViewMatrix = g_pRender->GetCurrentContext()->GetWorldViewMatrix();
+	m_oViewWorldMatrix.Invert( m_oWorldViewMatrix );
 }
 
 void remaster::SkinShaderDX11::EndFlush()
@@ -127,20 +129,85 @@ void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	TSkeletonInstance*  pSkeletonInstance = a_pRenderPacket->GetSkeletonInstance();
 	RenderContextD3D11* pCurrentContext   = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
-	ASkinMeshHAL*       pMesh             = TSTATICCAST( ASkinMeshHAL, a_pRenderPacket->GetMesh() );
-	ASkinMaterialHAL*   pMaterial         = TSTATICCAST( ASkinMaterialHAL, pMesh->GetMaterial() );
+	SkinMesh*           pMesh             = TSTATICCAST( SkinMesh, a_pRenderPacket->GetMesh() );
+	SkinMaterial*       pMaterial         = TSTATICCAST( SkinMaterial, pMesh->GetMaterial() );
 
 	const TFLOAT flPacketAlpha = a_pRenderPacket->GetAlpha();
-	const TBOOL  bIsBlending   = pMaterial->GetBlendMode() != 0 || flPacketAlpha < 1.0f || pMaterial->IsBlending();
 
 	g_pRender->SetShaderPipelineState( m_oShaderPipeline );
-	//g_pRender->SetBlendEnabled( bIsBlending );
 
-	// Fill vertex constant buffer
+	// Setup renderer
 	// Setup model view projection matrix
 	TMatrix44 mMVP;
 	mMVP.Multiply( pCurrentContext->GetProjectionMatrix(), a_pRenderPacket->GetModelViewMatrix() );
 	g_pRender->VSBufferSetMat4( 0, mMVP );
+
+	TFLOAT   fLightDirX   = -a_pRenderPacket->GetLightDirection().x;
+	TFLOAT   fLightDirY   = -a_pRenderPacket->GetLightDirection().y;
+	TFLOAT   fLightDirZ   = -a_pRenderPacket->GetLightDirection().z;
+	TVector4 vLightColour = a_pRenderPacket->GetLightColour();
+
+	TMatrix44 oModelView = a_pRenderPacket->GetModelViewMatrix();
+	TMatrix44 oWorldModelView;
+
+	for ( TINT i = 0; i < 4; i++ )
+	{
+		oWorldModelView.AsBasisVector4( i ).x = oModelView.m_f11 * m_oWorldViewMatrix.AsBasisVector3( i ).x + oModelView.m_f12 * m_oWorldViewMatrix.AsBasisVector3( i ).y + oModelView.m_f13 * m_oWorldViewMatrix.AsBasisVector3( i ).z;
+		oWorldModelView.AsBasisVector4( i ).y = oModelView.m_f21 * m_oWorldViewMatrix.AsBasisVector3( i ).x + oModelView.m_f22 * m_oWorldViewMatrix.AsBasisVector3( i ).y + oModelView.m_f23 * m_oWorldViewMatrix.AsBasisVector3( i ).z;
+		oWorldModelView.AsBasisVector4( i ).z = oModelView.m_f31 * m_oWorldViewMatrix.AsBasisVector3( i ).x + oModelView.m_f32 * m_oWorldViewMatrix.AsBasisVector3( i ).y + oModelView.m_f33 * m_oWorldViewMatrix.AsBasisVector3( i ).z;
+		oWorldModelView.AsBasisVector4( i ).w = oModelView.m_f14 * m_oWorldViewMatrix.AsBasisVector3( i ).x + oModelView.m_f24 * m_oWorldViewMatrix.AsBasisVector3( i ).y + oModelView.m_f34 * m_oWorldViewMatrix.AsBasisVector3( i ).z;
+	}
+
+	Toshi::TVector3 vLightDirWorld;
+	vLightDirWorld.x = oWorldModelView.m_f11 * fLightDirX + oWorldModelView.m_f21 * fLightDirY + oWorldModelView.m_f31 * fLightDirZ;
+	vLightDirWorld.y = oWorldModelView.m_f12 * fLightDirX + oWorldModelView.m_f22 * fLightDirY + oWorldModelView.m_f32 * fLightDirZ;
+	vLightDirWorld.z = oWorldModelView.m_f13 * fLightDirX + oWorldModelView.m_f23 * fLightDirY + oWorldModelView.m_f33 * fLightDirZ;
+	vLightDirWorld.Normalize();
+
+	TVector4 vUnkVector = TVector4( 1.0f, 0.0f, 0.0f, 1.0f );
+
+	TVector4 vLightingLerp1 = TVector4( 1.0f, 1.0f, 1.0f, 1.0f );
+	TVector4 vLightingLerp2 = TVector4( 1.0f, 1.0f, 1.0f, 1.0f );
+
+	TUINT  ui8ShadeCoeff = a_pRenderPacket->GetShadeCoeff();
+	TFLOAT flShadeCoeff  = a_pRenderPacket->GetShadeCoeff() * ( 1.0f / 255.0f );
+
+	if ( pMaterial->IsHDLighting() && pMaterial->HasLighting1Tex() && pMaterial->HasLighting2Tex() )
+	{
+		if ( pMaterial->GetSomeTexture() )
+			flShadeCoeff = flShadeCoeff - 0.3f;
+
+		vLightingLerp1.x = 1.0f - flShadeCoeff;
+		vLightingLerp1.y = 1.0f - flShadeCoeff;
+		vLightingLerp1.z = 1.0f - flShadeCoeff;
+		vLightingLerp1.w = 0.0f;
+
+		vLightingLerp2.x = flShadeCoeff;
+		vLightingLerp2.y = flShadeCoeff;
+		vLightingLerp2.z = flShadeCoeff;
+		vLightingLerp2.w = 0.0f;
+
+		g_pRender->SetShaderResource( 1, TREINTERPRETCAST( ID3D11ShaderResourceView*, pMaterial->GetLightingTexture( ASkinMaterial::LT_0 )->GetD3DTexture() ) );
+		g_pRender->SetShaderResource( 2, TREINTERPRETCAST( ID3D11ShaderResourceView*, pMaterial->GetLightingTexture( ASkinMaterial::LT_1 )->GetD3DTexture() ) );
+		g_pRender->SetShaderResource( 3, TREINTERPRETCAST( ID3D11ShaderResourceView*, pMaterial->GetLightingTexture( ASkinMaterial::LT_2 )->GetD3DTexture() ) );
+		g_pRender->SetShaderResource( 4, TREINTERPRETCAST( ID3D11ShaderResourceView*, pMaterial->GetLightingTexture( ASkinMaterial::LT_3 )->GetD3DTexture() ) );
+		g_pRender->PSSetSamplerState( 1, 5 );
+	}
+
+	TMatrix44 oViewModel;
+	oViewModel.Invert( a_pRenderPacket->GetModelViewMatrix() );
+
+	TVector4 upVector;
+	upVector.Negate3( oViewModel.AsBasisVector4( 2 ) );
+
+	TVector4 vAmbientColour = a_pRenderPacket->GetAmbientColour();
+	vAmbientColour.w        = flPacketAlpha;
+
+	g_pRender->VSBufferSetVec4( 6, upVector );
+	g_pRender->VSBufferSetVec4( 4, vAmbientColour );
+	g_pRender->VSBufferSetVec4( 5, vLightDirWorld );
+	g_pRender->VSBufferSetVec4( 7, vLightingLerp1 );
+	g_pRender->VSBufferSetVec4( 8, vLightingLerp2 );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
@@ -162,7 +229,7 @@ void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		// TODO: use separate buffer for bone matrices to reduce bandwidth
 		// Get all bones into render buffer
 		for ( TINT k = 0; k < pSubMesh->uiNumBones; k++ )
-			g_pRender->VSBufferSetMat4( 4 + k * 4, pSkeletonInstance->GetBone( pSubMesh->aBones[ k ] ).m_Transform );
+			g_pRender->VSBufferSetMat4( 9 + k * 4, pSkeletonInstance->GetBone( pSubMesh->aBones[ k ] ).m_Transform );
 
 		// Draw mesh
 		g_pRender->DrawIndexed(

@@ -1,5 +1,6 @@
 #pragma once
 #include <Render/TMaterial.h>
+#include <Platform/DX8/TTextureResourceHAL_DX8.h>
 
 class ASkinMaterial : public Toshi::TMaterial
 {
@@ -36,6 +37,12 @@ public:
 	{
 		m_pTexture = a_pTexture;
 		SetTextureNum( 1 );
+	}
+
+	Toshi::TTextureResourceHAL* GetLightingTexture( ELightingTexture a_eTexture )
+	{
+		TASSERT( a_eTexture < LT_NUMOF );
+		return TSTATICCAST( Toshi::TTextureResourceHAL, m_apLightingTextures[ a_eTexture ] );
 	}
 
 	void SetLightingTexture( ELightingTexture a_eTex, Toshi::TTexture* a_pTexture )

@@ -192,6 +192,11 @@ void remaster::SkinMaterial::CopyToAlphaBlendMaterial()
 	}
 }
 
+Toshi::TTextureResourceHAL* remaster::SkinMaterial::GetSomeTexture() const
+{
+	return TSTATICCAST( Toshi::TTextureResourceHAL, m_pSomeTexture );
+}
+
 void remaster::SkinMaterial::SetOrderTable( Toshi::TOrderTable* a_pOrderTable )
 {
 	if ( a_pOrderTable != m_pAssignedOrderTable )
