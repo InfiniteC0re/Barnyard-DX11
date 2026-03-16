@@ -11,7 +11,7 @@
 #include <HookHelpers.h>
 
 #include <BYardSDK/AGUI2.h>
-#include <BYardSDK/AGUI2Font.h>
+#include <BYardSDK/SDK_T2GUIFont.h>
 
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
@@ -23,28 +23,28 @@ TOSHI_NAMESPACE_USING
 
 static TFLOAT GetViewportX()
 {
-	return TSTATICCAST( remaster::UIRendererDX11, AGUI2::GetRenderer() )->GetViewportX();
+	return TREINTERPRETCAST( remaster::UIRendererDX11*, AGUI2::GetRenderer() )->GetViewportX();
 }
 
 static TFLOAT GetViewportY()
 {
-	return TSTATICCAST( remaster::UIRendererDX11, AGUI2::GetRenderer() )->GetViewportY();
+	return TREINTERPRETCAST( remaster::UIRendererDX11*, AGUI2::GetRenderer() )->GetViewportY();
 }
 
 static TFLOAT GetViewportWidth()
 {
-	return TSTATICCAST( remaster::UIRendererDX11, AGUI2::GetRenderer() )->GetViewportWidth();
+	return TREINTERPRETCAST( remaster::UIRendererDX11*, AGUI2::GetRenderer() )->GetViewportWidth();
 }
 
 static TFLOAT GetViewportHeight()
 {
-	return TSTATICCAST( remaster::UIRendererDX11, AGUI2::GetRenderer() )->GetViewportHeight();
+	return TREINTERPRETCAST( remaster::UIRendererDX11*, AGUI2::GetRenderer() )->GetViewportHeight();
 }
 
-static remaster::RenderDX11::FONT GetFontIndex( AGUI2Font* a_pFont )
+static remaster::RenderDX11::FONT GetFontIndex( SDK_T2GUIFont* a_pFont )
 {
-	static AGUI2Font* s_pRekord26 = CALL( 0x006c44d0, AGUI2Font*, const TCHAR*, "Rekord26" );
-	static AGUI2Font* s_pRekord18 = CALL( 0x006c44d0, AGUI2Font*, const TCHAR*, "Rekord18" );
+	static SDK_T2GUIFont* s_pRekord26 = CALL( 0x006c44d0, SDK_T2GUIFont*, const TCHAR*, "Rekord26" );
+	static SDK_T2GUIFont* s_pRekord18 = CALL( 0x006c44d0, SDK_T2GUIFont*, const TCHAR*, "Rekord18" );
 
 	// NOTE: for some reason comparing addresses of the fonts doesn't work all of the time, there's probably something duplicating the fonts
 	if ( s_pRekord26->GetFontDef()->szTextureNames == a_pFont->GetFontDef()->szTextureNames ) return remaster::RenderDX11::FONT_REKORD26;
@@ -54,7 +54,7 @@ static remaster::RenderDX11::FONT GetFontIndex( AGUI2Font* a_pFont )
 	return remaster::RenderDX11::FONT_REKORD26;
 }
 
-MEMBER_HOOK( 0x006c32b0, AGUI2Font, AGUI2Font_GetTextWidth, TFLOAT, const TWCHAR* a_wszText, TINT a_iTextLength, TFLOAT a_fScale )
+MEMBER_HOOK( 0x006c32b0, SDK_T2GUIFont, SDK_T2GUIFont_GetTextWidth, TFLOAT, const TWCHAR* a_wszText, TINT a_iTextLength, TFLOAT a_fScale )
 {
 	if ( !remaster::fontrenderer::IsHDEnabled() )
 		return CallOriginal( a_wszText, a_iTextLength, a_fScale );
@@ -64,7 +64,7 @@ MEMBER_HOOK( 0x006c32b0, AGUI2Font, AGUI2Font_GetTextWidth, TFLOAT, const TWCHAR
 	return remaster::g_pRender->GetFontAtlas( GetFontIndex( this ) )->GetTextWidth( a_wszText, a_iTextLength, a_fScale );
 }
 
-MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TWCHAR* a_wszText, TINT a_iTextLength, TFLOAT a_fX, TFLOAT a_fY, TUINT32 a_uiColour, TFLOAT a_fScale, void* a_fnCallback )
+MEMBER_HOOK( 0x006c2fe0, SDK_T2GUIFont, SDK_T2GUIFont_DrawTextSingleLine, void, const TWCHAR* a_wszText, TINT a_iTextLength, TFLOAT a_fX, TFLOAT a_fY, TUINT32 a_uiColour, TFLOAT a_fScale, void* a_fnCallback )
 {
 	TPROFILER_SCOPE();
 	if ( !remaster::fontrenderer::IsHDEnabled() )
@@ -119,7 +119,7 @@ MEMBER_HOOK( 0x006c2fe0, AGUI2Font, AGUI2Font_DrawTextSingleLine, void, const TW
 	}
 }
 
-MEMBER_HOOK( 0x006c3410, AGUI2Font, AGUI2Font_DrawTextWrapped, void, const TWCHAR* a_wszText, TFLOAT a_fX, TFLOAT a_fY, TFLOAT a_fWidth, TFLOAT a_fHeight, TUINT32 a_uiColour, TFLOAT a_fScale, AGUI2Font::TextAlign a_eAlign, void* a_fnCallback /*= TNULL*/ )
+MEMBER_HOOK( 0x006c3410, SDK_T2GUIFont, SDK_T2GUIFont_DrawTextWrapped, void, const TWCHAR* a_wszText, TFLOAT a_fX, TFLOAT a_fY, TFLOAT a_fWidth, TFLOAT a_fHeight, TUINT32 a_uiColour, TFLOAT a_fScale, SDK_T2GUIFont::TextAlign a_eAlign, void* a_fnCallback /*= TNULL*/ )
 {
 	if ( !remaster::fontrenderer::IsHDEnabled() )
 	{
@@ -198,12 +198,12 @@ MEMBER_HOOK( 0x006c3410, AGUI2Font, AGUI2Font_DrawTextWrapped, void, const TWCHA
 
 				TFLOAT fPosX;
 
-				if ( a_eAlign == AGUI2Font::TextAlign_Left ) fPosX = a_fX;
-				else if ( a_eAlign == AGUI2Font::TextAlign_Center ) fPosX = ( a_fWidth - fWidth2 ) * 0.5f + a_fX;
-				else if ( a_eAlign == AGUI2Font::TextAlign_Right ) fPosX = ( a_fWidth - fWidth2 ) + a_fX;
+				if ( a_eAlign == SDK_T2GUIFont::TextAlign_Left ) fPosX = a_fX;
+				else if ( a_eAlign == SDK_T2GUIFont::TextAlign_Center ) fPosX = ( a_fWidth - fWidth2 ) * 0.5f + a_fX;
+				else if ( a_eAlign == SDK_T2GUIFont::TextAlign_Right ) fPosX = ( a_fWidth - fWidth2 ) + a_fX;
 				else fPosX = a_fX;
 
-				TREINTERPRETCAST( AGUI2Font_DrawTextSingleLine::_hook_obj*, this )->_hook_func( pTextBuffer2, pTextBuffer - pTextBuffer2, fPosX, a_fY, a_uiColour, flOriginalScale, a_fnCallback );
+				TREINTERPRETCAST( SDK_T2GUIFont_DrawTextSingleLine::_hook_obj*, this )->_hook_func( pTextBuffer2, pTextBuffer - pTextBuffer2, fPosX, a_fY, a_uiColour, flOriginalScale, a_fnCallback );
 			}
 
 			a_fY += ( ( pFontAtlas->GetLineHeight() + pFontAtlas->GetLineGap() ) * pFontAtlas->GetHeightFactor() ) * a_fScale / flUIScaleY;
@@ -212,7 +212,7 @@ MEMBER_HOOK( 0x006c3410, AGUI2Font, AGUI2Font_DrawTextWrapped, void, const TWCHA
 	}
 }
 
-MEMBER_HOOK( 0x006c2e10, AGUI2Font, AGUI2Font_GetTextHeightWrapped, TFLOAT, const TWCHAR* a_wszText, TFLOAT a_fMaxWidth, TFLOAT a_fScale )
+MEMBER_HOOK( 0x006c2e10, SDK_T2GUIFont, SDK_T2GUIFont_GetTextHeightWrapped, TFLOAT, const TWCHAR* a_wszText, TFLOAT a_fMaxWidth, TFLOAT a_fScale )
 {
 	if ( !remaster::fontrenderer::IsHDEnabled() )
 		return CallOriginal( a_wszText, a_fMaxWidth, a_fScale );
@@ -302,10 +302,10 @@ void remaster::SetupRenderHooks_FontRenderer()
 	if ( !remaster::fontrenderer::IsHDEnabled() )
 		return;
 
-	InstallHook<AGUI2Font_DrawTextSingleLine>();
-	InstallHook<AGUI2Font_DrawTextWrapped>();
-	InstallHook<AGUI2Font_GetTextWidth>();
-	InstallHook<AGUI2Font_GetTextHeightWrapped>();
+	InstallHook<SDK_T2GUIFont_DrawTextSingleLine>();
+	InstallHook<SDK_T2GUIFont_DrawTextWrapped>();
+	InstallHook<SDK_T2GUIFont_GetTextWidth>();
+	InstallHook<SDK_T2GUIFont_GetTextHeightWrapped>();
 }
 
 void remaster::fontrenderer::Create()

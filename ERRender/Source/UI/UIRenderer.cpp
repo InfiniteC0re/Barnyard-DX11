@@ -20,7 +20,7 @@
 
 TOSHI_NAMESPACE_USING
 
-MEMBER_HOOK( 0x0064e5c0, AGUI2Renderer, AGUI2Renderer_Constructor, remaster::UIRendererDX11* )
+MEMBER_HOOK( 0x0064e5c0, T2GUIRenderer, AGUI2Renderer_Constructor, remaster::UIRendererDX11* )
 {
 	return new remaster::UIRendererDX11();
 }
@@ -34,7 +34,7 @@ remaster::UIRendererDX11* remaster::g_pUIRender = TNULL;
 
 remaster::UIRendererDX11::UIRendererDX11()
 {
-	m_pTransforms       = new AGUI2Transform[ MAX_NUM_TRANSFORMS ];
+	m_pTransforms       = new Toshi::T2GUITransform[ MAX_NUM_TRANSFORMS ];
 	m_iTransformCount   = 0;
 	m_bIsTransformDirty = TFALSE;
 
@@ -81,31 +81,31 @@ remaster::UIRendererDX11::~UIRendererDX11()
 	g_pUIRender = TNULL;
 }
 
-AGUI2Material* remaster::UIRendererDX11::CreateMaterial( Toshi::TTexture* a_pTexture )
+Toshi::T2GUIMaterial* remaster::UIRendererDX11::CreateMaterial( Toshi::TTexture* a_pTexture )
 {
-	auto pMaterial = new AGUI2Material;
+	auto pMaterial = new UIMaterial;
 
 	pMaterial->Create_Hack();
 	pMaterial->m_pTextureResource = a_pTexture;
 
-	return pMaterial;
+	return TREINTERPRETCAST( Toshi::T2GUIMaterial*, pMaterial );
 }
 
-AGUI2Material* remaster::UIRendererDX11::CreateMaterialFromName( const TCHAR* a_szTextureName )
+Toshi::T2GUIMaterial* remaster::UIRendererDX11::CreateMaterial( const TCHAR* a_szTextureName )
 {
 	return CreateMaterial(
 	    GetTexture( a_szTextureName )
 	);
 }
 
-TUINT remaster::UIRendererDX11::GetWidth( AGUI2Material* a_pMaterial )
+TUINT remaster::UIRendererDX11::GetWidth( Toshi::T2GUIMaterial* a_pMaterial )
 {
-	return a_pMaterial->m_pTextureResource->GetWidth();
+	return TREINTERPRETCAST( UIMaterial*, a_pMaterial )->m_pTextureResource->GetWidth();
 }
 
-TUINT remaster::UIRendererDX11::GetHeight( AGUI2Material* a_pMaterial )
+TUINT remaster::UIRendererDX11::GetHeight( Toshi::T2GUIMaterial* a_pMaterial )
 {
-	return a_pMaterial->m_pTextureResource->GetHeight();
+	return TREINTERPRETCAST( UIMaterial*, a_pMaterial )->m_pTextureResource->GetHeight();
 }
 
 void remaster::UIRendererDX11::BeginScene()
@@ -139,7 +139,7 @@ void remaster::UIRendererDX11::BeginScene()
 	TFLOAT fRootHeight;
 	AGUI2::GetContext()->GetRootElement()->GetDimensions( fRootWidth, fRootHeight );
 
-	AGUI2Transform& rTransform    = m_pTransforms[ m_iTransformCount ];
+	Toshi::T2GUITransform& rTransform    = m_pTransforms[ m_iTransformCount ];
 	rTransform.m_aMatrixRows[ 0 ] = { pDisplayParams->uiWidth / fRootWidth, 0.0f };
 	rTransform.m_aMatrixRows[ 1 ] = { 0.0f, -TFLOAT( pDisplayParams->uiHeight ) / fRootHeight };
 	rTransform.m_vecTranslation   = { 0.0f, 0.0f };
@@ -185,7 +185,7 @@ void remaster::UIRendererDX11::PrepareRenderer()
 
 	// Force material to update
 	auto pMaterial = m_pMaterial;
-	m_pMaterial    = (AGUI2Material*)( ~(uintptr_t)pMaterial );
+	m_pMaterial    = (Toshi::T2GUIMaterial*)( ~(uintptr_t)pMaterial );
 	SetMaterial( pMaterial );
 
 	// Force colour to update
@@ -196,7 +196,7 @@ void remaster::UIRendererDX11::PrepareRenderer()
 	m_bIsTransformDirty = TTRUE;
 }
 
-void remaster::UIRendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
+void remaster::UIRendererDX11::SetMaterial( Toshi::T2GUIMaterial* a_pMaterial )
 {
 	if ( a_pMaterial == m_pMaterial ) return;
 
@@ -210,12 +210,12 @@ void remaster::UIRendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
 	}
 	else
 	{
-		auto pTexture = TSTATICCAST( Toshi::TTextureResourceHAL, a_pMaterial->m_pTextureResource );
+		auto pTexture = TSTATICCAST( Toshi::TTextureResourceHAL, TREINTERPRETCAST( UIMaterial*, a_pMaterial )->m_pTextureResource );
 		pTexture->Validate();
 
 		SetTextureResourceView( (ID3D11ShaderResourceView*)pTexture->GetD3DTexture() );
 
-		switch ( a_pMaterial->m_eBlendState )
+		switch ( TREINTERPRETCAST( UIMaterial*, a_pMaterial )->m_eBlendState )
 		{
 			case 0:
 				g_pRender->SetBlendEnabled( TFALSE );
@@ -259,11 +259,11 @@ void remaster::UIRendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
 				break;
 		}
 
-		if ( a_pMaterial->m_eTextureAddress == 1 )
+		if ( TREINTERPRETCAST( UIMaterial*, a_pMaterial )->m_eTextureAddress == 1 )
 		{
 			g_pRender->PSSetSamplerState( 0, 1 );
 		}
-		else if ( a_pMaterial->m_eTextureAddress == 2 )
+		else if ( TREINTERPRETCAST( UIMaterial*, a_pMaterial )->m_eTextureAddress == 2 )
 		{
 			g_pRender->PSSetSamplerState( 0, 4 );
 		}
@@ -277,13 +277,13 @@ void remaster::UIRendererDX11::SetMaterial( AGUI2Material* a_pMaterial )
 	m_pMaterial = a_pMaterial;
 }
 
-void remaster::UIRendererDX11::PushTransform( const AGUI2Transform& a_rTransform, const Toshi::TVector2& a_rVec1, const Toshi::TVector2& a_rVec2 )
+void remaster::UIRendererDX11::PushTransform( const Toshi::T2GUITransform& a_rTransform, const Toshi::TVector2& a_rVec1, const Toshi::TVector2& a_rVec2 )
 {
 	TASSERT( m_iTransformCount < MAX_NUM_TRANSFORMS );
 	auto pTransform = m_pTransforms + ( m_iTransformCount++ );
 
-	AGUI2Transform transform1 = *pTransform;
-	AGUI2Transform transform2 = a_rTransform;
+	Toshi::T2GUITransform transform1 = *pTransform;
+	Toshi::T2GUITransform transform2 = a_rTransform;
 
 	TVector2 vec;
 	transform1.Transform( vec, a_rVec1 );
@@ -292,7 +292,7 @@ void remaster::UIRendererDX11::PushTransform( const AGUI2Transform& a_rTransform
 	transform2.Transform( vec, a_rVec2 );
 	transform2.m_vecTranslation = { vec.x, vec.y };
 
-	AGUI2Transform::Multiply( m_pTransforms[ m_iTransformCount ], transform1, transform2 );
+	Toshi::T2GUITransform::Multiply( m_pTransforms[ m_iTransformCount ], transform1, transform2 );
 	m_bIsTransformDirty = TTRUE;
 }
 
@@ -303,7 +303,7 @@ void remaster::UIRendererDX11::PopTransform()
 	m_bIsTransformDirty = TTRUE;
 }
 
-void remaster::UIRendererDX11::SetTransform( const AGUI2Transform& a_rTransform )
+void remaster::UIRendererDX11::SetTransform( const Toshi::T2GUITransform& a_rTransform )
 {
 	m_pTransforms[ m_iTransformCount ] = a_rTransform;
 	m_bIsTransformDirty                = TTRUE;
@@ -448,7 +448,7 @@ void remaster::UIRendererDX11::SetShaderType( SHADER_TYPE a_eShaderType )
 
 void remaster::UIRendererDX11::UpdateTransformImpl()
 {
-	AGUI2Transform* pTransform = m_pTransforms + m_iTransformCount;
+	Toshi::T2GUITransform* pTransform = m_pTransforms + m_iTransformCount;
 
 	m_matView.m_f11 = pTransform->m_aMatrixRows[ 0 ].x;
 	m_matView.m_f12 = pTransform->m_aMatrixRows[ 0 ].y;
@@ -490,7 +490,7 @@ void remaster::UIRendererDX11::RenderLine( TFLOAT x1, TFLOAT y1, TFLOAT x2, TFLO
 {
 }
 
-void remaster::UIRendererDX11::DestroyMaterial( AGUI2Material* a_pMaterial )
+void remaster::UIRendererDX11::DestroyMaterial( Toshi::T2GUIMaterial* a_pMaterial )
 {
 	if ( a_pMaterial )
 		a_pMaterial->Destroy();
