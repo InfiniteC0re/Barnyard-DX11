@@ -110,36 +110,34 @@ void remaster::SkinMaterial::PreRender()
 		g_pRender->SetShaderResource( 0, TNULL );
 	}
 
-// 	if ( m_eBlendMode == 0 || m_eBlendMode == 1 || m_eBlendMode != 3 )
-// 	{
-// 		pD3DDevice->SetRenderState( D3DRS_SRCBLEND, 5 );
-// 		pD3DDevice->SetRenderState( D3DRS_DESTBLEND, 6 );
-// 		pD3DDevice->SetRenderState( D3DRS_ZWRITEENABLE, TRUE );
-// 	}
-// 	else
-// 	{
-// 		pD3DDevice->SetRenderState( D3DRS_SRCBLEND, 5 );
-// 		pD3DDevice->SetRenderState( D3DRS_DESTBLEND, 2 );
-// 		pD3DDevice->SetRenderState( D3DRS_ZWRITEENABLE, FALSE );
-// 	}
-// 
-// 	if ( m_Flags & FLAGS_NO_CULL )
-// 		pD3DDevice->SetRenderState( D3DRS_CULLMODE, 1 );
-// 
+	if ( m_eBlendMode != 3 )
+	{
+		g_pRender->SetBlendMode( g_pRender->IsBlendEnabled(), g_pRender->GetBlendOp(), D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
+		g_pRender->SetDepthWrite( TTRUE );
+	}
+	else
+	{
+		g_pRender->SetBlendMode( g_pRender->IsBlendEnabled(), g_pRender->GetBlendOp(), D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ONE );
+		g_pRender->SetDepthWrite( TFALSE );
+	}
+
+	g_pRender->SetCullMode( D3D11_CULL_NONE );
+
 // 	auto pShader = TDYNAMICCAST( ASkinShaderHAL, GetShader() );
 // 	pShader->SetAlphaRef( ( m_Flags & FLAGS_BLENDING ) ? 1 : 128 );
-// 
+//
 // 	pD3DDevice->SetRenderState( D3DRS_COLORVERTEX, 0 );
-// 	pD3DDevice->SetRenderState( D3DRS_CULLMODE, 1 );
-// 
+//
 // 	auto pRenderContext = TRenderContextD3D::Upcast( pRender->GetCurrentContext() );
-// 
+//
 // 	if ( pRenderContext->IsFogEnabled() )
 // 		pRenderContext->EnableFogHAL();
 }
 
 void remaster::SkinMaterial::PostRender()
 {
+	g_pRender->SetDepthWrite( TTRUE );
+	g_pRender->SetBlendEnabled( TTRUE );
 }
 
 TBOOL remaster::SkinMaterial::Create( BLENDMODE a_eBlendMode )

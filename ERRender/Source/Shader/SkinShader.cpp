@@ -59,6 +59,9 @@ void remaster::SkinShaderDX11::StartFlush()
 {
 	m_oWorldViewMatrix = g_pRender->GetCurrentContext()->GetWorldViewMatrix();
 	m_oViewWorldMatrix.Invert( m_oWorldViewMatrix );
+
+	g_pRender->SetBlendEnabled( TTRUE );
+	g_pRender->SetCullMode( m_bRenderEnvMap ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
 }
 
 void remaster::SkinShaderDX11::EndFlush()
@@ -78,12 +81,20 @@ TBOOL remaster::SkinShaderDX11::Validate()
 	if ( IsValidated() )
 		return TTRUE;
 
-	m_pVSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "vs_main", "vs_5_0", TNULL );
-	m_pPSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "ps_main", "ps_5_0", TNULL );
+	D3D_SHADER_MACRO aBakedLightingShaderMacro[] = { "BAKED_LIGHTING", "1", TNULL, TNULL };
 
-	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob );
-	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_oShaderPipeline.pVertexShader ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob->GetBufferPointer(), m_pPSShaderBlob->GetBufferSize(), &m_oShaderPipeline.pPixelShader ) );
+	m_pVSShaderBlob_RuntimeLighting = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "vs_main", "vs_5_0", TNULL );
+	m_pPSShaderBlob_RuntimeLighting = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "ps_main", "ps_5_0", TNULL );
+	m_pVSShaderBlob_BakedLighting   = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "vs_main", "vs_5_0", aBakedLightingShaderMacro );
+	m_pPSShaderBlob_BakedLighting   = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "ps_main", "ps_5_0", aBakedLightingShaderMacro );
+
+	TASSERT( m_pVSShaderBlob_BakedLighting && m_pPSShaderBlob_BakedLighting );
+	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob_BakedLighting->GetBufferPointer(), m_pVSShaderBlob_BakedLighting->GetBufferSize(), &m_oShaderPipeline_BakedLighting.pVertexShader ) );
+	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_BakedLighting->GetBufferPointer(), m_pPSShaderBlob_BakedLighting->GetBufferSize(), &m_oShaderPipeline_BakedLighting.pPixelShader ) );
+
+	TASSERT( m_pVSShaderBlob_RuntimeLighting && m_pPSShaderBlob_RuntimeLighting );
+	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob_RuntimeLighting->GetBufferPointer(), m_pVSShaderBlob_RuntimeLighting->GetBufferSize(), &m_oShaderPipeline_RuntimeLighting.pVertexShader ) );
+	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_RuntimeLighting->GetBufferPointer(), m_pPSShaderBlob_RuntimeLighting->GetBufferSize(), &m_oShaderPipeline_RuntimeLighting.pPixelShader ) );
 
 	D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
 		{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
@@ -97,11 +108,13 @@ TBOOL remaster::SkinShaderDX11::Validate()
 	    g_pRender->GetD3D11Device()->CreateInputLayout(
 	        aInputElements,
 	        TARRAYSIZE( aInputElements ),
-	        m_pVSShaderBlob->GetBufferPointer(),
-	        m_pVSShaderBlob->GetBufferSize(),
-	        &m_oShaderPipeline.pInputLayout
+	        m_pVSShaderBlob_BakedLighting->GetBufferPointer(),
+	        m_pVSShaderBlob_BakedLighting->GetBufferSize(),
+	        &m_oShaderPipeline_BakedLighting.pInputLayout
 	    )
 	);
+
+	m_oShaderPipeline_RuntimeLighting.pInputLayout = m_oShaderPipeline_BakedLighting.pInputLayout;
 
 	return BaseClass::Validate();
 }
@@ -133,8 +146,6 @@ void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	SkinMaterial*       pMaterial         = TSTATICCAST( SkinMaterial, pMesh->GetMaterial() );
 
 	const TFLOAT flPacketAlpha = a_pRenderPacket->GetAlpha();
-
-	g_pRender->SetShaderPipelineState( m_oShaderPipeline );
 
 	// Setup renderer
 	// Setup model view projection matrix
@@ -174,6 +185,8 @@ void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	if ( pMaterial->IsHDLighting() && pMaterial->HasLighting1Tex() && pMaterial->HasLighting2Tex() )
 	{
+		g_pRender->SetShaderPipelineState( m_oShaderPipeline_BakedLighting );
+
 		if ( pMaterial->GetSomeTexture() )
 			flShadeCoeff = flShadeCoeff - 0.3f;
 
@@ -193,6 +206,10 @@ void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		g_pRender->SetShaderResource( 4, TREINTERPRETCAST( ID3D11ShaderResourceView*, pMaterial->GetLightingTexture( ASkinMaterial::LT_3 )->GetD3DTexture() ) );
 		g_pRender->PSSetSamplerState( 1, 5 );
 	}
+	else
+	{
+		g_pRender->SetShaderPipelineState( m_oShaderPipeline_RuntimeLighting );
+	}
 
 	TMatrix44 oViewModel;
 	oViewModel.Invert( a_pRenderPacket->GetModelViewMatrix() );
@@ -203,11 +220,24 @@ void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	TVector4 vAmbientColour = a_pRenderPacket->GetAmbientColour();
 	vAmbientColour.w        = flPacketAlpha;
 
-	g_pRender->VSBufferSetVec4( 6, upVector );
+	g_pRender->VSBufferSetVec4( 7, upVector );
 	g_pRender->VSBufferSetVec4( 4, vAmbientColour );
-	g_pRender->VSBufferSetVec4( 5, vLightDirWorld );
-	g_pRender->VSBufferSetVec4( 7, vLightingLerp1 );
-	g_pRender->VSBufferSetVec4( 8, vLightingLerp2 );
+
+	// Set alpha ref
+	TINT iAlphaRef = pMaterial->IsBlending() ? 1 : 128;
+	TINT iAlpha    = TINT( flPacketAlpha * 128.0f );
+	if ( iAlphaRef < iAlpha ) iAlpha = iAlphaRef;
+	vLightColour.w = iAlpha * ( 1.0f / 255.0f );
+	g_pRender->VSBufferSetVec4( 5, vLightColour );
+
+	// Blend enable
+	if ( pMaterial->GetBlendMode() != 0 || flPacketAlpha < 1.0f )
+		g_pRender->SetBlendEnabled( TTRUE );
+	else
+		g_pRender->SetBlendEnabled( TFALSE );
+	g_pRender->VSBufferSetVec4( 6, vLightDirWorld );
+	g_pRender->VSBufferSetVec4( 8, vLightingLerp1 );
+	g_pRender->VSBufferSetVec4( 9, vLightingLerp2 );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
@@ -228,8 +258,8 @@ void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 		// TODO: use separate buffer for bone matrices to reduce bandwidth
 		// Get all bones into render buffer
-		for ( TINT k = 0; k < pSubMesh->uiNumBones; k++ )
-			g_pRender->VSBufferSetMat4( 9 + k * 4, pSkeletonInstance->GetBone( pSubMesh->aBones[ k ] ).m_Transform );
+		for ( TUINT k = 0; k < pSubMesh->uiNumBones; k++ )
+			g_pRender->VSBufferSetMat4( 10 + k * 4, pSkeletonInstance->GetBone( pSubMesh->aBones[ k ] ).m_Transform );
 
 		// Draw mesh
 		g_pRender->DrawIndexed(

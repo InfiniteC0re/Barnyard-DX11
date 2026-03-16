@@ -89,9 +89,13 @@ private:
 	TBOOL                      m_bUnkFlag;
 
 
-	ID3DBlob* m_pVSShaderBlob;
-	ID3DBlob* m_pPSShaderBlob;
-	RenderDX11::ShaderPipelineState m_oShaderPipeline;
+	ID3DBlob*                       m_pVSShaderBlob_BakedLighting;
+	ID3DBlob*                       m_pPSShaderBlob_BakedLighting;
+	RenderDX11::ShaderPipelineState m_oShaderPipeline_BakedLighting;
+
+	ID3DBlob*                       m_pVSShaderBlob_RuntimeLighting;
+	ID3DBlob*                       m_pPSShaderBlob_RuntimeLighting;
+	RenderDX11::ShaderPipelineState m_oShaderPipeline_RuntimeLighting;
 
 	Toshi::TMatrix44 m_oWorldViewMatrix;
 	Toshi::TMatrix44 m_oViewWorldMatrix;

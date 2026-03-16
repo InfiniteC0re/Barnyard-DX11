@@ -1,27 +1,31 @@
 struct VS_IN
 {
 	float3 ObjPos	: POSITION;		// Object space position
-	float3 Normal	: NORMAL;		// Vertex normal
+    float3 Normal	: NORMAL;		// Vertex normal
 	float4 Weights	: BLENDWEIGHT;	// Weights
 	float4 MIndices	: BLENDINDICES;	// Matrix Indices
-	float2 UV		: TEXCOORD;		// UV
+	float2 UV		: TEXCOORD0;	// UV
 };
 
 struct PS_IN
 {
-	float4 ProjPos	: SV_POSITION;	// Projected space position 
+	float4 ProjPos	: SV_POSITION;		// Projected space position 
 	// float3 Normal	: NORMAL;
-	// float4 Color	: COLOR;
-	float2 UV0		: TEXCOORD0;	// UV
-	float2 UV1		: TEXCOORD1;	// UV for lighting
+	float2 UV0		: TEXCOORD0;		// UV
 	// float4 ViewPos	: TEXCOORD3;	// View space position
 	// float FogFactor	: FOG;
+#ifdef BAKED_LIGHTING
+	float2 UV1		: TEXCOORD1;		// UV for baked lighting
+#else // BAKED_LIGHTING
+	float4 Color	: COLOR;
+#endif // !BAKED_LIGHTING
 };
 
 cbuffer ConstantBuffer : register(b0)
 {
     float4x4 cb_matWVP;
 	float4	 cb_ambientColor;
+	float4	 cb_lightColor;		// xyz = light color, w = alpha ref
 	float4	 cb_lightDirection;
 	float4	 cb_upAxis;
 	float4	 cb_lightingLerp1;
@@ -57,13 +61,20 @@ PS_IN vs_main(VS_IN In)
 		normal += mul(In.Normal, BoneNormal) * BoneWeights[i];
 	}
 
-	normal = normalize(normal);
 	Out.ProjPos = mul(float4(vertex, 1.0), cb_matWVP);
     Out.UV0 = In.UV;
 
 	// Lighting UV
-    Out.UV1.x = dot(normal, -cb_lightDirection.xyz);
+	float NdotL = dot(normal, -cb_lightDirection.xyz);
+	NdotL = clamp(NdotL, 0.0f, 1.0f);
+
+#ifdef BAKED_LIGHTING
+    Out.UV1.x = NdotL;
     Out.UV1.y = dot(normal, cb_upAxis.xyz);
+#else // BAKED_LIGHTING
+	Out.Color.xyz = NdotL * cb_lightColor.xyz + (1.0f - NdotL) * cb_ambientColor.xyz;
+	Out.Color.w = cb_ambientColor.a;
+#endif // !BAKED_LIGHTING
 
     return Out;
 }
@@ -80,7 +91,9 @@ SamplerState samplerLighting : register(s1);
 float4 ps_main(PS_IN In) : SV_TARGET
 {
     float4 texColor = texture0.Sample(sampler0, In.UV0);
+	clip(texColor.a - cb_lightColor.w);
 
+#ifdef BAKED_LIGHTING
 	float3 lighting1Color = lighting1.Sample(samplerLighting, In.UV1);
 	float3 lighting2Color = lighting2.Sample(samplerLighting, In.UV1);
 	float3 lighting3Color = lighting3.Sample(samplerLighting, In.UV1);
@@ -89,6 +102,9 @@ float4 ps_main(PS_IN In) : SV_TARGET
 	texColor.rgb = clamp(texColor.rgb - lerp(lighting3Color, lighting1Color, cb_lightingLerp1).rgb, 0.0f, 1.0f);
 	texColor.rgb = clamp(texColor.rgb + lerp(lighting2Color, lighting4Color, cb_lightingLerp2).rgb, 0.0f, 1.0f);
 	texColor.a *= cb_ambientColor.a;
+#else // BAKED_LIGHTING
+	texColor.rgb = saturate(texColor.rgb * In.Color);
+#endif // !BAKED_LIGHTING
 
 	return texColor;
 }
