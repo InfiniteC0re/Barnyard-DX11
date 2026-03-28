@@ -53,6 +53,17 @@ remaster::SkinShaderDX11::~SkinShaderDX11()
 
 void remaster::SkinShaderDX11::Flush()
 {
+	if ( IsValidated() )
+	{
+		g_pRender->SetBlendEnabled( TTRUE );
+
+		g_pRender->SetCullMode( m_bRenderEnvMap ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
+		m_aOrderTables[ 0 ].Render();
+
+		//pDevice->SetRenderState( D3DRS_FOGENABLE, 0 );
+	}
+
+	BaseClass::Flush();
 }
 
 void remaster::SkinShaderDX11::StartFlush()
@@ -114,7 +125,11 @@ TBOOL remaster::SkinShaderDX11::Validate()
 	    )
 	);
 
+	// Both shaders share the same input layout
 	m_oShaderPipeline_RuntimeLighting.pInputLayout = m_oShaderPipeline_BakedLighting.pInputLayout;
+
+	m_oShaderPipeline_RuntimeLighting.SetName( "Skin_RuntimeLighting" );
+	m_oShaderPipeline_BakedLighting.SetName( "Skin_BakedLighting" );
 
 	return BaseClass::Validate();
 }

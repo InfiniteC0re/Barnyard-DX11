@@ -131,6 +131,9 @@ TBOOL remaster::WorldShaderDX11::Validate()
 	// Both shaders share the same vertex shader and input layout
 	m_oShaderPipeline_Blending.pVertexShader = m_oShaderPipeline_AlphaRef.pVertexShader;
 	m_oShaderPipeline_Blending.pInputLayout  = m_oShaderPipeline_AlphaRef.pInputLayout;
+
+	m_oShaderPipeline_Blending.SetName( "World_Blending" );
+	m_oShaderPipeline_AlphaRef.SetName( "World_AlphaRef" );
 	
 	return BaseClass::Validate();
 }

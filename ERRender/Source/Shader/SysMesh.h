@@ -10,6 +10,11 @@ class SysMesh
 public:
 	TDECLARE_CLASS( SysMesh, ASysMesh );
 
+	struct Vertex
+	{
+		TCHAR PADDING[ 24 ];
+	};
+
 public:
 	SysMesh();
 	~SysMesh();
