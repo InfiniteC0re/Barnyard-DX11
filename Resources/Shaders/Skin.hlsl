@@ -104,6 +104,7 @@ float4 ps_main(PS_IN In) : SV_TARGET
 	texColor.a *= cb_ambientColor.a;
 #else // BAKED_LIGHTING
 	texColor.rgb = saturate(texColor.rgb * In.Color);
+	texColor.a *= cb_ambientColor.a;
 #endif // !BAKED_LIGHTING
 
 	return texColor;
