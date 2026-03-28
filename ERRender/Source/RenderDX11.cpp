@@ -629,7 +629,7 @@ void RenderDX11::CreateRenderObjects()
 	m_BlendState.Parts.RenderTargetWriteMask = 0b1111;
 	m_BlendState.Parts.SrcBlend              = D3D11_BLEND_ONE;
 	m_BlendState.Parts.DestBlend             = D3D11_BLEND_ZERO;
-	m_BlendState.Parts.Unknown2              = 1;
+	m_BlendState.Parts.bAlphaToCoverage      = FALSE;
 
 	// Rasterizer state
 	m_RasterizerState.Flags.Parts.FillMode               = D3D11_FILL_SOLID;
@@ -1040,7 +1040,7 @@ void RenderDX11::UpdateRenderStates()
 			// We don't have a blend state with these flags yet
 			D3D11_BLEND_DESC blendDesc;
 
-			blendDesc.AlphaToCoverageEnable  = FALSE;
+			blendDesc.AlphaToCoverageEnable  = m_BlendState.Parts.bAlphaToCoverage;
 			blendDesc.IndependentBlendEnable = FALSE;
 
 			blendDesc.RenderTarget[ 0 ].BlendOp               = m_BlendState.Parts.BlendOp;

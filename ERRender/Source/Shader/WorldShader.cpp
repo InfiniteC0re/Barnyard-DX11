@@ -62,6 +62,8 @@ void remaster::WorldShaderDX11::Flush()
 	g_pRender->SetDepthWrite( TTRUE );
 	g_pRender->SetBlendEnabled( TTRUE );
 	g_pRender->SetCullMode( TFALSE ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
+
+	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
 }
 
 void remaster::WorldShaderDX11::StartFlush()
@@ -72,7 +74,7 @@ void remaster::WorldShaderDX11::StartFlush()
 	g_pRender->SetBlendEnabled( TTRUE );
 	g_pRender->SetCullMode( TFALSE ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
 
-	g_pRender->SetShaderPipelineState( m_oShaderPipeline_AlphaRef );
+	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
 }
 
 void remaster::WorldShaderDX11::EndFlush()
@@ -166,7 +168,6 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	// Use either blending shader or alpharef shader
 	// The only used alpharef value is 128, so no need to dynamically change it
 	g_pRender->SetShaderPipelineState( bIsBlending ? m_oShaderPipeline_Blending : m_oShaderPipeline_AlphaRef );
-	g_pRender->SetBlendEnabled( bIsBlending );
 
 	// Fill vertex constant buffer
 	// Setup model view projection matrix

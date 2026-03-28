@@ -61,6 +61,7 @@ void remaster::SkinShaderDX11::Flush()
 		m_aOrderTables[ 0 ].Render();
 
 		//pDevice->SetRenderState( D3DRS_FOGENABLE, 0 );
+		g_pRender->SetAlphaToCoverageEnabled( TTRUE );
 	}
 
 	BaseClass::Flush();
@@ -73,6 +74,7 @@ void remaster::SkinShaderDX11::StartFlush()
 
 	g_pRender->SetBlendEnabled( TTRUE );
 	g_pRender->SetCullMode( m_bRenderEnvMap ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
+	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
 }
 
 void remaster::SkinShaderDX11::EndFlush()
@@ -250,6 +252,7 @@ void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		g_pRender->SetBlendEnabled( TTRUE );
 	else
 		g_pRender->SetBlendEnabled( TFALSE );
+
 	g_pRender->VSBufferSetVec4( 6, vLightDirWorld );
 	g_pRender->VSBufferSetVec4( 8, vLightingLerp1 );
 	g_pRender->VSBufferSetVec4( 9, vLightingLerp2 );

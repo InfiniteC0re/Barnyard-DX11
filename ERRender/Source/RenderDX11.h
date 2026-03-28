@@ -74,7 +74,7 @@ public:
 			BOOL        bBlendEnabled : 1;
 			D3D11_BLEND SrcBlend : 5;
 			D3D11_BLEND DestBlend : 5;
-			TUINT32     Unknown2 : 1;
+			TUINT32     bAlphaToCoverage : 1;
 		} Parts;
 
 		TUINT32 Raw;
@@ -276,6 +276,7 @@ public:
 	void SetZMode( TBOOL a_bDepthEnable, D3D11_COMPARISON_FUNC a_eComparisonFunc, D3D11_DEPTH_WRITE_MASK a_eDepthWriteMask );
 	void SetDepthClip( TBOOL a_bClip );
 	void SetDepthBias( TINT a_iDepthBias );
+	void SetAlphaToCoverageEnabled( TBOOL a_bEnabled ) { m_BlendState.Parts.bAlphaToCoverage = a_bEnabled; }
 
 	D3D11_BLEND_OP        GetBlendOp() const { return m_BlendState.Parts.BlendOp; }
 	TBOOL                 IsBlendEnabled() const { return m_BlendState.Parts.bBlendEnabled; }

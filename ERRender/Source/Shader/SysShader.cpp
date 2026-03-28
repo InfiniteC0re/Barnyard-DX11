@@ -58,6 +58,7 @@ void remaster::SysShaderDX11::Flush()
 	Validate();
 
 	g_pRender->SetBlendEnabled( TTRUE );
+	g_pRender->SetAlphaToCoverageEnabled( TFALSE );
 	// g_pRender->SetFogEnabled( TFALSE );
 
 	m_aOrderTables[ 0 ].Render();
@@ -71,6 +72,7 @@ void remaster::SysShaderDX11::StartFlush()
 	if ( !IsValidated() ) return;
 
 	g_pRender->SetBlendEnabled( TTRUE );
+	g_pRender->SetAlphaToCoverageEnabled( TFALSE );
 	// g_pRender->SetFogEnabled( TFALSE );
 }
 
