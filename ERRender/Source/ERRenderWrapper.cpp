@@ -51,12 +51,19 @@ MEMBER_HOOK( 0x006be990, remaster::RenderDX11, TRenderD3DInterface_FlushShaders,
 	}
 }
 
+struct PlaceholderStruct{};
+MEMBER_HOOK( 0x006d68b0, PlaceholderStruct, TD3DAdapter_Mode_Device_SupportsVSConstants, TBOOL )
+{
+	return TTRUE;
+}
+
 void remaster::SetupRenderHooks()
 {
 	InstallHook<TRenderD3DInterface_Create>();
 	InstallHook<TRenderD3DInterface_CreateObject>();
 	InstallHook<TRenderD3DInterface_BeginEndScene>();
 	InstallHook<TRenderD3DInterface_FlushShaders>();
+	InstallHook<TD3DAdapter_Mode_Device_SupportsVSConstants>();
 
 	SetupRenderHooks_GrassShader();
 	SetupRenderHooks_SkinShader();

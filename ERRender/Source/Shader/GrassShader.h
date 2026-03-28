@@ -1,5 +1,8 @@
 #pragma once
 #include "Ref/AGrassShader/AGrassShaderHAL_DX8.h"
+#include "RenderDX11.h"
+
+#include <d3d11.h>
 
 namespace remaster
 {
@@ -36,7 +39,16 @@ public:
 	virtual AGrassMesh*     CreateMesh( const TCHAR* a_szName ) OVERRIDE;
 
 private:
-	TCHAR PADDING1[ 24 ];
+	void UpdateAnimation();
+
+private:
+	Toshi::TOrderTable m_oOrderTable;
+	TCHAR PADDING1[ 4 ];
+
+	ID3DBlob* m_pVSShaderBlob;
+	ID3DBlob* m_pPSShaderBlob;
+
+	RenderDX11::ShaderPipelineState m_oShaderPipeline;
 };
 
 }; // namespace remaster

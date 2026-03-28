@@ -43,6 +43,7 @@ public:
 			TUINT32 m_eFlags;
 			Mode*   m_pOwnerMode;
 			TUINT32 m_uiDeviceIndex;
+			TBYTE   PADDING2[ 16 ];
 		};
 
 	public:

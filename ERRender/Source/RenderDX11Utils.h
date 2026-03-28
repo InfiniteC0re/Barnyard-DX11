@@ -24,7 +24,8 @@ using CreateTextureFlags = TUINT32;
 enum : CreateTextureFlags
 {
 	CTF_RENDER_NONE   = 0,
-	CTF_RENDER_TARGET = BITFLAG( 0 )
+	CTF_RENDER_TARGET = BITFLAG( 0 ),
+	CTF_GEN_MIPMAPS   = BITFLAG( 1 ),
 };
 
 ID3D11ShaderResourceView* CreateTexture(

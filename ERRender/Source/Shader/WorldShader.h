@@ -81,6 +81,9 @@ public:
 		return &m_aOrderTables[ a_uiIndex ];
 	}
 
+	const Toshi::TVector4& GetShadowColour() const { return m_ShadowColour; }
+	const Toshi::TVector4& GetAmbientColour() const { return m_AmbientColour; }
+
 private:
 	Toshi::TNodeList<AUnknown> m_SomeList;
 	DWORD                      m_hVertexShader;

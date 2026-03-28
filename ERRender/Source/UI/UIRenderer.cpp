@@ -450,6 +450,7 @@ void remaster::UIRendererDX11::SetShaderType( SHADER_TYPE a_eShaderType )
 			break;
 		case ST_FONT:
 			g_pRender->SetPixelShader( m_oShaderPipeline_Font.pPixelShader );
+			g_pRender->PSSetSamplerState( 0, 1 );
 			break;
 		case ST_SOLID:
 			g_pRender->SetPixelShader( m_oShaderPipeline_Solid.pPixelShader );

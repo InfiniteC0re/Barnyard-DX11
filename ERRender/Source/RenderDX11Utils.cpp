@@ -119,11 +119,11 @@ ID3D11ShaderResourceView* remaster::dx11::CreateTexture( TUINT a_uiWidth, TUINT 
 	textureDesc.Height             = a_uiHeight;
 	textureDesc.Format             = a_eFormat;
 	textureDesc.CPUAccessFlags     = a_eCPUAccessFlags;
-	textureDesc.MipLevels          = 1;
-	textureDesc.MiscFlags          = false ? D3D11_RESOURCE_MISC_GENERATE_MIPS : 0;
+	textureDesc.MipLevels          = ( a_eFlags & CTF_GEN_MIPMAPS ) ? 0 : 1;
+	textureDesc.MiscFlags          = ( a_eFlags & CTF_GEN_MIPMAPS ) ? D3D11_RESOURCE_MISC_GENERATE_MIPS : 0;
 	textureDesc.BindFlags          = D3D11_BIND_SHADER_RESOURCE;
 
-	if ( a_eFlags & CTF_RENDER_TARGET )
+	if ( a_eFlags & CTF_RENDER_TARGET || a_eFlags & CTF_GEN_MIPMAPS )
 		textureDesc.BindFlags |= D3D11_BIND_RENDER_TARGET;
 
 	ID3D11Texture2D* pTexture = TNULL;
@@ -134,12 +134,30 @@ ID3D11ShaderResourceView* remaster::dx11::CreateTexture( TUINT a_uiWidth, TUINT 
 	}
 	else
 	{
-		D3D11_SUBRESOURCE_DATA subresourceData;
-		subresourceData.pSysMem          = a_pData;
-		subresourceData.SysMemPitch      = GetTextureRowPitch( a_eFormat, a_uiWidth );
-		subresourceData.SysMemSlicePitch = GetTextureDepthPitch( a_eFormat, a_uiWidth, a_uiHeight );
+		if ( a_eFlags & CTF_GEN_MIPMAPS )
+		{
+			// Load data after allocating the buffer
+			g_pRender->GetD3D11Device()->CreateTexture2D( &textureDesc, TNULL, &pTexture );
 
-		DX11_API_VALIDATE( g_pRender->GetD3D11Device()->CreateTexture2D( &textureDesc, &subresourceData, &pTexture ) );
+			g_pRender->GetD3D11DeviceContext()->UpdateSubresource(
+			    pTexture,
+			    0,
+			    TNULL,
+			    a_pData,
+			    GetTextureRowPitch( a_eFormat, a_uiWidth ),
+			    0
+			);
+		}
+		else
+		{
+			// Load texture data on create
+			D3D11_SUBRESOURCE_DATA subresourceData;
+			subresourceData.pSysMem          = a_pData;
+			subresourceData.SysMemPitch      = GetTextureRowPitch( a_eFormat, a_uiWidth );
+			subresourceData.SysMemSlicePitch = GetTextureDepthPitch( a_eFormat, a_uiWidth, a_uiHeight );
+
+			DX11_API_VALIDATE( g_pRender->GetD3D11Device()->CreateTexture2D( &textureDesc, &subresourceData, &pTexture ) );
+		}
 	}
 
 	if ( pTexture )
@@ -147,13 +165,13 @@ ID3D11ShaderResourceView* remaster::dx11::CreateTexture( TUINT a_uiWidth, TUINT 
 		D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceViewDesc;
 		shaderResourceViewDesc.Format                    = textureDesc.Format;
 		shaderResourceViewDesc.ViewDimension             = ( a_uiSampleDescCount > 1 ) ? D3D_SRV_DIMENSION_TEXTURE2DMS : D3D_SRV_DIMENSION_TEXTURE2D;
-		shaderResourceViewDesc.Texture2D.MipLevels       = 1;
+		shaderResourceViewDesc.Texture2D.MipLevels       = -1;
 		shaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
 
 		ID3D11ShaderResourceView* pShaderResourceView = TNULL;
 		DX11_API_VALIDATE( g_pRender->GetD3D11Device()->CreateShaderResourceView( pTexture, &shaderResourceViewDesc, &pShaderResourceView ) );
 
-		if ( false && pShaderResourceView != TNULL )
+		if ( ( a_eFlags & CTF_GEN_MIPMAPS ) && pShaderResourceView != TNULL )
 		{
 			g_pRender->GetD3D11DeviceContext()->GenerateMips( pShaderResourceView );
 		}
