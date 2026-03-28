@@ -809,6 +809,11 @@ void RenderDX11::SetDepthClip( TBOOL a_bClip )
 	m_RasterizerState.Flags.Parts.bDepthClipEnable = a_bClip;
 }
 
+void RenderDX11::SetDepthBias( TINT a_iDepthBias )
+{
+	m_RasterizerState.DepthBias = a_iDepthBias;
+}
+
 void RenderDX11::DrawImmediately( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUINT a_iIndexCount, const void* a_pIndexData, DXGI_FORMAT a_eIndexFormat, const void* a_pVertexData, TUINT a_iStrideSize, TUINT a_iStrides )
 {
 	TINT iIndexSize = ( a_eIndexFormat == DXGI_FORMAT_R32_UINT ) ? 4 : ( ( a_eIndexFormat == DXGI_FORMAT_R16_UINT ) ? 2 : 0 );
@@ -1154,6 +1159,23 @@ void RenderDX11::BuildAdapterDatabase()
 	}
 
 	if ( pFactory ) pFactory->Release();
+}
+
+#ifdef TOSHI_DEBUG
+static const GUID WKPDID_D3DDebugObjectNameLocal = { 0x429b8c22, 0x9188, 0x4b0c, { 0x87, 0x42, 0xac, 0xb0, 0xbf, 0x85, 0xc2, 0x00 } };
+
+#  define WKPDID_D3DDebugObjectName WKPDID_D3DDebugObjectNameLocal
+#endif // TOSHI_DEBUG
+
+void RenderDX11::ShaderPipelineState::SetName( const TCHAR* a_pchName )
+{
+#ifdef TOSHI_DEBUG
+	T2String8::Format( T2String8::ms_aScratchMem, "%s_VS", a_pchName );
+	pVertexShader->SetPrivateData( WKPDID_D3DDebugObjectName, T2String8::Length( T2String8::ms_aScratchMem ), T2String8::ms_aScratchMem );
+
+	T2String8::Format( T2String8::ms_aScratchMem, "%s_PS", a_pchName );
+	pPixelShader->SetPrivateData( WKPDID_D3DDebugObjectName, T2String8::Length( T2String8::ms_aScratchMem ), T2String8::ms_aScratchMem );
+#endif // TOSHI_DEBUG
 }
 
 } // namespace remaster

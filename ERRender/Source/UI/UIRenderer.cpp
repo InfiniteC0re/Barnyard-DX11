@@ -47,10 +47,10 @@ remaster::UIRendererDX11::UIRendererDX11()
 	m_pPSShaderBlob_Solid    = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main", "ps_5_0", TNULL );
 
 	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob_Textured );
-	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_pVertexShader ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Textured->GetBufferPointer(), m_pPSShaderBlob_Textured->GetBufferSize(), &m_pPixelShader_Textured ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Solid->GetBufferPointer(), m_pPSShaderBlob_Solid->GetBufferSize(), &m_pPixelShader_Solid ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Font->GetBufferPointer(), m_pPSShaderBlob_Font->GetBufferSize(), &m_pPixelShader_Font ) );
+	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_oShaderPipeline_Textured.pVertexShader ) );
+	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Textured->GetBufferPointer(), m_pPSShaderBlob_Textured->GetBufferSize(), &m_oShaderPipeline_Textured.pPixelShader ) );
+	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Solid->GetBufferPointer(), m_pPSShaderBlob_Solid->GetBufferSize(), &m_oShaderPipeline_Solid.pPixelShader ) );
+	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Font->GetBufferPointer(), m_pPSShaderBlob_Font->GetBufferSize(), &m_oShaderPipeline_Font.pPixelShader ) );
 
 	D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
 		{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
@@ -64,9 +64,19 @@ remaster::UIRendererDX11::UIRendererDX11()
 	        TARRAYSIZE( aInputElements ),
 	        m_pVSShaderBlob->GetBufferPointer(),
 	        m_pVSShaderBlob->GetBufferSize(),
-	        &m_pInputLayout
+	        &m_oShaderPipeline_Textured.pInputLayout
 	    )
 	);
+
+	// Both shaders share the same vertex shader and input layout
+	m_oShaderPipeline_Solid.pInputLayout  = m_oShaderPipeline_Textured.pInputLayout;
+	m_oShaderPipeline_Solid.pVertexShader = m_oShaderPipeline_Textured.pVertexShader;
+	m_oShaderPipeline_Font.pInputLayout   = m_oShaderPipeline_Textured.pInputLayout;
+	m_oShaderPipeline_Font.pVertexShader  = m_oShaderPipeline_Textured.pVertexShader;
+
+	m_oShaderPipeline_Textured.SetName( "UI_Textured" );
+	m_oShaderPipeline_Solid.SetName( "UI_Solid" );
+	m_oShaderPipeline_Font.SetName( "UI_Font" );
 
 	fontrenderer::Create();
 	g_pUIRender = this;
@@ -144,49 +154,50 @@ void remaster::UIRendererDX11::BeginScene()
 	rTransform.m_aMatrixRows[ 1 ] = { 0.0f, -TFLOAT( pDisplayParams->uiHeight ) / fRootHeight };
 	rTransform.m_vecTranslation   = { 0.0f, 0.0f };
 
-	g_pRender->SetPixelShader( m_pPixelShader_Solid );
-	g_pRender->SetVertexShader( m_pVertexShader );
-	g_pRender->SetInputLayout( m_pInputLayout );
+	g_pRender->SetShaderPipelineState( m_oShaderPipeline_Textured );
 
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
 	g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
-	g_pRender->SetZMode( g_pRender->IsZEnabled(), D3D11_COMPARISON_ALWAYS, D3D11_DEPTH_WRITE_MASK_ZERO );
+	g_pRender->SetZMode( g_pRender->IsDepthEnabled(), D3D11_COMPARISON_ALWAYS, D3D11_DEPTH_WRITE_MASK_ZERO );
 
 	SetColour( TCOLOR( 255, 255, 255 ) );
-	m_pMaterial = TNULL;
+
+	m_pMaterial = (Toshi::T2GUIMaterial*)( ~(uintptr_t)m_pMaterial );
+	SetMaterial( TNULL );
 }
 
 void remaster::UIRendererDX11::EndScene()
 {
 	TPROFILER_SCOPE();
 
-	g_pRender->SetZMode( g_pRender->IsZEnabled(), D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
+	g_pRender->SetZMode( g_pRender->IsDepthEnabled(), D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
 
 	// Run garbage collection of unused font renderer objects
 	fontrenderer::Update();
+
+	SetMaterial( TNULL );
 }
 
 void remaster::UIRendererDX11::ResetRenderer()
 {
+	g_pRender->SetZMode( g_pRender->IsDepthEnabled(), D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
+	SetMaterial( TNULL );
 }
 
 void remaster::UIRendererDX11::PrepareRenderer()
 {
-	g_pRender->SetVertexShader( m_pVertexShader );
-	g_pRender->SetInputLayout( m_pInputLayout );
+	g_pRender->SetShaderPipelineState( m_oShaderPipeline_Textured );
 
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
 	g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
-	g_pRender->SetZMode( g_pRender->IsZEnabled(), D3D11_COMPARISON_ALWAYS, D3D11_DEPTH_WRITE_MASK_ZERO );
+	g_pRender->SetZMode( g_pRender->IsDepthEnabled(), D3D11_COMPARISON_ALWAYS, D3D11_DEPTH_WRITE_MASK_ZERO );
 
 	g_pRender->VSBufferSetMat4( 0, m_matProjection );
 
 	sm_fZCoordinate = 0.1f;
 
 	// Force material to update
-	auto pMaterial = m_pMaterial;
-	m_pMaterial    = (Toshi::T2GUIMaterial*)( ~(uintptr_t)pMaterial );
-	SetMaterial( pMaterial );
+	SetMaterial( m_pMaterial );
 
 	// Force colour to update
 	auto uiColour = m_uiColour;
@@ -198,8 +209,6 @@ void remaster::UIRendererDX11::PrepareRenderer()
 
 void remaster::UIRendererDX11::SetMaterial( Toshi::T2GUIMaterial* a_pMaterial )
 {
-	if ( a_pMaterial == m_pMaterial ) return;
-
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
 	sm_fZCoordinate = 0.1f;
 
@@ -250,7 +259,7 @@ void remaster::UIRendererDX11::SetMaterial( Toshi::T2GUIMaterial* a_pMaterial )
 				break;
 			case 6:
 				g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
-				g_pRender->SetZMode( g_pRender->IsZEnabled(), D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
+				g_pRender->SetZMode( g_pRender->IsDepthEnabled(), D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
 				sm_fZCoordinate = 0.04f;
 				sm_bUnknownFlag = TTRUE;
 				break;
@@ -273,7 +282,7 @@ void remaster::UIRendererDX11::SetMaterial( Toshi::T2GUIMaterial* a_pMaterial )
 		}
 	}
 
-	SetShaderType( ST_TEXTURED );
+	SetShaderType( g_pRender->GetShaderResource( 0 ) == TNULL ? ST_SOLID : ST_TEXTURED );
 	m_pMaterial = a_pMaterial;
 }
 
@@ -435,13 +444,13 @@ void remaster::UIRendererDX11::SetShaderType( SHADER_TYPE a_eShaderType )
 	switch ( a_eShaderType )
 	{
 		case ST_TEXTURED:
-			g_pRender->SetPixelShader( m_bHasTextureRV ? m_pPixelShader_Textured : m_pPixelShader_Solid );
+			g_pRender->SetPixelShader( m_bHasTextureRV ? m_oShaderPipeline_Textured.pPixelShader : m_oShaderPipeline_Solid.pPixelShader );
 			break;
 		case ST_FONT:
-			g_pRender->SetPixelShader( m_pPixelShader_Font );
+			g_pRender->SetPixelShader( m_oShaderPipeline_Font.pPixelShader );
 			break;
 		case ST_SOLID:
-			g_pRender->SetPixelShader( m_pPixelShader_Solid );
+			g_pRender->SetPixelShader( m_oShaderPipeline_Solid.pPixelShader );
 			break;
 	}
 }

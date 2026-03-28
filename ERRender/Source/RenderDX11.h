@@ -268,16 +268,19 @@ public:
 	//-----------------------------------------------------------------------------
 	void SetDstAlpha( TFLOAT a_fAlpha );
 	void SetBlendEnabled( TBOOL a_bBlendEnabled ) { m_BlendState.Parts.bBlendEnabled = a_bBlendEnabled; }
+	void SetDepthEnabled( TBOOL a_bDepthEnabled ) { m_DepthState.first.Parts.bDepthEnable = a_bDepthEnabled; }
 	void SetDepthWrite( TBOOL a_bWrite ) { m_DepthState.first.Parts.DepthWriteMask = a_bWrite ? D3D11_DEPTH_WRITE_MASK_ALL : D3D11_DEPTH_WRITE_MASK_ZERO; }
 	void SetBlendMode( TBOOL a_bBlendEnabled, D3D11_BLEND_OP a_eBlendOp, D3D11_BLEND a_eSrcBlendAlpha, D3D11_BLEND a_eDestBlendAlpha );
 	void SetAlphaUpdate( TBOOL a_bUpdate );
 	void SetColorUpdate( TBOOL a_bUpdate );
 	void SetZMode( TBOOL a_bDepthEnable, D3D11_COMPARISON_FUNC a_eComparisonFunc, D3D11_DEPTH_WRITE_MASK a_eDepthWriteMask );
 	void SetDepthClip( TBOOL a_bClip );
+	void SetDepthBias( TINT a_iDepthBias );
 
-	D3D11_BLEND_OP GetBlendOp() const { return m_BlendState.Parts.BlendOp; }
-	TBOOL          IsBlendEnabled() const { return m_BlendState.Parts.bBlendEnabled; }
-	TBOOL          IsZEnabled() const { return m_DepthState.first.Parts.bDepthEnable; }
+	D3D11_BLEND_OP        GetBlendOp() const { return m_BlendState.Parts.BlendOp; }
+	TBOOL                 IsBlendEnabled() const { return m_BlendState.Parts.bBlendEnabled; }
+	TBOOL                 IsDepthEnabled() const { return m_DepthState.first.Parts.bDepthEnable; }
+	D3D11_COMPARISON_FUNC GetDepthFunc() const { return TCAST( D3D11_COMPARISON_FUNC, m_DepthState.first.Parts.DepthFunc ); }
 
 	void DrawImmediately( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUINT a_iIndexCount, const void* a_pIndexData, DXGI_FORMAT a_eFormat, const void* a_pVertexData, TUINT a_iStrideSize, TUINT a_iStrides );
 	void DrawIndexed( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUINT a_uiIndexCount, ID3D11Buffer* a_pIndexBuffer, TUINT a_uiIndexBufferOffset, DXGI_FORMAT a_eIndexBufferFormat, ID3D11Buffer* a_pVertexBuffer, TUINT a_pStrides, TUINT a_pOffsets );
@@ -405,6 +408,8 @@ public:
 		ID3D11VertexShader* pVertexShader;
 		ID3D11PixelShader*  pPixelShader;
 		ID3D11InputLayout*  pInputLayout;
+		
+		void SetName( const TCHAR* a_pchName );
 	};
 
 	void GetCurrentShaderPipelineState( ShaderPipelineState& a_rOutState ) const

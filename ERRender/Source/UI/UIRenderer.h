@@ -1,4 +1,6 @@
 #pragma once
+#include "RenderDX11.h"
+
 #include <Math/TMatrix44.h>
 #include <GUI/T2GUIRenderer.h>
 #include <BYardSDK/SDK_T2GUIMaterial.h>
@@ -106,18 +108,14 @@ private:
 	TBOOL                  m_bIsTransformDirty;
 	Toshi::T2GUIMaterial*  m_pMaterial;
 
-	ID3D11InputLayout*  m_pInputLayout;
-	ID3DBlob*           m_pVSShaderBlob;
-	ID3D11VertexShader* m_pVertexShader;
+	ID3DBlob* m_pVSShaderBlob;
+	ID3DBlob* m_pPSShaderBlob_Textured;
+	ID3DBlob* m_pPSShaderBlob_Solid;
+	ID3DBlob* m_pPSShaderBlob_Font;
 
-	ID3DBlob*          m_pPSShaderBlob_Textured;
-	ID3D11PixelShader* m_pPixelShader_Textured;
-
-	ID3DBlob*          m_pPSShaderBlob_Solid;
-	ID3D11PixelShader* m_pPixelShader_Solid;
-
-	ID3DBlob*          m_pPSShaderBlob_Font;
-	ID3D11PixelShader* m_pPixelShader_Font;
+	RenderDX11::ShaderPipelineState m_oShaderPipeline_Textured;
+	RenderDX11::ShaderPipelineState m_oShaderPipeline_Solid;
+	RenderDX11::ShaderPipelineState m_oShaderPipeline_Font;
 
 	Toshi::TMatrix44 m_matProjection;
 	Toshi::TMatrix44 m_matView;
