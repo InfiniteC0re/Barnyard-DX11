@@ -55,9 +55,10 @@ MEMBER_HOOK( 0x00615bc0, Toshi::T2Texture, T2Texture_Load, HRESULT )
 	    m_ImageInfo.Height,
 	    DXGI_FORMAT_R8G8B8A8_UNORM,
 	    pTexData,
-	    D3D11_USAGE_IMMUTABLE,
-	    0,
-	    1
+	    D3D11_USAGE_DEFAULT,
+	    D3D11_CPU_ACCESS_WRITE,
+	    1,
+		remaster::dx11::CTF_GEN_MIPMAPS
 	);
 
 	stbi_image_free( pTexData );
