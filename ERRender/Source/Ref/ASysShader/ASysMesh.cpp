@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "ASysMesh.h"
 #include "Render/TRenderInterface.h"
+#include "RenderDX11.h"
 
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
@@ -58,6 +59,8 @@ void ASysMesh::Invalidate()
 
 void ASysMesh::DestroyResources()
 {
+	remaster::g_pRender->WaitForEndOfRender();
+
 	if ( m_pVertexPool )
 	{
 		TRenderInterface::GetSingleton()->DestroyResource( m_pVertexPool );
@@ -131,7 +134,7 @@ TBOOL ASysMesh::CreateResource()
 	auto pIndexFactory = TRenderInterface::GetSingleton()->GetSystemResource<TIndexFactoryResourceInterface>( SYSRESOURCE_IFSYS );
 	TVALIDPTR( pIndexFactory );
 
-	TUINT16 uiIndexPoolFlags;
+	TUINT16 uiIndexPoolFlags = 0;
 
 	if ( ( m_uiFlags & 8 ) == 0 )
 	{
@@ -151,7 +154,6 @@ TBOOL ASysMesh::CreateResource()
 	{
 		uiIndexPoolFlags = 1;
 	}
-
 
 	m_pIndexPool = pIndexFactory->CreatePoolResource( m_uiMaxIndices, ( -(TUINT)( ( m_uiFlags & 0x40 ) != 0 ) & 0xfffffff8 ) + 16 | uiIndexPoolFlags );
 	TVALIDPTR( m_pIndexPool );

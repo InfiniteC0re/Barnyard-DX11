@@ -124,3 +124,13 @@ void AWorldMesh::DestroyResource()
 	m_uiFlags       = 0;
 	m_uiMaxVertices = 0;
 }
+
+AWorldMesh::SubMesh::~SubMesh()
+{
+	TPROFILER_SCOPE();
+
+	if ( pIndexPool )
+		TRenderInterface::GetSingleton()->DestroyResource( pIndexPool );
+
+	pIndexPool = TNULL;
+}

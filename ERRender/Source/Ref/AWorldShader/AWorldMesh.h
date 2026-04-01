@@ -14,6 +14,8 @@ public:
 		TUINT16                             uiUnk2          = 0;
 		TUINT16                             uiNumVertices   = 0;
 		Toshi::TIndexPoolResourceInterface* pIndexPool      = TNULL;
+
+		~SubMesh();
 	};
 
 	static constexpr TUINT NUM_SUBMESHES = 1;
