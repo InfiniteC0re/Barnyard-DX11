@@ -51,10 +51,22 @@ MEMBER_HOOK( 0x006be990, remaster::RenderDX11, TRenderD3DInterface_FlushShaders,
 	}
 }
 
-struct PlaceholderStruct{};
-MEMBER_HOOK( 0x006d68b0, PlaceholderStruct, TD3DAdapter_Mode_Device_SupportsVSConstants, TBOOL )
+MEMBER_HOOK( 0x006d68b0, TD3DAdapter, TD3DAdapter_Mode_Device_SupportsVSConstants, TBOOL )
 {
 	return TTRUE;
+}
+
+MEMBER_HOOK( 0x00606630, AModelLoaderJob, AModelLoaderJob_RunJob, TBOOL )
+{
+	if ( m_oStreamJob.IsProcessed() )
+{
+		m_pModel->LoadTRB( m_oStreamJob.GetTRB() );
+		m_pModelRef->SetModel( m_pModel );
+
+	return TTRUE;
+}
+
+	return TFALSE;
 }
 
 void remaster::SetupRenderHooks()
@@ -64,6 +76,7 @@ void remaster::SetupRenderHooks()
 	InstallHook<TRenderD3DInterface_BeginEndScene>();
 	InstallHook<TRenderD3DInterface_FlushShaders>();
 	InstallHook<TD3DAdapter_Mode_Device_SupportsVSConstants>();
+	InstallHook<AModelLoaderJob_RunJob>();
 
 	SetupRenderHooks_GrassShader();
 	SetupRenderHooks_SkinShader();
