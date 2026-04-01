@@ -23,6 +23,10 @@ remaster::SysMaterial::SysMaterial()
 
 remaster::SysMaterial::~SysMaterial()
 {
+	if ( TNULL != m_pRegMaterial )
+	{
+		TOrderTable::DeregisterMaterial( m_pRegMaterial );
+	}
 }
 
 void remaster::SysMaterial::PreRender()
