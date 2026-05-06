@@ -22,8 +22,6 @@ public:
 	CellMeshSphere* GetCellMeshSphere() const { return m_pCellMeshSphere; }
 
 private:
-	TCHAR PADDING[ 136 ];
-
 	void*           m_pUnk1;
 	CellMeshSphere* m_pCellMeshSphere;
 };

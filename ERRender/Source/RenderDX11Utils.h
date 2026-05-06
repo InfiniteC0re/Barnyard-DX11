@@ -44,6 +44,37 @@ TINT GetTextureDepthPitch( DXGI_FORMAT a_eFormat, TUINT a_uiWidth, TUINT a_uiHei
 
 TBOOL IsColorEqual( const TFLOAT a_pColor1[ 4 ], const TFLOAT a_pColor2[ 4 ] );
 
+TINLINE TFLOAT CalculateFogDensityNormal( TFLOAT a_flFogStart, TFLOAT a_flFogEnd, TFLOAT a_flFogEndFactor )
+{
+	TFLOAT density = -log( a_flFogEndFactor ) / a_flFogEnd;
+
+	TFLOAT effectiveDistance = a_flFogEnd - a_flFogStart;
+	if ( effectiveDistance > 0 )
+	{
+		density = -log( a_flFogEndFactor ) / effectiveDistance;
+	}
+
+	return density;
 }
 
+TINLINE TFLOAT CalculateFogDensitySquared( TFLOAT a_flFogStart, TFLOAT a_flFogEnd, TFLOAT a_flFogEndFactor )
+{
+	TFLOAT density = Toshi::TMath::Sqrt( -log( a_flFogEndFactor ) ) / a_flFogEnd;
+
+	TFLOAT effectiveDistance = a_flFogEnd - a_flFogStart;
+	if ( effectiveDistance > 0 )
+	{
+		density = Toshi::TMath::Sqrt( -log( a_flFogEndFactor ) ) / effectiveDistance;
+	}
+
+	return density;
 }
+
+TINLINE TFLOAT CalculateFogDensity( TFLOAT a_flFogStart, TFLOAT a_flFogEnd, TFLOAT a_flFogEndFactor = 0.05f )
+{
+	return CalculateFogDensitySquared( a_flFogStart, a_flFogEnd, a_flFogEndFactor );
+}
+
+} // namespace dx11
+
+} // namespace remaster

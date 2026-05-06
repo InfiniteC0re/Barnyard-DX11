@@ -47,7 +47,10 @@ private:
 	Toshi::TVertexPoolResourceInterface* m_pVertexPool;
 
 	AWorldMesh::SubMesh m_aSubMeshes[ AWorldMesh::NUM_SUBMESHES ];
-	// ...
+	
+	TCHAR PADDING1[ 24 ];
+
 	TUINT32 m_Unk5;
-	// ...
+
+	TCHAR PADDING2[ 112 ];
 };

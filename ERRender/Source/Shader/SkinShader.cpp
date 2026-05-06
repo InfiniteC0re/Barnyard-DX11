@@ -2,6 +2,7 @@
 #include "SkinShader.h"
 #include "SkinMaterial.h"
 #include "SkinMesh.h"
+#include "WorldShader.h"
 #include "Resource/ClassPatcher.h"
 
 #include "RenderDX11.h"
@@ -67,6 +68,8 @@ void remaster::SkinShaderDX11::Flush()
 	BaseClass::Flush();
 }
 
+static TFLOAT s_flFogDensity = 0.0f;
+
 void remaster::SkinShaderDX11::StartFlush()
 {
 	m_oWorldViewMatrix = g_pRender->GetCurrentContext()->GetWorldViewMatrix();
@@ -75,6 +78,12 @@ void remaster::SkinShaderDX11::StartFlush()
 	g_pRender->SetBlendEnabled( TTRUE );
 	g_pRender->SetCullMode( m_bRenderEnvMap ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
 	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
+
+	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
+	s_flFogDensity                      = dx11::CalculateFogDensity(
+        pCurrentContext->m_fFogDistanceStart,
+        pCurrentContext->m_fFogDistanceEnd
+    );
 }
 
 void remaster::SkinShaderDX11::EndFlush()
@@ -95,11 +104,13 @@ TBOOL remaster::SkinShaderDX11::Validate()
 		return TTRUE;
 
 	D3D_SHADER_MACRO aBakedLightingShaderMacro[] = { "BAKED_LIGHTING", "1", TNULL, TNULL };
+	D3D_SHADER_MACRO aFOBShaderMacro[] = { "FOB", "1", TNULL, TNULL };
 
-	m_pVSShaderBlob_RuntimeLighting = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "vs_main", "vs_5_0", TNULL );
-	m_pPSShaderBlob_RuntimeLighting = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "ps_main", "ps_5_0", TNULL );
-	m_pVSShaderBlob_BakedLighting   = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "vs_main", "vs_5_0", aBakedLightingShaderMacro );
-	m_pPSShaderBlob_BakedLighting   = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "ps_main", "ps_5_0", aBakedLightingShaderMacro );
+	m_pVSShaderBlob_RuntimeLighting     = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "vs_main", "vs_5_0", TNULL );
+	m_pVSShaderBlob_RuntimeLighting_FOB = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "vs_main", "vs_5_0", aFOBShaderMacro );
+	m_pPSShaderBlob_RuntimeLighting     = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "ps_main", "ps_5_0", TNULL );
+	m_pVSShaderBlob_BakedLighting       = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "vs_main", "vs_5_0", aBakedLightingShaderMacro );
+	m_pPSShaderBlob_BakedLighting       = dx11::CompileShaderFromFile( "Data\\Shaders\\Skin.hlsl", "ps_main", "ps_5_0", aBakedLightingShaderMacro );
 
 	TASSERT( m_pVSShaderBlob_BakedLighting && m_pPSShaderBlob_BakedLighting );
 	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob_BakedLighting->GetBufferPointer(), m_pVSShaderBlob_BakedLighting->GetBufferSize(), &m_oShaderPipeline_BakedLighting.pVertexShader ) );
@@ -108,6 +119,9 @@ TBOOL remaster::SkinShaderDX11::Validate()
 	TASSERT( m_pVSShaderBlob_RuntimeLighting && m_pPSShaderBlob_RuntimeLighting );
 	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob_RuntimeLighting->GetBufferPointer(), m_pVSShaderBlob_RuntimeLighting->GetBufferSize(), &m_oShaderPipeline_RuntimeLighting.pVertexShader ) );
 	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_RuntimeLighting->GetBufferPointer(), m_pPSShaderBlob_RuntimeLighting->GetBufferSize(), &m_oShaderPipeline_RuntimeLighting.pPixelShader ) );
+
+	TASSERT(m_pVSShaderBlob_RuntimeLighting_FOB );
+	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob_RuntimeLighting_FOB->GetBufferPointer(), m_pVSShaderBlob_RuntimeLighting_FOB->GetBufferSize(), &m_oShaderPipeline_RuntimeLighting_FOB.pVertexShader ) );
 
 	D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
 		{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
@@ -128,10 +142,13 @@ TBOOL remaster::SkinShaderDX11::Validate()
 	);
 
 	// Both shaders share the same input layout
-	m_oShaderPipeline_RuntimeLighting.pInputLayout = m_oShaderPipeline_BakedLighting.pInputLayout;
+	m_oShaderPipeline_RuntimeLighting.pInputLayout     = m_oShaderPipeline_BakedLighting.pInputLayout;
+	m_oShaderPipeline_RuntimeLighting_FOB.pInputLayout = m_oShaderPipeline_BakedLighting.pInputLayout;
+	m_oShaderPipeline_RuntimeLighting_FOB.pPixelShader = m_oShaderPipeline_RuntimeLighting.pPixelShader;
 
 	m_oShaderPipeline_RuntimeLighting.SetName( "Skin_RuntimeLighting" );
 	m_oShaderPipeline_BakedLighting.SetName( "Skin_BakedLighting" );
+	m_oShaderPipeline_RuntimeLighting_FOB.SetName( "Skin_FOB" );
 
 	return BaseClass::Validate();
 }
@@ -156,6 +173,8 @@ TBOOL remaster::SkinShaderDX11::TryValidate()
 void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 {
 	if ( !a_pRenderPacket || !a_pRenderPacket->GetMesh() ) return;
+
+	TPROFILER_SCOPE();
 
 	TSkeletonInstance*  pSkeletonInstance = a_pRenderPacket->GetSkeletonInstance();
 	RenderContextD3D11* pCurrentContext   = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
@@ -200,6 +219,8 @@ void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	TUINT  ui8ShadeCoeff = a_pRenderPacket->GetShadeCoeff();
 	TFLOAT flShadeCoeff  = a_pRenderPacket->GetShadeCoeff() * ( 1.0f / 255.0f );
 
+	TBOOL bUseWorldAmbientColor = TFALSE;
+
 	if ( pMaterial->IsHDLighting() && pMaterial->HasLighting1Tex() && pMaterial->HasLighting2Tex() )
 	{
 		g_pRender->SetShaderPipelineState( m_oShaderPipeline_BakedLighting );
@@ -225,8 +246,13 @@ void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	}
 	else
 	{
-		g_pRender->SetShaderPipelineState( m_oShaderPipeline_RuntimeLighting );
+		const TBOOL bIsFOB    = pMesh->IsFOB();
+		bUseWorldAmbientColor = bIsFOB;
+
+		g_pRender->SetShaderPipelineState( bIsFOB ? m_oShaderPipeline_RuntimeLighting_FOB : m_oShaderPipeline_RuntimeLighting );
 	}
+
+	WorldShaderDX11* pWorldShader = TSTATICCAST( WorldShaderDX11, AWorldShader::GetSingleton() );
 
 	TMatrix44 oViewModel;
 	oViewModel.Invert( a_pRenderPacket->GetModelViewMatrix() );
@@ -237,8 +263,10 @@ void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	TVector4 vAmbientColour = a_pRenderPacket->GetAmbientColour();
 	vAmbientColour.w        = flPacketAlpha;
 
+	static TVector4 s_vecUnused1 = TVector4( 0.54509807f, 0.60784316f, 0.47058824f );
+
 	g_pRender->VSBufferSetVec4( 7, upVector );
-	g_pRender->VSBufferSetVec4( 4, vAmbientColour );
+	g_pRender->VSBufferSetVec4( 4, TFALSE ? ( ( pWorldShader->GetAmbientColour() - pWorldShader->GetShadowColour() ) + pWorldShader->GetShadowColour() ) * s_vecUnused1 : vAmbientColour );
 
 	// Set alpha ref
 	TINT iAlphaRef = pMaterial->IsBlending() ? 1 : 128;
@@ -256,6 +284,17 @@ void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	g_pRender->VSBufferSetVec4( 6, vLightDirWorld );
 	g_pRender->VSBufferSetVec4( 8, vLightingLerp1 );
 	g_pRender->VSBufferSetVec4( 9, vLightingLerp2 );
+
+	// Fog settings
+	TVector4 vMiscSettings;
+	vMiscSettings.x = pCurrentContext->m_fFogDistanceStart;
+	vMiscSettings.y = pCurrentContext->m_fFogDistanceEnd;
+
+	TVector4 vFogColor = pCurrentContext->m_FogColor;
+	vFogColor.w        = s_flFogDensity;
+
+	g_pRender->VSBufferSetVec4( 10, vMiscSettings );
+	g_pRender->VSBufferSetVec4( 11, vFogColor );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
@@ -277,7 +316,7 @@ void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		// TODO: use separate buffer for bone matrices to reduce bandwidth
 		// Get all bones into render buffer
 		for ( TUINT k = 0; k < pSubMesh->uiNumBones; k++ )
-			g_pRender->VSBufferSetMat4( 10 + k * 4, pSkeletonInstance->GetBone( pSubMesh->aBones[ k ] ).m_Transform );
+			g_pRender->VSBufferSetMat4( 12 + k * 4, pSkeletonInstance->GetBone( pSubMesh->aBones[ k ] ).m_Transform );
 
 		// Draw mesh
 		g_pRender->DrawIndexed(
@@ -287,7 +326,7 @@ void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		    indexBuffer.uiIndexOffset,
 		    DXGI_FORMAT_R16_UINT,
 		    (ID3D11Buffer*)vertexBuffer.apVertexBuffers[ 0 ],
-		    sizeof( TTMDWin::SkinVertex ),
+		    sizeof( TTMDWin::Vertex ),
 		    vertexBuffer.uiVertexOffset
 		);
 	}
@@ -331,6 +370,8 @@ void remaster::SkinShaderDX11::SetAlphaBlendMaterial( TBOOL a_bIsAlphaBlendMater
 
 ASkinMaterial* remaster::SkinShaderDX11::CreateMaterial( const TCHAR* a_szName )
 {
+	TPROFILER_SCOPE();
+
 	Validate();
 
 	SkinMaterial* pMaterial = new SkinMaterial();
@@ -353,6 +394,8 @@ ASkinMaterial* remaster::SkinShaderDX11::CreateMaterial( const TCHAR* a_szName )
 
 ASkinMesh* remaster::SkinShaderDX11::CreateMesh( const TCHAR* a_szName )
 {
+	TPROFILER_SCOPE();
+
 	Validate();
 
 	auto pMesh = new SkinMesh();

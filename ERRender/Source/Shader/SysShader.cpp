@@ -211,6 +211,8 @@ void remaster::SysShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 ASysMaterial* remaster::SysShaderDX11::CreateMaterial( const TCHAR* a_szName )
 {
+	TPROFILER_SCOPE();
+
 	Validate();
 
 	auto pMaterialHAL = new SysMaterial();
@@ -222,6 +224,8 @@ ASysMaterial* remaster::SysShaderDX11::CreateMaterial( const TCHAR* a_szName )
 
 ASysMesh* remaster::SysShaderDX11::CreateMesh( const TCHAR* a_szName )
 {
+	TPROFILER_SCOPE();
+
 	Validate();
 
 	auto pMeshHAL = new SysMesh();

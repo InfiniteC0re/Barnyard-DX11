@@ -36,12 +36,12 @@ float4 ps_main(PS_IN input) : SV_TARGET
 {
 #if defined(TEXTURED)
 
-    float4 tex_color = ui_texture.Sample(ui_texture_sampler, input.texcoord);
+    float4 texColor = ui_texture.Sample(ui_texture_sampler, input.texcoord);
 
-    // tex_color.a = 0.3f;
-    if (tex_color.a < 0.235f) discard;
+    // texColor.a = 0.3f;
+    if (texColor.a < 0.235f) discard;
 
-    return tex_color * input.color;
+    return texColor * input.color;
 
 #elif defined(FONT) // TEXTURED
 

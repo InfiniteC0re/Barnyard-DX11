@@ -65,6 +65,17 @@ void SDLWindow::Update()
 			exit( 0 );
 			//TGlobalEmitter<TApplicationExitEvent>::Throw( { TFALSE } );
 		}
+		else if ( event.type == SDL_EventType::SDL_WINDOWEVENT )
+		{
+			if ( event.window.event == SDL_WINDOWEVENT_FOCUS_LOST )
+			{
+				SDL_SetRelativeMouseMode( SDL_FALSE );
+			}
+			else if ( event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED )
+			{
+				SDL_SetRelativeMouseMode( SDL_TRUE );
+			}
+		}
 	}
 }
 

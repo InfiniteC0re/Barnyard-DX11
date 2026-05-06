@@ -410,6 +410,8 @@ TModel* RenderDX11::CreateModelTMD( TTMD* a_pTMD, TBOOL a_bLoad )
 
 TModel* RenderDX11::CreateModelTMDFile( const TCHAR* a_szFilePath, TBOOL a_bLoad )
 {
+	TPROFILER_SCOPE();
+
 	auto pModel = new TModelHAL();
 
 	if ( pModel )
@@ -426,7 +428,20 @@ TModel* RenderDX11::CreateModelTMDFile( const TCHAR* a_szFilePath, TBOOL a_bLoad
 
 TModel* RenderDX11::CreateModelTRB( const TCHAR* a_szFilePath, TBOOL a_bLoad, TTRB* a_pAssetTRB, TUINT8 a_ui8FileNameLen )
 {
-	return CALL_THIS( 0x006c6320, RenderDX11*, TModel*, this, const TCHAR*, a_szFilePath, TBOOL, a_bLoad, TTRB*, a_pAssetTRB, TUINT8, a_ui8FileNameLen );
+	TPROFILER_SCOPE();
+
+	auto pModel = new TModelHAL();
+
+	if ( pModel )
+	{
+		if ( !pModel->Create( a_szFilePath, a_bLoad, a_pAssetTRB, a_ui8FileNameLen ) )
+		{
+			pModel->Delete();
+			return TNULL;
+		}
+	}
+
+	return pModel;
 }
 
 TDebugText* RenderDX11::CreateDebugText()
@@ -939,6 +954,8 @@ void RenderDX11::WaitForEndOfRender()
 
 void RenderDX11::UpdateRenderStates()
 {
+	TPROFILER_SCOPE();
+
 	// Update depth state if needed
 	if ( m_DepthState.GetFirst().Raw != m_PreviousDepth.GetFirst().Raw || m_DepthState.GetSecond() != m_PreviousDepth.GetSecond() )
 	{
@@ -1083,6 +1100,8 @@ void RenderDX11::UpdateRenderStates()
 
 void RenderDX11::FlushConstantBuffers()
 {
+	TPROFILER_SCOPE();
+
 	D3D11_MAPPED_SUBRESOURCE mappedSubresources;
 
 	// Send new data to GPU if it changed or some more data was written

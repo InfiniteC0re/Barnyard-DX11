@@ -65,13 +65,22 @@ void remaster::GrassShaderDX11::Flush()
 	m_oOrderTable.Render();
 }
 
+static TFLOAT s_flFogDensity = 0.0f;
+
 void remaster::GrassShaderDX11::StartFlush()
 {
 	if ( !IsValidated() ) return;
 
 	g_pRender->PSSetSamplerState( 0, 2 );
 	g_pRender->SetDepthWrite( TTRUE );
-	g_pRender->SetBlendEnabled( TFALSE );
+
+	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
+	s_flFogDensity                      = dx11::CalculateFogDensity(
+        pCurrentContext->m_fFogDistanceStart,
+        pCurrentContext->m_fFogDistanceEnd
+    );
+
+	g_pRender->SetCullMode( D3D11_CULL_FRONT );
 		
 	UpdateAnimation();
 
@@ -108,7 +117,7 @@ void remaster::GrassShaderDX11::EndFlush()
 
 TBOOL remaster::GrassShaderDX11::Create()
 {
-	m_oOrderTable.Create( this, -6999 );
+	m_oOrderTable.Create( this, 6999 );
 	AGrassShader::Create();
 
 	return Validate();
@@ -170,6 +179,8 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 {
 	if ( !a_pRenderPacket || !a_pRenderPacket->GetMesh() ) return;
 
+	TPROFILER_SCOPE();
+
 	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
 	GrassMesh*          pMesh           = TSTATICCAST( GrassMesh, a_pRenderPacket->GetMesh() );
 	GrassMaterial*      pMaterial       = TSTATICCAST( GrassMaterial, pMesh->GetMaterial() );
@@ -192,11 +203,20 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	g_pRender->VSBufferSetVec4( 5, pWorldShader->GetAmbientColour() );
 	g_pRender->VSBufferSetVec4( 6, pWorldShader->GetShadowColour() );
 
+	// Fog settings
+	TVector4 vMiscSettings;
+	vMiscSettings.x = pCurrentContext->m_fFogDistanceStart;
+	vMiscSettings.y = pCurrentContext->m_fFogDistanceEnd;
+
+	TVector4 vFogColor = pCurrentContext->m_FogColor;
+	vFogColor.w        = s_flFogDensity;
+
+	g_pRender->VSBufferSetVec4( 7, vMiscSettings );
+	g_pRender->VSBufferSetVec4( 8, vFogColor );
+
 	// Setup model normal offset
 	TVector4 vecOffset = TVector4( 0.0f, 0.0f, 0.0f, 0.0f );
-	g_pRender->VSBufferSetVec4( 7, vecOffset );
-
-	g_pRender->SetShaderResource( 0, g_pGrassTexture );
+	g_pRender->VSBufferSetVec4( 9, vecOffset );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
@@ -209,6 +229,9 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	TIndexBlockResource::HALBuffer indexBuffer;
 	CALL_THIS( 0x006d6180, TIndexPoolResource*, TBOOL, pIndexPool, TIndexBlockResource::HALBuffer&, indexBuffer ); // pIndexPool->GetHALBuffer( &indexBuffer );
+
+	// Set grass texture
+	g_pRender->SetShaderResource( 0, g_pGrassTexture );
 
 	// Draw mesh
 	g_pRender->DrawIndexed(
@@ -235,16 +258,18 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	
 	TFLOAT fDistanceToCamera = TVector4::DistanceXZ( vecMeshBounding, vecCamPos ) - vecMeshBounding.w;
 
-	if ( fDistanceToCamera <= 100.0f )
+	constexpr TFLOAT MAX_DISTANCE = 200.0f;
+
+	if ( fDistanceToCamera <= MAX_DISTANCE )
 	{
-		constexpr TINT MAX_LAYERS = 5;
+		constexpr TINT MAX_LAYERS = 6;
 		TINT           iNumLayers = MAX_LAYERS;
 
-		if ( fDistanceToCamera > 20.0f )
+		if ( fDistanceToCamera > 80.0f )
 		{
-			iNumLayers = ( fDistanceToCamera >= 50.0f ) ?
+			iNumLayers = ( fDistanceToCamera >= 160.0f ) ?
 			    1 :
-			    MAX_LAYERS - 1 - TMath::Min( TINT( ( fDistanceToCamera - 20.0f ) / 10.0f ), MAX_LAYERS - 2 );
+			    MAX_LAYERS - 1 - TMath::Min( TINT( ( fDistanceToCamera - 80.0f ) / 10.0f ), MAX_LAYERS - 2 );
 		}
 
 		g_vecAnimOffset.w = 2.0f;
@@ -261,7 +286,7 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 			vecOffset.x += fStepSize;
 			vecOffset.y += fStepSize;
 			vecOffset.z += fStepSize;
-			g_pRender->VSBufferSetVec4( 7, vecOffset );
+			g_pRender->VSBufferSetVec4( 9, vecOffset );
 
 			// Draw layer
 			g_pRender->DrawIndexed(
@@ -280,6 +305,8 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 AGrassMaterial* remaster::GrassShaderDX11::CreateMaterial( const TCHAR* a_szName )
 {
+	TPROFILER_SCOPE();
+
 	Validate();
 
 	GrassMaterial* pMaterial = new GrassMaterial();
@@ -291,6 +318,8 @@ AGrassMaterial* remaster::GrassShaderDX11::CreateMaterial( const TCHAR* a_szName
 
 AGrassMesh* remaster::GrassShaderDX11::CreateMesh( const TCHAR* a_szName )
 {
+	TPROFILER_SCOPE();
+
 	Validate();
 
 	GrassMesh* pMesh = new GrassMesh();

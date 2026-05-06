@@ -66,6 +66,8 @@ void remaster::WorldShaderDX11::Flush()
 	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
 }
 
+static TFLOAT s_flFogDensity = 0.0f;
+
 void remaster::WorldShaderDX11::StartFlush()
 {
 	if ( !IsValidated() ) return;
@@ -75,6 +77,12 @@ void remaster::WorldShaderDX11::StartFlush()
 	g_pRender->SetCullMode( TFALSE ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
 
 	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
+
+	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
+	s_flFogDensity                      = dx11::CalculateFogDensity(
+        pCurrentContext->m_fFogDistanceStart,
+        pCurrentContext->m_fFogDistanceEnd
+    );
 }
 
 void remaster::WorldShaderDX11::EndFlush()
@@ -158,6 +166,8 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 {
 	if ( !a_pRenderPacket || !a_pRenderPacket->GetMesh() ) return;
 
+	TPROFILER_SCOPE();
+
 	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
 	AWorldMeshHAL*      pMesh           = TSTATICCAST( AWorldMeshHAL, a_pRenderPacket->GetMesh() );
 	AWorldMaterialHAL*  pMaterial       = TSTATICCAST( AWorldMaterialHAL, pMesh->GetMaterial() );
@@ -187,19 +197,25 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	g_pRender->VSBufferSetVec4( 6, m_ShadowColour );
 
 	// Setup material settings
-	TVector4 vMaterialSettings;
-	vMaterialSettings.x = 0.0f; // isWater
-	vMaterialSettings.y = 1.0f; // isLit
-	vMaterialSettings.z = 0.0f; // unused?
-	vMaterialSettings.w = 1.0f; // unused?
+	TVector4 vMiscSettings;
+	vMiscSettings.x = 0.0f; // isWater
+	vMiscSettings.y = 1.0f; // isLit
 
 	if ( pMesh->IsWater() )
 	{
-		vMaterialSettings.x = 1.0f; // isWater
-		vMaterialSettings.y = 0.0f; // isLit
+		vMiscSettings.x = 1.0f; // isWater
+		vMiscSettings.y = 0.0f; // isLit
 	}
 
-	g_pRender->VSBufferSetVec4( 7, vMaterialSettings );
+	// Fog settings
+	vMiscSettings.z = pCurrentContext->m_fFogDistanceStart;
+	vMiscSettings.w = pCurrentContext->m_fFogDistanceEnd;
+
+	TVector4 vFogColor = pCurrentContext->m_FogColor;
+	vFogColor.w        = s_flFogDensity;
+
+	g_pRender->VSBufferSetVec4( 7, vMiscSettings );
+	g_pRender->VSBufferSetVec4( 8, vFogColor );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
@@ -241,6 +257,8 @@ void remaster::WorldShaderDX11::SetAlphaBlendMaterial( TBOOL a_bIsAlphaBlendMate
 
 AWorldMaterial* remaster::WorldShaderDX11::CreateMaterial( const TCHAR* a_szName )
 {
+	TPROFILER_SCOPE();
+
 	Validate();
 
 	auto pMaterial = new WorldMaterial();
@@ -260,6 +278,8 @@ AWorldMaterial* remaster::WorldShaderDX11::CreateMaterial( const TCHAR* a_szName
 
 AWorldMesh* remaster::WorldShaderDX11::CreateMesh( const TCHAR* a_szName )
 {
+	TPROFILER_SCOPE();
+
 	Validate();
 
 	auto pMesh = new WorldMesh();

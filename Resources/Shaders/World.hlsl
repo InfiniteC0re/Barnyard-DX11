@@ -21,6 +21,9 @@ cbuffer ConstantBuffer : register(b0)
 	float4   cb_ShadowColor;
 	float    cb_IsWater;
 	float    cb_IsLit;
+	float    cb_FogStart;
+	float    cb_FogEnd;
+	float4   cb_FogColor;
 };
 
 PS_IN vs_main(VS_IN In)
@@ -47,17 +50,35 @@ PS_IN vs_main(VS_IN In)
     return Out;
 }
 
+float CalculateExponentialFog(float distance, float fogStart, float density)
+{
+    if (distance <= fogStart) return 1.0f;
+    return exp(-density * distance);
+}
+
+float CalculateExponentialSquaredFog(float distance, float fogStart, float density)
+{
+    if (distance <= fogStart) return 1.0f;
+    return exp(-pow(density * (distance - fogStart), 2));
+}
+
 Texture2D texture0 : register(t0);
 SamplerState sampler0 : register(s0);
 
 float4 ps_main(PS_IN In) : SV_TARGET
 {
-    float4 tex_color = texture0.Sample(sampler0, In.UV0) * In.Color * cb_TexCoordOffsetAndAlpha.z;
+    float4 texColor = texture0.Sample(sampler0, In.UV0) * In.Color * cb_TexCoordOffsetAndAlpha.z;
 	
 #ifdef ALPHAREF
 	// The only alpharef value used by the game is 128 (0.5f)
-    if (tex_color.a < 0.5f) discard;
+    if (texColor.a < 0.5f) discard;
 #endif
 
-    return tex_color;
+	float fogFactor = CalculateExponentialSquaredFog(In.ProjPos.w, cb_FogStart, cb_FogColor.w);
+	fogFactor = saturate(fogFactor);
+    
+    // Apply fog by blending between fog color and original color
+    float3 finalColor = lerp(cb_FogColor.xyz, texColor.xyz, fogFactor);
+    
+    return float4(finalColor, texColor.a);
 }

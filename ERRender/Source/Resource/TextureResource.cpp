@@ -20,16 +20,39 @@ TOSHI_NAMESPACE_USING
 
 MEMBER_HOOK( 0x006c0ef0, Toshi::TTextureResourceHAL, TTextureResourceHAL_CreateFromMemory4444, TBOOL, TUINT a_uiWidth, TUINT a_uiHeight, TUINT a_uiLevels, void* a_pData )
 {
+	TPROFILER_SCOPE();
+
 	ID3D11ShaderResourceView* pTexture = remaster::dx11::CreateTexture(
-		a_uiWidth,
-		a_uiHeight,
+	    a_uiWidth,
+	    a_uiHeight,
 	    DXGI_FORMAT_B4G4R4A4_UNORM,
-		a_pData,
-		D3D11_USAGE_IMMUTABLE,
-		0,
-		1
+	    a_pData,
+	    D3D11_USAGE_IMMUTABLE,
+	    0,
+	    1
 	);
-	
+
+	TUtil::MemClear( &m_ImageInfo, sizeof( m_ImageInfo ) );
+	m_ImageInfo.Width  = a_uiWidth;
+	m_ImageInfo.Height = a_uiHeight;
+
+	return pTexture;
+}
+
+MEMBER_HOOK( 0x006c0ff0, Toshi::TTextureResourceHAL, TTextureResourceHAL_CreateFromMemory8888, TBOOL, TUINT a_uiWidth, TUINT a_uiHeight, TUINT a_uiLevels, void* a_pData )
+{
+	TPROFILER_SCOPE();
+
+	ID3D11ShaderResourceView* pTexture = remaster::dx11::CreateTexture(
+	    a_uiWidth,
+	    a_uiHeight,
+	    DXGI_FORMAT_B8G8R8A8_UNORM,
+	    a_pData,
+	    D3D11_USAGE_IMMUTABLE,
+	    0,
+	    1
+	);
+
 	TUtil::MemClear( &m_ImageInfo, sizeof( m_ImageInfo ) );
 	m_ImageInfo.Width  = a_uiWidth;
 	m_ImageInfo.Height = a_uiHeight;
@@ -61,6 +84,16 @@ MEMBER_HOOK( 0x00615bc0, Toshi::T2Texture, T2Texture_Load, HRESULT )
 		remaster::dx11::CTF_GEN_MIPMAPS
 	);
 
+// 	*(ID3D11ShaderResourceView**)( &m_pD3DTexture ) = remaster::dx11::CreateTexture(
+// 	    m_ImageInfo.Width,
+// 	    m_ImageInfo.Height,
+// 	    DXGI_FORMAT_R8G8B8A8_UNORM,
+// 	    pTexData,
+// 	    D3D11_USAGE_IMMUTABLE,
+// 	    0,
+// 	    1
+// 	);
+
 	stbi_image_free( pTexData );
 
 	return 0;
@@ -70,4 +103,5 @@ void remaster::SetupRenderHooks_TextureResource()
 {
 	InstallHook<T2Texture_Load>();
 	InstallHook<TTextureResourceHAL_CreateFromMemory4444>();
+	InstallHook<TTextureResourceHAL_CreateFromMemory8888>();
 }

@@ -17,6 +17,7 @@ TOSHI_NAMESPACE_USING
 TDEFINE_CLASS_PATCHED( remaster::SkinMesh, 0x0079a678 );
 
 remaster::SkinMesh::SkinMesh()
+    : m_bIsFOB( TFALSE )
 {
 }
 
