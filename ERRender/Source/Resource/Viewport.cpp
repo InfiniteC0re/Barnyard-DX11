@@ -13,6 +13,8 @@
 
 TOSHI_NAMESPACE_USING
 
+TBOOL remaster::g_bAllowClearingDepth = TTRUE;
+
 MEMBER_HOOK( 0x006d7fe0, Toshi::TViewport, TViewport_BeginSKU, void )
 {
 	D3D11_VIEWPORT viewport;
@@ -34,7 +36,7 @@ MEMBER_HOOK( 0x006d7fe0, Toshi::TViewport, TViewport_BeginSKU, void )
 		remaster::g_pRender->GetD3D11DeviceContext()->ClearRenderTargetView( remaster::g_pRender->GetD3D11RenderTargetView(), clearColor );
 	}
 
-	if (m_bAllowDepthClear)
+	if ( m_bAllowDepthClear && remaster::g_bAllowClearingDepth )
 	{
 		remaster::g_pRender->GetD3D11DeviceContext()->ClearDepthStencilView( remaster::g_pRender->GetD3D11DepthStencilView(), D3D11_CLEAR_DEPTH, 1.0f, 0 );
 	}

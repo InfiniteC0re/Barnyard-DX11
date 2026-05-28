@@ -1,8 +1,10 @@
 #pragma once
 #include "Ref/ASysShader/ASysShader_DX8.h"
 #include "RenderDX11.h"
+#include "RenderDX11Utils.h"
 
 #include <d3d11.h>
+#include <ToshiTools/T2DynamicVector.h>
 
 namespace remaster
 {
@@ -53,12 +55,7 @@ public:
 private:
 	Toshi::TOrderTable m_aOrderTables[ NUM_ORDER_TABLES ];
 
-	ID3DBlob* m_pVSShaderBlob;
-	ID3DBlob* m_pPSShaderBlob_Textured;
-	ID3DBlob* m_pPSShaderBlob_Solid;
-
-	RenderDX11::ShaderPipelineState m_oShaderPipeline_Textured;
-	RenderDX11::ShaderPipelineState m_oShaderPipeline_Solid;
+	Toshi::T2DynamicVector<RenderDX11::ShaderPipelineState> m_vecSystemPipelines;
 };
 
 TSINGLETON_DECLARE_INHERITED_ALIAS( ASysShader, SysShaderDX11, SysShader );

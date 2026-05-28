@@ -3,6 +3,7 @@
 #include "RenderDX11.h"
 #include "RenderDX11Utils.h"
 #include "FontRenderer.h"
+#include "Generated/UIShaderCombos.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -38,19 +39,8 @@ remaster::UIRendererDX11::UIRendererDX11()
 	m_iTransformCount   = 0;
 	m_bIsTransformDirty = TFALSE;
 
-	D3D_SHADER_MACRO aTexturedShaderMacro[] = { "TEXTURED", "1", TNULL, TNULL };
-	D3D_SHADER_MACRO aFontShaderMacro[]     = { "FONT", "1", TNULL, TNULL };
-
-	m_pVSShaderBlob          = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "vs_main", "vs_5_0", TNULL );
-	m_pPSShaderBlob_Textured = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main", "ps_5_0", aTexturedShaderMacro );
-	m_pPSShaderBlob_Font     = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main", "ps_5_0", aFontShaderMacro );
-	m_pPSShaderBlob_Solid    = dx11::CompileShaderFromFile( "Data\\Shaders\\UI.hlsl", "ps_main", "ps_5_0", TNULL );
-
-	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob_Textured );
-	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_oShaderPipeline_Textured.pVertexShader ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Textured->GetBufferPointer(), m_pPSShaderBlob_Textured->GetBufferSize(), &m_oShaderPipeline_Textured.pPixelShader ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Solid->GetBufferPointer(), m_pPSShaderBlob_Solid->GetBufferSize(), &m_oShaderPipeline_Solid.pPixelShader ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Font->GetBufferPointer(), m_pPSShaderBlob_Font->GetBufferSize(), &m_oShaderPipeline_Font.pPixelShader ) );
+	dx11::ShaderCombo& rUIVSCombo = shadercombos::GetUIVertexShaderCombo_vs_main();
+	dx11::ShaderCombo& rUIPSCombo = shadercombos::GetUIPixelShaderCombo_ps_main();
 
 	D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
 		{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
@@ -58,25 +48,18 @@ remaster::UIRendererDX11::UIRendererDX11()
 		{ .SemanticName = "TEXCOORD", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32_FLOAT, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
 	};
 
+	ID3D11InputLayout* pInputLayout = TNULL;
 	DX11_API_VALIDATE(
 	    g_pRender->GetD3D11Device()->CreateInputLayout(
 	        aInputElements,
 	        TARRAYSIZE( aInputElements ),
-	        m_pVSShaderBlob->GetBufferPointer(),
-	        m_pVSShaderBlob->GetBufferSize(),
-	        &m_oShaderPipeline_Textured.pInputLayout
+	        rUIVSCombo.GetBlob( 0 )->GetBufferPointer(),
+	        rUIVSCombo.GetBlob( 0 )->GetBufferSize(),
+	        &pInputLayout
 	    )
 	);
 
-	// Both shaders share the same vertex shader and input layout
-	m_oShaderPipeline_Solid.pInputLayout  = m_oShaderPipeline_Textured.pInputLayout;
-	m_oShaderPipeline_Solid.pVertexShader = m_oShaderPipeline_Textured.pVertexShader;
-	m_oShaderPipeline_Font.pInputLayout   = m_oShaderPipeline_Textured.pInputLayout;
-	m_oShaderPipeline_Font.pVertexShader  = m_oShaderPipeline_Textured.pVertexShader;
-
-	m_oShaderPipeline_Textured.SetName( "UI_Textured" );
-	m_oShaderPipeline_Solid.SetName( "UI_Solid" );
-	m_oShaderPipeline_Font.SetName( "UI_Font" );
+	TASSERT( shadercombos::CreateUIShaderPipelines( rUIVSCombo, &rUIPSCombo, pInputLayout, m_vecUIPipelines, "UI" ) );
 
 	fontrenderer::Create();
 	g_pUIRender = this;
@@ -154,7 +137,7 @@ void remaster::UIRendererDX11::BeginScene()
 	rTransform.m_aMatrixRows[ 1 ] = { 0.0f, -TFLOAT( pDisplayParams->uiHeight ) / fRootHeight };
 	rTransform.m_vecTranslation   = { 0.0f, 0.0f };
 
-	g_pRender->SetShaderPipelineState( m_oShaderPipeline_Textured );
+	g_pRender->SetShaderPipelineState( m_vecUIPipelines[ shadercombos::GetUIComboIndex( shadercombos::UI_TEXTURED ) ] );
 
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
 	g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
@@ -187,7 +170,7 @@ void remaster::UIRendererDX11::ResetRenderer()
 
 void remaster::UIRendererDX11::PrepareRenderer()
 {
-	g_pRender->SetShaderPipelineState( m_oShaderPipeline_Textured );
+	g_pRender->SetShaderPipelineState( m_vecUIPipelines[ shadercombos::GetUIComboIndex( shadercombos::UI_TEXTURED ) ] );
 
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
 	g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
@@ -213,6 +196,8 @@ void remaster::UIRendererDX11::SetMaterial( Toshi::T2GUIMaterial* a_pMaterial )
 {
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
 	sm_fZCoordinate = 0.1f;
+
+	m_bSetAlphaRef = TFALSE;
 
 	if ( a_pMaterial == TNULL )
 	{
@@ -247,6 +232,7 @@ void remaster::UIRendererDX11::SetMaterial( Toshi::T2GUIMaterial* a_pMaterial )
 				g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_ZERO, D3D11_BLEND_ONE );
 				g_pRender->SetZMode( TTRUE, D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
 				sm_fZCoordinate = ( !sm_bUnknownFlag ) ? 0.05f : 0.02f;
+				m_bSetAlphaRef  = TTRUE;
 				break;
 			case 5:
 				g_pRender->SetBlendMode( TTRUE, g_pRender->GetBlendOp(), D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
@@ -284,7 +270,7 @@ void remaster::UIRendererDX11::SetMaterial( Toshi::T2GUIMaterial* a_pMaterial )
 		}
 	}
 
-	SetShaderType( g_pRender->GetShaderResource( 0 ) == TNULL ? ST_SOLID : ST_TEXTURED );
+	SetShaderType( g_pRender->PSGetShaderResource( 0 ) == TNULL ? ST_SOLID : ST_TEXTURED );
 	m_pMaterial = a_pMaterial;
 }
 
@@ -438,22 +424,27 @@ void remaster::UIRendererDX11::ResetZCoordinate()
 void remaster::UIRendererDX11::SetTextureResourceView( ID3D11ShaderResourceView* a_pTextureRV )
 {
 	m_bHasTextureRV = a_pTextureRV != TNULL;
-	g_pRender->SetShaderResource( 0, a_pTextureRV );
+	g_pRender->PSSetShaderResource( 0, a_pTextureRV );
 }
 
 void remaster::UIRendererDX11::SetShaderType( SHADER_TYPE a_eShaderType )
 {
+	TUINT uiGlobalComboFlags = m_bSetAlphaRef ? shadercombos::UI_ALPHA_REF : 0;
+
 	switch ( a_eShaderType )
 	{
 		case ST_TEXTURED:
-			g_pRender->SetPixelShader( m_bHasTextureRV ? m_oShaderPipeline_Textured.pPixelShader : m_oShaderPipeline_Solid.pPixelShader );
+		{
+			const TUINT uiComboFlags = uiGlobalComboFlags | ( m_bHasTextureRV ? shadercombos::UI_TEXTURED : 0 );
+			g_pRender->SetPixelShader( m_vecUIPipelines[ shadercombos::GetUIComboIndex( uiComboFlags ) ].GetPixelShader() );
 			break;
+		}
 		case ST_FONT:
-			g_pRender->SetPixelShader( m_oShaderPipeline_Font.pPixelShader );
+			g_pRender->SetPixelShader( m_vecUIPipelines[ shadercombos::GetUIComboIndex( uiGlobalComboFlags | shadercombos::UI_FONT ) ].GetPixelShader() );
 			g_pRender->PSSetSamplerState( 0, 1 );
 			break;
 		case ST_SOLID:
-			g_pRender->SetPixelShader( m_oShaderPipeline_Solid.pPixelShader );
+			g_pRender->SetPixelShader( m_vecUIPipelines[ shadercombos::GetUIComboIndex( uiGlobalComboFlags ) ].GetPixelShader() );
 			break;
 	}
 }

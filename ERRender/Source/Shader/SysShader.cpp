@@ -2,6 +2,7 @@
 #include "SysShader.h"
 #include "SysMaterial.h"
 #include "SysMesh.h"
+#include "Generated/SystemShaderCombos.h"
 #include "Resource/ClassPatcher.h"
 
 #include "RenderDX11.h"
@@ -41,9 +42,6 @@ void remaster::SetupRenderHooks_SysShader()
 }
 
 remaster::SysShaderDX11::SysShaderDX11()
-    : m_pVSShaderBlob( TNULL )
-    , m_pPSShaderBlob_Textured( TNULL )
-    , m_oShaderPipeline_Textured( TNULL )
 {
 	// Set Singleton
 	*(ASysShader**)( 0x0079a340 ) = this;
@@ -59,12 +57,10 @@ void remaster::SysShaderDX11::Flush()
 
 	g_pRender->SetBlendEnabled( TTRUE );
 	g_pRender->SetAlphaToCoverageEnabled( TFALSE );
-	// g_pRender->SetFogEnabled( TFALSE );
 
 	m_aOrderTables[ 0 ].Render();
 
 	g_pRender->SetBlendEnabled( TFALSE );
-	// g_pRender->SetFogEnabled( TFALSE );
 }
 
 void remaster::SysShaderDX11::StartFlush()
@@ -73,13 +69,11 @@ void remaster::SysShaderDX11::StartFlush()
 
 	g_pRender->SetBlendEnabled( TTRUE );
 	g_pRender->SetAlphaToCoverageEnabled( TFALSE );
-	// g_pRender->SetFogEnabled( TFALSE );
 }
 
 void remaster::SysShaderDX11::EndFlush()
 {
 	g_pRender->SetBlendEnabled( TFALSE );
-	// g_pRender->SetFogEnabled( TFALSE );
 }
 
 TBOOL remaster::SysShaderDX11::Create()
@@ -100,16 +94,8 @@ TBOOL remaster::SysShaderDX11::Validate()
 	if ( IsValidated() )
 		return TTRUE;
 
-	D3D_SHADER_MACRO aTexturedShaderMacro[] = { "TEXTURED", "1", TNULL, TNULL };
-
-	m_pVSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\System.hlsl", "vs_main", "vs_5_0", TNULL );
-	m_pPSShaderBlob_Textured = dx11::CompileShaderFromFile( "Data\\Shaders\\System.hlsl", "ps_main", "ps_5_0", aTexturedShaderMacro );
-	m_pPSShaderBlob_Solid = dx11::CompileShaderFromFile( "Data\\Shaders\\System.hlsl", "ps_main", "ps_5_0", TNULL );
-
-	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob_Textured );
-	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_oShaderPipeline_Textured.pVertexShader ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Textured->GetBufferPointer(), m_pPSShaderBlob_Textured->GetBufferSize(), &m_oShaderPipeline_Textured.pPixelShader ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Solid->GetBufferPointer(), m_pPSShaderBlob_Solid->GetBufferSize(), &m_oShaderPipeline_Solid.pPixelShader ) );
+	dx11::ShaderCombo& rSystemVSCombo = shadercombos::GetSystemVertexShaderCombo_vs_main();
+	dx11::ShaderCombo& rSystemPSCombo = shadercombos::GetSystemPixelShaderCombo_ps_main();
 
 	D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
 		{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
@@ -117,22 +103,18 @@ TBOOL remaster::SysShaderDX11::Validate()
 		{ .SemanticName = "TEXCOORD", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32_FLOAT, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
 	};
 
+	ID3D11InputLayout* pInputLayout = TNULL;
 	DX11_API_VALIDATE(
 	    g_pRender->GetD3D11Device()->CreateInputLayout(
 	        aInputElements,
 	        TARRAYSIZE( aInputElements ),
-	        m_pVSShaderBlob->GetBufferPointer(),
-	        m_pVSShaderBlob->GetBufferSize(),
-	        &m_oShaderPipeline_Textured.pInputLayout
+	        rSystemVSCombo.GetBlob( 0 )->GetBufferPointer(),
+	        rSystemVSCombo.GetBlob( 0 )->GetBufferSize(),
+	        &pInputLayout
 	    )
 	);
 
-	// Both shaders share the same vertex shader and input layout
-	m_oShaderPipeline_Solid.pInputLayout  = m_oShaderPipeline_Textured.pInputLayout;
-	m_oShaderPipeline_Solid.pVertexShader = m_oShaderPipeline_Textured.pVertexShader;
-
-	m_oShaderPipeline_Textured.SetName( "System_Textured" );
-	m_oShaderPipeline_Solid.SetName( "System_Solid" );
+	TASSERT( shadercombos::CreateSystemShaderPipelines( rSystemVSCombo, &rSystemPSCombo, pInputLayout, m_vecSystemPipelines, "System" ) );
 
 	return BaseClass::Validate();
 }
@@ -170,7 +152,8 @@ void remaster::SysShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	TIndexBlockResource::HALBuffer indexBuffer;
 	CALL_THIS( 0x006d6180, TIndexPoolResource*, TBOOL, pIndexPool, TIndexBlockResource::HALBuffer&, indexBuffer ); // pIndexPool->GetHALBuffer( &indexBuffer );
 
-	g_pRender->SetShaderPipelineState( ( g_pRender->GetShaderResource( 0 ) != TNULL ) ? m_oShaderPipeline_Textured : m_oShaderPipeline_Solid );
+	const TUINT uiComboFlags = ( g_pRender->PSGetShaderResource( 0 ) != TNULL ) ? shadercombos::System_TEXTURED : 0;
+	g_pRender->SetShaderPipelineState( m_vecSystemPipelines[ shadercombos::GetSystemComboIndex( uiComboFlags ) ] );
 	g_pRender->SetDepthBias( pMesh->GetZBias() );
 
 	// Fill vertex constant buffer
@@ -189,7 +172,8 @@ void remaster::SysShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		    DXGI_FORMAT_R16_UINT,
 		    (ID3D11Buffer*)vertexBuffer.apVertexBuffers[ 0 ],
 		    sizeof( SysMesh::Vertex ),
-		    vertexBuffer.uiVertexOffset
+		    vertexBuffer.uiVertexOffset,
+		    TNULL
 		);
 	}
 	else
@@ -202,7 +186,8 @@ void remaster::SysShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		    DXGI_FORMAT_R16_UINT,
 		    (ID3D11Buffer*)vertexBuffer.apVertexBuffers[ 0 ],
 		    sizeof( SysMesh::Vertex ),
-		    vertexBuffer.uiVertexOffset / 3
+		    vertexBuffer.uiVertexOffset / 3,
+		    TNULL
 		);
 	}
 

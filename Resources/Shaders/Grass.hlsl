@@ -1,3 +1,7 @@
+// STATIC: "NO_CSM" "0..1"
+// STATIC: "NO_FOG" "0..1"
+// STATIC: "NO_DYN_LIGHT" "0..1"
+
 struct VS_IN
 {
     float3 ObjPos : POSITION;
@@ -10,7 +14,10 @@ struct PS_IN
 {
     float4 ProjPos : SV_POSITION;
     float4 Color : Color;
-    float2 UV0 : TEXCOORD;
+    float2 UV0 : TEXCOORD0;
+    float3 WorldPos : TEXCOORD1;
+    float ViewDepth : TEXCOORD2;
+    float3 WorldNormal : TEXCOORD3;
 };
 
 cbuffer ConstantBuffer : register(b0)
@@ -23,14 +30,25 @@ cbuffer ConstantBuffer : register(b0)
 	float    cb_FogEnd;
 	float4   cb_FogColor;
 	float4   cb_WorldOffset;
+    float4x4 cb_matModel;
 };
+
+#if !NO_CSM
+#include "ShadowSampling.hlsli"
+#endif
+
+#include "DynamicLights.hlsli"
 
 PS_IN vs_main(VS_IN In)
 {
     PS_IN Out;
 
 	// Calculate vertex screen position
-    Out.ProjPos = mul(float4(In.ObjPos + (In.Normal + cb_DisplaceOffset.xyz) * cb_WorldOffset.xyz, 1.0f), cb_matMVP);
+    float3 objPos = In.ObjPos + (In.Normal + cb_DisplaceOffset.xyz) * cb_WorldOffset.xyz;
+    Out.ProjPos = mul(float4(objPos, 1.0f), cb_matMVP);
+    Out.WorldPos = mul(float4(objPos, 1.0f), cb_matModel).xyz;
+    Out.ViewDepth = Out.ProjPos.w;
+    Out.WorldNormal = normalize(mul(In.Normal, (float3x3)cb_matModel));
 
     Out.Color.xyz = lerp(cb_ShadowColor.xyz, cb_AmbientColor.xyz, In.Color.xyz);
     Out.Color.w = 1.0f;
@@ -60,11 +78,30 @@ float4 ps_main(PS_IN In) : SV_TARGET
     float4 texColor = texture0.Sample(sampler0, In.UV0) * In.Color;
     if (texColor.a < 0.5f) discard;
 
+#if !NO_DYN_LIGHT
+	float3 glow = SampleDynamicGlowLights(In.WorldPos, In.WorldNormal);
+	texColor.rgb = ApplyDynamicGlowLighting(texColor.rgb, glow);
+#endif
+
+#if !NO_CSM
+    float shadow = SampleShadow(In.WorldPos, In.ViewDepth);
+    float shadowStrength = cb_ShadowParams.w;
+    float shadowScale = shadow * shadowStrength + (1.0f - shadowStrength);
+    #if !NO_DYN_LIGHT
+    shadowScale = lerp(shadowScale, 1.0f, saturate(max(glow.r, max(glow.g, glow.b))));
+    #endif
+#else
+    float shadowScale = 1.0f;
+#endif
+
+#if !NO_FOG
     float fogFactor = CalculateExponentialSquaredFog(In.ProjPos.w, cb_FogStart, cb_FogColor.w);
 	fogFactor = saturate(fogFactor);
-    
     // Apply fog by blending between fog color and original color
-    float3 finalColor = lerp(cb_FogColor.xyz, texColor.xyz, fogFactor);
+    float3 finalColor = lerp(cb_FogColor.xyz, texColor.xyz * shadowScale, fogFactor);
+#else
+    float3 finalColor = texColor.xyz * shadowScale;
+#endif
 
     return float4(finalColor, texColor.a);
 }

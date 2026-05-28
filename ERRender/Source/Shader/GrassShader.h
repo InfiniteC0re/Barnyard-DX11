@@ -1,8 +1,10 @@
 #pragma once
 #include "Ref/AGrassShader/AGrassShaderHAL_DX8.h"
 #include "RenderDX11.h"
+#include "RenderDX11Utils.h"
 
 #include <d3d11.h>
+#include <ToshiTools/T2DynamicVector.h>
 
 namespace remaster
 {
@@ -40,15 +42,16 @@ public:
 
 private:
 	void UpdateAnimation();
+	void UploadDynamicGlowLights( Toshi::TRenderPacket* a_pRenderPacket );
 
 private:
 	Toshi::TOrderTable m_oOrderTable;
 	TCHAR PADDING1[ 4 ];
 
-	ID3DBlob* m_pVSShaderBlob;
-	ID3DBlob* m_pPSShaderBlob;
+	Toshi::T2DynamicVector<RenderDX11::ShaderPipelineState> m_vecGrassPipelines;
+	Toshi::T2DynamicVector<RenderDX11::ShaderPipelineState> m_vecShadowDepthPipelines;
 
-	RenderDX11::ShaderPipelineState m_oShaderPipeline;
+	ID3D11Buffer* m_pDynamicGlowLightBuffer;
 };
 
 }; // namespace remaster

@@ -3,7 +3,7 @@
 #include "RenderDX11.h"
 #include "RenderDX11Utils.h"
 
-#include "SOIL2/stb_image.h"
+#include "DirectXTex/DirectXTex.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -65,36 +65,70 @@ MEMBER_HOOK( 0x00615bc0, Toshi::T2Texture, T2Texture_Load, HRESULT )
 	TPROFILER_SCOPE();
 	TASSERT( m_pData != TNULL && m_uiDataSize != 0 );
 
-	HRESULT hRes = D3DXGetImageInfoFromFileInMemory( m_pData, m_uiDataSize, &m_ImageInfo );
-
-	TINT   iWidth, iHeight, iChannels;
-	TBYTE* pTexData = stbi_load_from_memory( (TBYTE*)m_pData, m_uiDataSize, &iWidth, &iHeight, &iChannels, 4 );
+	D3DXGetImageInfoFromFileInMemory( m_pData, m_uiDataSize, &m_ImageInfo );
 
 	// Create D3D11 texture and write it to the structure
 	// We DON'T need to hook AMaterialLibrary::DestroyTextures, because VTable matches fine for releasing objects
 
-	*(ID3D11ShaderResourceView**)( &m_pD3DTexture ) = remaster::dx11::CreateTexture(
-	    m_ImageInfo.Width,
-	    m_ImageInfo.Height,
-	    DXGI_FORMAT_R8G8B8A8_UNORM,
-	    pTexData,
-	    D3D11_USAGE_DEFAULT,
-	    D3D11_CPU_ACCESS_WRITE,
-	    1,
-		remaster::dx11::CTF_GEN_MIPMAPS
-	);
+	DirectX::ScratchImage scratchImage;
+	DirectX::TexMetadata  texMetadata;
+	HRESULT               hRes = E_FAIL;
 
-// 	*(ID3D11ShaderResourceView**)( &m_pD3DTexture ) = remaster::dx11::CreateTexture(
-// 	    m_ImageInfo.Width,
-// 	    m_ImageInfo.Height,
-// 	    DXGI_FORMAT_R8G8B8A8_UNORM,
-// 	    pTexData,
-// 	    D3D11_USAGE_IMMUTABLE,
-// 	    0,
-// 	    1
-// 	);
+	if ( m_ImageInfo.ImageFileFormat == D3DXIFF_DDS )
+	{
+		// DDS files may contain stored mipmaps -- load them as-is
+		hRes = DirectX::LoadFromDDSMemory(
+		    static_cast<const uint8_t*>( m_pData ),
+		    m_uiDataSize,
+		    DirectX::DDS_FLAGS_NONE,
+		    &texMetadata,
+		    scratchImage
+		);
+	}
 
-	stbi_image_free( pTexData );
+	if ( FAILED( hRes ) )
+	{
+		// Fall back to TGA
+		hRes = DirectX::LoadFromTGAMemory(
+		    static_cast<const uint8_t*>( m_pData ),
+		    m_uiDataSize,
+		    DirectX::TGA_FLAGS_NONE,
+		    &texMetadata,
+		    scratchImage
+		);
+	}
+
+	if ( FAILED( hRes ) )
+	{
+		// Fall back to WIC (PNG, JPG, BMP, etc.)
+		hRes = DirectX::LoadFromWICMemory(
+		    static_cast<const uint8_t*>( m_pData ),
+		    m_uiDataSize,
+		    DirectX::WIC_FLAGS_NONE,
+		    &texMetadata,
+		    scratchImage
+		);
+	}
+
+	TASSERT( SUCCEEDED( hRes ), "T2Texture_Load: Failed to load texture with DirectXTex" );
+
+	if ( SUCCEEDED( hRes ) )
+	{
+		m_ImageInfo.Width     = TUINT( texMetadata.width );
+		m_ImageInfo.Height    = TUINT( texMetadata.height );
+		m_ImageInfo.MipLevels = TUINT( texMetadata.mipLevels );
+
+		ID3D11ShaderResourceView* pSRV = TNULL;
+		DirectX::CreateShaderResourceView(
+		    remaster::g_pRender->GetD3D11Device(),
+		    scratchImage.GetImages(),
+		    scratchImage.GetImageCount(),
+		    texMetadata,
+		    &pSRV
+		);
+
+		*(ID3D11ShaderResourceView**)( &m_pD3DTexture ) = pSRV;
+	}
 
 	return 0;
 }

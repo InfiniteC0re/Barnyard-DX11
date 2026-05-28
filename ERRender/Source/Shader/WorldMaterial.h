@@ -30,7 +30,8 @@ public:
 	//-----------------------------------------------------------------------------
 	// Own methods
 	//-----------------------------------------------------------------------------
-	virtual void CopyToAlphaBlendMaterial();
+	virtual TBOOL CreateDummy();
+	virtual void  CopyToAlphaBlendMaterial();
 
 	void SetOrderTable( Toshi::TOrderTable* a_pOrderTable, TINT a_iUnused = 0 );
 

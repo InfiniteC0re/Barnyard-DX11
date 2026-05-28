@@ -4,9 +4,12 @@
 #include "RenderContentDX11.h"
 #include "RenderDX11Utils.h"
 #include "UI/FontRenderer.h"
+#include "Generated/ShaderCombos.h"
 
 #include <BYardSDK/THookedRenderD3DInterface.h>
 #include <BYardSDK/SDKHooks.h>
+
+#include <Render/TShader.h>
 
 #include <Platform/DX8/TModel_DX8.h>
 #include <Platform/DX8/TTextureFactoryHAL_DX8.h>
@@ -84,6 +87,10 @@ RenderDX11::RenderDX11()
 	m_iImmediateVertexCurrentOffset = 0;
 	m_MainIndexBuffer               = TNULL;
 	m_iImmediateIndexCurrentOffset  = 0;
+	m_pShadowConstantBuffer         = TNULL;
+	m_pScreenRectangleVertexShader  = TNULL;
+	m_pRedTintPixelShader           = TNULL;
+	m_pScreenRectangleInputLayout   = TNULL;
 
 	// Clear sampler states array
 	TUtil::MemClear( m_aSamplerStates, sizeof( m_aSamplerStates ) );
@@ -105,8 +112,13 @@ RenderDX11::RenderDX11()
 	m_pCurrentVertexShader = TNULL;
 	m_pCurrentPixelShader  = TNULL;
 	m_pCurrentInputLayout  = TNULL;
+	m_pCurrentPipelineVertexShaderSlot = TNULL;
+	m_pCurrentPipelinePixelShaderSlot  = TNULL;
 
-	for ( auto& pResource : m_apShaderResourceViews )
+	for ( auto& pResource : m_apShaderResourceViewsPS )
+		pResource = TNULL;
+
+	for ( auto& pResource : m_apShaderResourceViewsVS )
 		pResource = TNULL;
 
 	g_pRender = this;
@@ -158,7 +170,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		m_oSwapChainDesc.BufferDesc.RefreshRate.Denominator = 0;
 		m_oSwapChainDesc.BufferDesc.Format                  = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-		m_oSwapChainDesc.SampleDesc.Count   = 4;
+		m_oSwapChainDesc.SampleDesc.Count   = 1;
 		m_oSwapChainDesc.SampleDesc.Quality = 0;
 
 		m_oSwapChainDesc.BufferUsage  = DXGI_USAGE_RENDER_TARGET_OUTPUT;
@@ -183,40 +195,66 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		backBufferDesc.Width                = m_oSwapChainDesc.BufferDesc.Width;
 		backBufferDesc.MipLevels            = 1;
 		backBufferDesc.MiscFlags            = 0;
-		backBufferDesc.SampleDesc.Count     = m_oSwapChainDesc.SampleDesc.Count;
-		backBufferDesc.SampleDesc.Quality   = m_oSwapChainDesc.SampleDesc.Quality;
+		backBufferDesc.SampleDesc.Count     = MSAA_SAMPLE_COUNT;
+		backBufferDesc.SampleDesc.Quality   = 0;
 		backBufferDesc.Usage                = D3D11_USAGE_DEFAULT;
 
 		DX11_API_VALIDATE_EXIT( m_pDevice->CreateTexture2D( &backBufferDesc, TNULL, &m_pRenderTargetTexture ) );
-		DX11_API_VALIDATE_EXIT( m_pSwapChain->GetBuffer( 0, __uuidof( ID3D11Texture2D ), (LPVOID*)&m_pRenderTargetTexture ) );
+		DX11_API_VALIDATE_EXIT( m_pDevice->CreateTexture2D( &backBufferDesc, TNULL, &m_pGlowRenderTargetTexture ) );
 		DX11_API_VALIDATE_EXIT( m_pDevice->CreateRenderTargetView( m_pRenderTargetTexture, TNULL, &m_pRenderTargetView ) );
+		DX11_API_VALIDATE_EXIT( m_pDevice->CreateRenderTargetView( m_pGlowRenderTargetTexture, TNULL, &m_pGlowRenderTargetView ) );
+
+		{
+			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+			srvDesc.Format                    = backBufferDesc.Format;
+			srvDesc.ViewDimension             = backBufferDesc.SampleDesc.Count > 1 ? D3D11_SRV_DIMENSION_TEXTURE2DMS : D3D11_SRV_DIMENSION_TEXTURE2D;
+			srvDesc.Texture2D.MipLevels       = 1;
+			srvDesc.Texture2D.MostDetailedMip = 0;
+			DX11_API_VALIDATE_EXIT( m_pDevice->CreateShaderResourceView( m_pRenderTargetTexture, &srvDesc, &m_pRenderTargetSRV ) );
+			DX11_API_VALIDATE_EXIT( m_pDevice->CreateShaderResourceView( m_pGlowRenderTargetTexture, &srvDesc, &m_pGlowRenderTargetSRV ) );
+		}
+
+		DX11_API_VALIDATE_EXIT( m_pSwapChain->GetBuffer( 0, __uuidof( ID3D11Texture2D ), (LPVOID*)&m_pSwapChainBackBuffer ) );
 
 		// Create depth stencil view
 		D3D11_TEXTURE2D_DESC depthBufferDesc = {};
 		depthBufferDesc.ArraySize            = 1;
 		depthBufferDesc.BindFlags            = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
 		depthBufferDesc.CPUAccessFlags       = 0;
-		depthBufferDesc.Format               = DXGI_FORMAT_R24G8_TYPELESS;
+		// D32_FLOAT: stencil is never used, and D32 enables faster HiZ compression
+		// on most IHVs compared to D24S8.  R32_TYPELESS allows the SRV to read it
+		// as R32_FLOAT for the depth-resolve pass.
+		depthBufferDesc.Format               = DXGI_FORMAT_R32_TYPELESS;
 		depthBufferDesc.Height               = m_oSwapChainDesc.BufferDesc.Height;
 		depthBufferDesc.Width                = m_oSwapChainDesc.BufferDesc.Width;
 		depthBufferDesc.MipLevels            = 1;
 		depthBufferDesc.MiscFlags            = 0;
-		depthBufferDesc.SampleDesc.Count     = m_oSwapChainDesc.SampleDesc.Count;
-		depthBufferDesc.SampleDesc.Quality   = m_oSwapChainDesc.SampleDesc.Quality;
+		depthBufferDesc.SampleDesc.Count     = MSAA_SAMPLE_COUNT;
+		depthBufferDesc.SampleDesc.Quality   = 0;
 		depthBufferDesc.Usage                = D3D11_USAGE_DEFAULT;
 
 		D3D11_DEPTH_STENCIL_VIEW_DESC depthStencilDesc = {};
 
-		depthStencilDesc.Format             = DXGI_FORMAT_D24_UNORM_S8_UINT;
+		depthStencilDesc.Format             = DXGI_FORMAT_D32_FLOAT;
 		depthStencilDesc.Flags              = 0;
 		depthStencilDesc.Texture2D.MipSlice = 0;
-		depthStencilDesc.ViewDimension      = m_oSwapChainDesc.SampleDesc.Count > 1 ? D3D11_DSV_DIMENSION_TEXTURE2DMS : D3D11_DSV_DIMENSION_TEXTURE2D;
+		depthStencilDesc.ViewDimension      = depthBufferDesc.SampleDesc.Count > 1 ? D3D11_DSV_DIMENSION_TEXTURE2DMS : D3D11_DSV_DIMENSION_TEXTURE2D;
 
 		DX11_API_VALIDATE_EXIT( m_pDevice->CreateTexture2D( &depthBufferDesc, TNULL, &m_pDepthStencilTexture ) );
 		DX11_API_VALIDATE_EXIT( m_pDevice->CreateDepthStencilView( m_pDepthStencilTexture, &depthStencilDesc, &m_pDepthStencilView ) );
 
+		{
+			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+			srvDesc.Format                    = DXGI_FORMAT_R32_FLOAT;
+			srvDesc.ViewDimension             = depthBufferDesc.SampleDesc.Count > 1 ? D3D11_SRV_DIMENSION_TEXTURE2DMS : D3D11_SRV_DIMENSION_TEXTURE2D;
+			srvDesc.Texture2D.MipLevels       = 1;
+			srvDesc.Texture2D.MostDetailedMip = 0;
+			DX11_API_VALIDATE_EXIT( m_pDevice->CreateShaderResourceView( m_pDepthStencilTexture, &srvDesc, &m_pDepthStencilSRV ) );
+		}
+
 		s_pRenderHeap = g_pMemory->CreateMemBlock( HEAPSIZE, "RenderDX11", TNULL, 0 );
 		CreateRenderObjects();
+		CreateRenderTargets();
 
 		// Set window position and size
 		m_Window.SetPosition( SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, a_rParams.uiWidth, a_rParams.uiHeight );
@@ -328,6 +366,13 @@ TBOOL RenderDX11::BeginScene()
 	if ( BaseClass::BeginScene() )
 	{
 		ClearStateCache();
+		m_bInScene = TTRUE;
+
+		// Reset ring-buffer offsets each frame.  The first Map this frame will
+		// use DISCARD (offset == 0), subsequent ones within the same frame will
+		// use NO_OVERWRITE and just append into the same allocation.
+		m_iImmediateVertexCurrentOffset = 0;
+		m_iImmediateIndexCurrentOffset  = 0;
 
 		SetRenderTargetView( m_pRenderTargetView, m_pDepthStencilView );
 		ClearCurrentRenderTarget( CLEAR_COLOR );
@@ -341,7 +386,6 @@ TBOOL RenderDX11::BeginScene()
 		viewport.Height   = TFLOAT( m_oSwapChainDesc.BufferDesc.Height );
 
 		m_pDeviceContext->RSSetViewports( 1, &viewport );
-		m_bInScene = TTRUE;
 
 		return TTRUE;
 	}
@@ -351,6 +395,11 @@ TBOOL RenderDX11::BeginScene()
 
 TBOOL RenderDX11::EndScene()
 {
+	if constexpr ( MSAA_SAMPLE_COUNT > 1 )
+		m_pDeviceContext->ResolveSubresource( m_pSwapChainBackBuffer, 0, m_pRenderTargetTexture, 0, m_oSwapChainDesc.BufferDesc.Format );
+	else
+		m_pDeviceContext->CopyResource( m_pSwapChainBackBuffer, m_pRenderTargetTexture );
+
 	m_pSwapChain->Present( 0, 0 );
 	m_bInScene = TFALSE;
 
@@ -534,6 +583,12 @@ TBOOL RenderDX11::Create( const TCHAR* a_pchWindowTitle )
 		BuildAdapterDatabase();
 		DX11_API_VALIDATE_EXIT( D3D11CreateDevice( NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, flags, NULL, 0, D3D11_SDK_VERSION, &m_pDevice, &m_eFeatureLevel, &m_pDeviceContext ) );
 
+		if ( FAILED( m_pDeviceContext->QueryInterface( __uuidof( ID3D11DeviceContext1 ), (void**)&m_pDeviceContext1 ) ) )
+		{
+			TINFO( "ID3D11DeviceContext1 unavailable" );
+			m_pDeviceContext1 = TNULL;
+		}
+
 		return m_pDevice && m_pDeviceContext && m_Window.Create( this, TString8::VarArgs( "%s - DirectX11", a_pchWindowTitle ) );
 	}
 
@@ -542,6 +597,9 @@ TBOOL RenderDX11::Create( const TCHAR* a_pchWindowTitle )
 
 void RenderDX11::CreateRenderObjects()
 {
+	const TBOOL bShaderCombosCompiled = shadercombos::CompileAllShaderCombos();
+	TASSERT( bShaderCombosCompiled );
+
 	// Sample states
 	m_aSamplerStates[ 0 ]  = CreateSamplerState( D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE_ADDRESS_CLAMP, 0.0f, 0, 0.0f, D3D11_FLOAT32_MAX, 1 );
 	m_aSamplerStates[ 1 ]  = CreateSamplerStateAutoAnisotropy( D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE_ADDRESS_CLAMP, 0.0f, 0, 0.0f, D3D11_FLOAT32_MAX );
@@ -590,7 +648,34 @@ void RenderDX11::CreateRenderObjects()
 
 	m_pPixelConstantBuffer     = TMalloc( PIXEL_CONSTANT_BUFFER_SIZE, s_pRenderHeap );
 	m_IsPixelConstantBufferSet = TFALSE;
-	m_PixelBufferIndex         = 0;
+
+	// Shadow constant buffer
+	{
+		D3D11_BUFFER_DESC bufferDesc;
+		bufferDesc.ByteWidth           = SHADOW_CONSTANT_BUFFER_SIZE;
+		bufferDesc.Usage               = D3D11_USAGE_DYNAMIC;
+		bufferDesc.BindFlags           = D3D11_BIND_CONSTANT_BUFFER;
+		bufferDesc.CPUAccessFlags      = D3D11_CPU_ACCESS_WRITE;
+		bufferDesc.MiscFlags           = 0;
+		bufferDesc.StructureByteStride = 0;
+
+		DX11_API_VALIDATE( m_pDevice->CreateBuffer( &bufferDesc, NULL, &m_pShadowConstantBuffer ) );
+	}
+
+	// Depth only pass constant buffer
+	{
+		D3D11_BUFFER_DESC bufferDesc;
+		bufferDesc.ByteWidth           = 64;
+		bufferDesc.Usage               = D3D11_USAGE_DYNAMIC;
+		bufferDesc.BindFlags           = D3D11_BIND_CONSTANT_BUFFER;
+		bufferDesc.CPUAccessFlags      = D3D11_CPU_ACCESS_WRITE;
+		bufferDesc.MiscFlags           = 0;
+		bufferDesc.StructureByteStride = 0;
+
+		DX11_API_VALIDATE( m_pDevice->CreateBuffer( &bufferDesc, NULL, &m_pDepthPassConstantBuffer ) );
+	}
+
+	m_PixelBufferIndex = 0;
 
 	// Main vertex buffer
 	{
@@ -618,6 +703,40 @@ void RenderDX11::CreateRenderObjects()
 
 		DX11_API_VALIDATE( m_pDevice->CreateBuffer( &bufferDesc, NULL, &m_MainIndexBuffer ) );
 		m_iImmediateIndexCurrentOffset = 0;
+	}
+
+	// Screen space rectangle shader
+	{
+		if ( bShaderCombosCompiled )
+		{
+			const dx11::ShaderCombo& rScreenSpaceVSCombo = shadercombos::GetScreenSpaceVertexShaderCombo_vs_main();
+			ID3DBlob*               pVSBlob             = rScreenSpaceVSCombo.GetBlob( 0 );
+			TVALIDPTR( pVSBlob );
+
+			if ( pVSBlob )
+			{
+				if ( !shadercombos::CreateScreenSpaceVertexShader_vs_main( &m_pScreenRectangleVertexShader ) )
+					TASSERT( TFALSE );
+
+				if ( !shadercombos::CreateScreenSpacePixelShader_ps_red_tint( &m_pRedTintPixelShader ) )
+					TASSERT( TFALSE );
+
+				D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
+					{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+					{ .SemanticName = "TEXCOORD", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32_FLOAT, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+				};
+
+				DX11_API_VALIDATE(
+				    m_pDevice->CreateInputLayout(
+				        aInputElements,
+				        TARRAYSIZE( aInputElements ),
+				        pVSBlob->GetBufferPointer(),
+				        pVSBlob->GetBufferSize(),
+				        &m_pScreenRectangleInputLayout
+				    )
+				);
+			}
+		}
 	}
 
 	// Depth state
@@ -659,6 +778,8 @@ void RenderDX11::CreateRenderObjects()
 	// Other states
 	m_eCurrentTopology     = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
 	m_pCurrentVertexBuffer = TNULL;
+
+	m_oCSMManager.Create();
 }
 
 ID3D11SamplerState* RenderDX11::CreateSamplerState( D3D11_FILTER filter, D3D11_TEXTURE_ADDRESS_MODE addressU, D3D11_TEXTURE_ADDRESS_MODE addressV, D3D11_TEXTURE_ADDRESS_MODE addressW, TFLOAT mipLODBias, TUINT32 borderColor, TFLOAT minLOD, TFLOAT maxLOD, TUINT maxAnisotropy )
@@ -723,7 +844,7 @@ void RenderDX11::VSBufferSetVec4( VSBufferOffset a_uiOffset, __m128 a_vData )
 	const TUINT uiSize   = sizeof( TVector4 );
 	TASSERT( uiOffset + uiSize <= VERTEX_CONSTANT_BUFFER_SIZE, "Buffer size exceeded" );
 
-	__m128* pCurrent          = TCAST( __m128*, m_pVertexConstantBuffer ) + a_uiOffset;
+	__m128* pCurrent      = TCAST( __m128*, m_pVertexConstantBuffer ) + a_uiOffset;
 	m_VertexBufferNewSize = TMath::Max( m_VertexBufferNewSize, uiOffset + uiSize );
 
 	if ( !m_IsVertexConstantBufferUpdated )
@@ -754,6 +875,26 @@ void RenderDX11::PSBufferSetVec4( PSBufferOffset a_uiOffset, __m128 a_vData )
 	// 	TASSERT( offset + size <= PIXEL_CONSTANT_BUFFER_SIZE, "Buffer size exceeded" );
 	// 	TUtil::MemCopy( (TCHAR*)m_pPixelConstantBuffer + offset, a_pData, size );
 	// 	m_IsPixelConstantBufferSet = TTRUE;
+}
+
+void RenderDX11::UpdateShadowCBuffer( const ShadowCBufferData& a_rData )
+{
+	if ( !m_pShadowConstantBuffer ) return;
+
+	D3D11_MAPPED_SUBRESOURCE mappedSubresources;
+	m_pDeviceContext->Map( m_pShadowConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubresources );
+	TUtil::MemCopy( mappedSubresources.pData, &a_rData, sizeof( a_rData ) );
+	m_pDeviceContext->Unmap( m_pShadowConstantBuffer, 0 );
+}
+
+void RenderDX11::FlushShaders()
+{
+	FlushOrderTables();
+
+	for ( auto it = TShader::sm_oShaderList.GetRootShader(); it != TNULL; it = it->GetNextShader() )
+	{
+		it->Flush();
+	}
 }
 
 void RenderDX11::SetDstAlpha( TFLOAT a_fAlpha )
@@ -829,16 +970,22 @@ void RenderDX11::SetDepthBias( TINT a_iDepthBias )
 	m_RasterizerState.DepthBias = a_iDepthBias;
 }
 
+void RenderDX11::SetSlopeScaledDepthBias( TFLOAT a_fDepthBias )
+{
+	m_RasterizerState.SlopeScaledDepthBias = a_fDepthBias;
+}
+
 void RenderDX11::DrawImmediately( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUINT a_iIndexCount, const void* a_pIndexData, DXGI_FORMAT a_eIndexFormat, const void* a_pVertexData, TUINT a_iStrideSize, TUINT a_iStrides )
 {
 	TINT iIndexSize = ( a_eIndexFormat == DXGI_FORMAT_R32_UINT ) ? 4 : ( ( a_eIndexFormat == DXGI_FORMAT_R16_UINT ) ? 2 : 0 );
 
 	TASSERT( iIndexSize != 0 );
 
-	// Index buffer
+	// Index buffer -- ring-buffer append with NO_OVERWRITE; DISCARD on wrap or
+	// first use this frame (offset == 0).
 	UINT iIndexBufferSize = iIndexSize * a_iIndexCount;
 
-	if ( ( m_iImmediateIndexCurrentOffset + iIndexBufferSize ) <= IMMEDIATE_INDEX_BUFFER_SIZE )
+	if ( ( m_iImmediateIndexCurrentOffset + iIndexBufferSize ) > IMMEDIATE_INDEX_BUFFER_SIZE )
 	{
 		m_iImmediateIndexCurrentOffset = 0;
 	}
@@ -846,21 +993,25 @@ void RenderDX11::DrawImmediately( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUI
 	TASSERT( ( m_iImmediateIndexCurrentOffset + iIndexBufferSize ) <= IMMEDIATE_INDEX_BUFFER_SIZE );
 
 	D3D11_MAPPED_SUBRESOURCE mappedSubresource;
-	m_pDeviceContext->Map( m_MainIndexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubresource );
+	m_pDeviceContext->Map( m_MainIndexBuffer, 0,
+	    m_iImmediateIndexCurrentOffset == 0 ? D3D11_MAP_WRITE_DISCARD : D3D11_MAP_WRITE_NO_OVERWRITE,
+	    0, &mappedSubresource );
 	Toshi::TUtil::MemCopy( (void*)( (uintptr_t)mappedSubresource.pData + m_iImmediateIndexCurrentOffset ), a_pIndexData, iIndexBufferSize );
 	m_pDeviceContext->Unmap( m_MainIndexBuffer, 0 );
 
-	// Vertex buffer
+	// Vertex buffer -- same ring-buffer pattern.
 	UINT iVertexBufferSize = a_iStrideSize * a_iStrides;
 
-	if ( ( m_iImmediateVertexCurrentOffset + iVertexBufferSize ) <= IMMEDIATE_VERTEX_BUFFER_SIZE )
+	if ( ( m_iImmediateVertexCurrentOffset + iVertexBufferSize ) > IMMEDIATE_VERTEX_BUFFER_SIZE )
 	{
 		m_iImmediateVertexCurrentOffset = 0;
 	}
 
 	TASSERT( ( m_iImmediateVertexCurrentOffset + iVertexBufferSize ) <= IMMEDIATE_VERTEX_BUFFER_SIZE );
 
-	m_pDeviceContext->Map( m_MainVertexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubresource );
+	m_pDeviceContext->Map( m_MainVertexBuffer, 0,
+	    m_iImmediateVertexCurrentOffset == 0 ? D3D11_MAP_WRITE_DISCARD : D3D11_MAP_WRITE_NO_OVERWRITE,
+	    0, &mappedSubresource );
 	Toshi::TUtil::MemCopy( (void*)( (uintptr_t)mappedSubresource.pData + m_iImmediateVertexCurrentOffset ), a_pVertexData, iVertexBufferSize );
 	m_pDeviceContext->Unmap( m_MainVertexBuffer, 0 );
 
@@ -876,22 +1027,111 @@ void RenderDX11::DrawImmediately( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUI
 	m_iImmediateVertexCurrentOffset += iVertexBufferSize;
 }
 
-void RenderDX11::DrawIndexed( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUINT a_uiIndexCount, ID3D11Buffer* a_pIndexBuffer, TUINT a_uiIndexBufferOffset, DXGI_FORMAT a_eIndexBufferFormat, ID3D11Buffer* a_pVertexBuffer, TUINT a_uiStrides, TUINT a_uiOffsets )
+void RenderDX11::DrawScreenRectangle()
+{
+	DrawScreenRectangle( GetPixelShader() );
+}
+
+void RenderDX11::DrawScreenRectangle( ID3D11PixelShader* a_pPixelShader )
+{
+	DrawScreenRectangle( a_pPixelShader, 0.0f, 0.0f, GetSurfaceWidth(), GetSurfaceHeight() );
+}
+
+void RenderDX11::DrawScreenRectangle( TFLOAT a_fX, TFLOAT a_fY, TFLOAT a_fWidth, TFLOAT a_fHeight )
+{
+	DrawScreenRectangle( GetPixelShader(), a_fX, a_fY, a_fWidth, a_fHeight );
+}
+
+void RenderDX11::DrawScreenRectangle( ID3D11PixelShader* a_pPixelShader, TFLOAT a_fX, TFLOAT a_fY, TFLOAT a_fWidth, TFLOAT a_fHeight )
+{
+	struct ScreenVertex
+	{
+		Toshi::TVector2 Position;
+		Toshi::TVector2 UV;
+	};
+
+	TVALIDPTR( m_pScreenRectangleVertexShader );
+	TVALIDPTR( m_pScreenRectangleInputLayout );
+	TVALIDPTR( a_pPixelShader );
+
+	if ( !m_pScreenRectangleVertexShader || !m_pScreenRectangleInputLayout || !a_pPixelShader )
+		return;
+
+	const TFLOAT fSurfaceWidth  = GetSurfaceWidth();
+	const TFLOAT fSurfaceHeight = GetSurfaceHeight();
+
+	const TFLOAT fLeft   = ( a_fX / fSurfaceWidth ) * 2.0f - 1.0f;
+	const TFLOAT fRight  = ( ( a_fX + a_fWidth ) / fSurfaceWidth ) * 2.0f - 1.0f;
+	const TFLOAT fTop    = 1.0f - ( a_fY / fSurfaceHeight ) * 2.0f;
+	const TFLOAT fBottom = 1.0f - ( ( a_fY + a_fHeight ) / fSurfaceHeight ) * 2.0f;
+
+	const TFLOAT fUVLeft   = a_fX / fSurfaceWidth;
+	const TFLOAT fUVRight  = ( a_fX + a_fWidth ) / fSurfaceWidth;
+	const TFLOAT fUVTop    = a_fY / fSurfaceHeight;
+	const TFLOAT fUVBottom = ( a_fY + a_fHeight ) / fSurfaceHeight;
+
+	ScreenVertex aVertices[] = {
+		{ { fLeft, fTop }, { fUVLeft, fUVTop } },
+		{ { fRight, fTop }, { fUVRight, fUVTop } },
+		{ { fLeft, fBottom }, { fUVLeft, fUVBottom } },
+		{ { fRight, fBottom }, { fUVRight, fUVBottom } },
+	};
+
+	TUINT16 aIndices[] = { 0, 1, 2, 3 };
+
+	SetInputLayout( m_pScreenRectangleInputLayout );
+	SetVertexShader( m_pScreenRectangleVertexShader );
+	SetPixelShader( a_pPixelShader );
+
+	DrawImmediately( D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP, TARRAYSIZE( aIndices ), aIndices, DXGI_FORMAT_R16_UINT, aVertices, sizeof( ScreenVertex ), TARRAYSIZE( aVertices ) );
+}
+
+void RenderDX11::DrawIndexed( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUINT a_uiIndexCount, ID3D11Buffer* a_pIndexBuffer, TUINT a_uiIndexBufferOffset, DXGI_FORMAT a_eIndexBufferFormat, ID3D11Buffer* a_pVertexBuffer, TUINT a_uiStrides, TUINT a_uiOffsets, ID3D11Buffer* a_pConstantBuffer )
 {
 	UpdateRenderStates();
 	SetVertexBuffer( a_pVertexBuffer, a_uiStrides, 0 );
 	SetIndexBuffer( a_pIndexBuffer, a_eIndexBufferFormat, 0 );
-	FlushConstantBuffers();
+
+	if ( !a_pConstantBuffer ) FlushConstantBuffers();
+	else
+	{
+		VSSetConstantBuffer( 0, a_pConstantBuffer );
+		PSSetConstantBuffer( 0, a_pConstantBuffer );
+	}
 
 	SetPrimitiveTopology( a_ePrimitiveType );
 	m_pDeviceContext->DrawIndexed( a_uiIndexCount, a_uiIndexBufferOffset, a_uiOffsets );
 }
 
-void RenderDX11::DrawNonIndexed( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveTopology, ID3D11Buffer* a_pVertexBuffer, TUINT a_uiVertexCount, TUINT a_uiStrides, TUINT a_uiStartVertex, TUINT a_uiOffsets )
+void RenderDX11::DrawIndexedInstanced( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUINT a_uiIndexCount, TUINT a_uiInstanceCount, ID3D11Buffer* a_pIndexBuffer, TUINT a_uiIndexBufferOffset, DXGI_FORMAT a_eIndexBufferFormat, ID3D11Buffer* a_pVertexBuffer, TUINT a_uiStrides, TUINT a_uiOffsets, ID3D11Buffer* a_pConstantBuffer, TUINT a_uiStartInstanceLocation )
+{
+	UpdateRenderStates();
+	SetVertexBuffer( a_pVertexBuffer, a_uiStrides, 0 );
+	SetIndexBuffer( a_pIndexBuffer, a_eIndexBufferFormat, 0 );
+
+	if ( !a_pConstantBuffer ) FlushConstantBuffers();
+	else
+	{
+		VSSetConstantBuffer( 0, a_pConstantBuffer );
+		PSSetConstantBuffer( 0, a_pConstantBuffer );
+	}
+
+	SetPrimitiveTopology( a_ePrimitiveType );
+	m_pDeviceContext->DrawIndexedInstanced( a_uiIndexCount, a_uiInstanceCount, a_uiIndexBufferOffset, a_uiOffsets, a_uiStartInstanceLocation );
+}
+
+void RenderDX11::DrawNonIndexed( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveTopology, ID3D11Buffer* a_pVertexBuffer, TUINT a_uiVertexCount, TUINT a_uiStrides, TUINT a_uiStartVertex, TUINT a_uiOffsets, ID3D11Buffer* a_pConstantBuffer )
 {
 	UpdateRenderStates();
 	SetVertexBuffer( a_pVertexBuffer, a_uiStrides, a_uiOffsets );
-	FlushConstantBuffers();
+	
+	if ( !a_pConstantBuffer ) FlushConstantBuffers();
+	else
+	{
+		VSSetConstantBuffer( 0, a_pConstantBuffer );
+		PSSetConstantBuffer( 0, a_pConstantBuffer );
+	}
+
 	SetPrimitiveTopology( a_ePrimitiveTopology );
 	m_pDeviceContext->Draw( a_uiVertexCount, a_uiStartVertex );
 }
@@ -1190,10 +1430,14 @@ void RenderDX11::ShaderPipelineState::SetName( const TCHAR* a_pchName )
 {
 #ifdef TOSHI_DEBUG
 	T2String8::Format( T2String8::ms_aScratchMem, "%s_VS", a_pchName );
-	pVertexShader->SetPrivateData( WKPDID_D3DDebugObjectName, T2String8::Length( T2String8::ms_aScratchMem ), T2String8::ms_aScratchMem );
+	ID3D11VertexShader* pVertexShader = GetVertexShader();
+	if ( pVertexShader )
+		pVertexShader->SetPrivateData( WKPDID_D3DDebugObjectName, T2String8::Length( T2String8::ms_aScratchMem ), T2String8::ms_aScratchMem );
 
 	T2String8::Format( T2String8::ms_aScratchMem, "%s_PS", a_pchName );
-	pPixelShader->SetPrivateData( WKPDID_D3DDebugObjectName, T2String8::Length( T2String8::ms_aScratchMem ), T2String8::ms_aScratchMem );
+	ID3D11PixelShader* pPixelShader = GetPixelShader();
+	if ( pPixelShader )
+		pPixelShader->SetPrivateData( WKPDID_D3DDebugObjectName, T2String8::Length( T2String8::ms_aScratchMem ), T2String8::ms_aScratchMem );
 #endif // TOSHI_DEBUG
 }
 

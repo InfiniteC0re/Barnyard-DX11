@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "SkinMesh.h"
+#include "DynamicGlowLights.h"
 #include "Resource/ClassPatcher.h"
 
 #include <Platform/DX8/TRenderContext_DX8.h>
@@ -52,6 +53,8 @@ TBOOL remaster::SkinMesh::Render()
 		pRenderPacket->SetLightDirection( pRenderInterface->GetLightDirection().AsBasisVector3( 0 ) );
 		pRenderPacket->SetAlpha( pCurrentContext->GetAlphaBlend() );
 		pRenderPacket->SetShadeCoeff( TUINT( pCurrentContext->GetShadeCoeff() * 255.0f ) );
+		pRenderPacket->m_ui8Unk1 = pCurrentContext->m_oLightIds[ 0 ];
+		pRenderPacket->m_pUnk    = PackRenderPacketLights( pCurrentContext->m_oLightIds );
 
 		//ASkinShaderHAL::sm_oWorldViewMatrix = pCurrentContext->GetWorldViewMatrix();
 		//ASkinShaderHAL::sm_oViewModelMatrix = pCurrentContext->GetViewModelMatrix();

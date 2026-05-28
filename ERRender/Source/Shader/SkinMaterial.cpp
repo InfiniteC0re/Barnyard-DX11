@@ -50,23 +50,28 @@ void remaster::SkinMaterial::PreRender()
 
 	//auto pD3DTexture = (ID3D11ShaderResourceView*)pTexture->GetD3DTexture();
 
-	if ( m_bIsHDLighting )
+	const TBOOL bShadowPass = g_pRender->GetCSMManager().IsRenderingShadowPass();
+
+	if ( !bShadowPass )
 	{
-		pLT0Texture = TSTATICCAST( TTextureResourceHAL, m_apLightingTextures[ LT_0 ] );
-		pLT1Texture = TSTATICCAST( TTextureResourceHAL, m_apLightingTextures[ LT_1 ] );
+		if ( m_bIsHDLighting )
+		{
+			pLT0Texture = TSTATICCAST( TTextureResourceHAL, m_apLightingTextures[ LT_0 ] );
+			pLT1Texture = TSTATICCAST( TTextureResourceHAL, m_apLightingTextures[ LT_1 ] );
 
-		g_pRender->PSSetSamplerState( 1, 1 );
-		g_pRender->PSSetSamplerState( 2, 1 );
-		g_pRender->PSSetSamplerState( 3, 1 );
-		g_pRender->PSSetSamplerState( 4, 1 );
+			g_pRender->PSSetSamplerState( 1, 1 );
+			g_pRender->PSSetSamplerState( 2, 1 );
+			g_pRender->PSSetSamplerState( 3, 1 );
+			g_pRender->PSSetSamplerState( 4, 1 );
 
-// 		pD3DDevice->SetTextureStageState( 1, D3DTSS_MAGFILTER, 2 );
-// 		pD3DDevice->SetTextureStageState( 2, D3DTSS_MAGFILTER, 2 );
-// 		pD3DDevice->SetTextureStageState( 3, D3DTSS_MAGFILTER, 2 );
-// 		pD3DDevice->SetTextureStageState( 4, D3DTSS_MAGFILTER, 2 );
+	// 		pD3DDevice->SetTextureStageState( 1, D3DTSS_MAGFILTER, 2 );
+	// 		pD3DDevice->SetTextureStageState( 2, D3DTSS_MAGFILTER, 2 );
+	// 		pD3DDevice->SetTextureStageState( 3, D3DTSS_MAGFILTER, 2 );
+	// 		pD3DDevice->SetTextureStageState( 4, D3DTSS_MAGFILTER, 2 );
 
-		m_bHasLighting1Tex = pLT0Texture != TNULL;
-		m_bHasLighting2Tex = pLT1Texture != TNULL;
+			m_bHasLighting1Tex = pLT0Texture != TNULL;
+			m_bHasLighting2Tex = pLT1Texture != TNULL;
+		}
 	}
 
 	if ( pTexture != TNULL )
@@ -76,38 +81,41 @@ void remaster::SkinMaterial::PreRender()
 		if ( pTexture->GetD3DTexture() != TNULL )
 		{
 			auto pD3DTexture = TREINTERPRETCAST( ID3D11ShaderResourceView*, pTexture->GetD3DTexture() );
-			g_pRender->SetShaderResource( 0, pD3DTexture );
+			g_pRender->PSSetShaderResource( 0, pD3DTexture );
 
-			if ( pLT1Texture == TNULL )
+			if ( !bShadowPass )
 			{
-				g_pRender->SetShaderResource( 1, TNULL );
-				g_pRender->SetShaderResource( 2, TNULL );
-			}
-			else
-			{
-				g_pRender->SetShaderResource( 1, TREINTERPRETCAST( ID3D11ShaderResourceView*, pLT1Texture->GetD3DTexture() ) );
-				//pD3DDevice->SetTextureStageState( 1, D3DTSS_MIPFILTER, 0 );
-
-				if ( pLT0Texture == TNULL )
+				if ( pLT1Texture == TNULL )
 				{
-					g_pRender->SetShaderResource( 2, TNULL );
+					g_pRender->PSSetShaderResource( 1, TNULL );
+					g_pRender->PSSetShaderResource( 2, TNULL );
 				}
 				else
 				{
-					g_pRender->SetShaderResource( 2, TREINTERPRETCAST( ID3D11ShaderResourceView*, pLT0Texture->GetD3DTexture() ) );
-					//pD3DDevice->SetTextureStageState( 2, D3DTSS_MIPFILTER, 0 );
-				}
-			}
+					g_pRender->PSSetShaderResource( 1, TREINTERPRETCAST( ID3D11ShaderResourceView*, pLT1Texture->GetD3DTexture() ) );
+					//pD3DDevice->SetTextureStageState( 1, D3DTSS_MIPFILTER, 0 );
 
-			//pD3DDevice->SetTextureStageState( 0, D3DTSS_MIPFILTER, 2 );
-			g_pRender->PSSetSamplerState( 0, 3 );
-			//pRender->SetTextureAddress( 0, pTexture->GetAddressUState(), TEXCOORD_U );
-			//pRender->SetTextureAddress( 0, pTexture->GetAddressVState(), TEXCOORD_V );
+					if ( pLT0Texture == TNULL )
+					{
+						g_pRender->PSSetShaderResource( 2, TNULL );
+					}
+					else
+					{
+						g_pRender->PSSetShaderResource( 2, TREINTERPRETCAST( ID3D11ShaderResourceView*, pLT0Texture->GetD3DTexture() ) );
+						//pD3DDevice->SetTextureStageState( 2, D3DTSS_MIPFILTER, 0 );
+					}
+				}
+
+				//pD3DDevice->SetTextureStageState( 0, D3DTSS_MIPFILTER, 2 );
+				g_pRender->PSSetSamplerState( 0, 3 );
+				//pRender->SetTextureAddress( 0, pTexture->GetAddressUState(), TEXCOORD_U );
+				//pRender->SetTextureAddress( 0, pTexture->GetAddressVState(), TEXCOORD_V );
+			}
 		}
 	}
 	else
 	{
-		g_pRender->SetShaderResource( 0, TNULL );
+		g_pRender->PSSetShaderResource( 0, TNULL );
 	}
 
 	if ( m_eBlendMode != 3 )
@@ -122,16 +130,6 @@ void remaster::SkinMaterial::PreRender()
 	}
 
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
-
-// 	auto pShader = TDYNAMICCAST( ASkinShaderHAL, GetShader() );
-// 	pShader->SetAlphaRef( ( m_Flags & FLAGS_BLENDING ) ? 1 : 128 );
-//
-// 	pD3DDevice->SetRenderState( D3DRS_COLORVERTEX, 0 );
-//
-// 	auto pRenderContext = TRenderContextD3D::Upcast( pRender->GetCurrentContext() );
-//
-// 	if ( pRenderContext->IsFogEnabled() )
-// 		pRenderContext->EnableFogHAL();
 }
 
 void remaster::SkinMaterial::PostRender()

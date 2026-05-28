@@ -35,10 +35,6 @@ void RenderContextD3D11::Update()
 			ComputeOrthographicProjection();
 			ComputeOrthographicFrustum();
 		}
-
-		/*auto pRenderer = TSTATICCAST( TRenderD3DInterface, m_pRenderer );
-		pRenderer->GetDirect3DDevice()->SetTransform( D3DTS_VIEW, TREINTERPRETCAST( D3DMATRIX*, &TMatrix44::IDENTITY ) );
-		pRenderer->GetDirect3DDevice()->SetTransform( D3DTS_PROJECTION, TREINTERPRETCAST( D3DMATRIX*, &m_Projection ) );*/
 	}
 }
 

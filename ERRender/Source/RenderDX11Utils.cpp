@@ -3,6 +3,10 @@
 #include "RenderDX11.h"
 
 #include <d3dcompiler.h>
+#include <windows.h>
+
+#include <Toshi/TArray.h>
+#include <Toshi/TString8.h>
 
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
@@ -12,14 +16,151 @@
 
 TOSHI_NAMESPACE_USING
 
-ID3DBlob* remaster::dx11::CompileShader( const TCHAR* a_pchSrcData, LPCSTR a_pEntrypoint, LPCSTR a_pTarget, const D3D_SHADER_MACRO* a_pDefines )
+static CRITICAL_SECTION g_oShaderIncludeCriticalSection;
+static volatile LONG    g_iShaderIncludeCriticalSectionInitialized = 0;
+
+static void EnsureShaderIncludeCriticalSection()
+{
+	if ( InterlockedCompareExchange( &g_iShaderIncludeCriticalSectionInitialized, 2, 0 ) == 0 )
+	{
+		InitializeCriticalSection( &g_oShaderIncludeCriticalSection );
+		InterlockedExchange( &g_iShaderIncludeCriticalSectionInitialized, 1 );
+	}
+	else
+	{
+		while ( g_iShaderIncludeCriticalSectionInitialized != 1 )
+			Sleep( 0 );
+	}
+}
+
+class ShaderIncludeHandler : public ID3DInclude
+{
+public:
+	ShaderIncludeHandler( const TCHAR* a_pchSourceFile )
+	{
+		m_DirectoryStack.Push( GetDirectory( a_pchSourceFile ) );
+	}
+
+	static TString8 GetDirectory( const TString8& a_rFilepath )
+	{
+		const TINT iSlashPos     = a_rFilepath.FindReverse( '/' );
+		const TINT iBackslashPos = a_rFilepath.FindReverse( '\\' );
+		const TINT iSeparator    = TMath::Max( iSlashPos, iBackslashPos );
+
+		return ( iSeparator == -1 ) ? TString8() : a_rFilepath.Mid( 0, iSeparator + 1 );
+	}
+
+	static TString8 JoinPath( const TString8& a_rDirectory, const TString8& a_rFilepath )
+	{
+		if ( a_rFilepath.Length() > 1 && a_rFilepath[ 1 ] == ':' )
+			return a_rFilepath;
+
+		if ( a_rFilepath.Length() > 0 && ( a_rFilepath[ 0 ] == '\\' || a_rFilepath[ 0 ] == '/' ) )
+			return a_rFilepath;
+
+		TString8 strResult = a_rDirectory;
+		strResult.Concat( a_rFilepath );
+		return strResult;
+	}
+
+	HRESULT STDMETHODCALLTYPE Open(
+	    D3D_INCLUDE_TYPE a_eIncludeType,
+	    LPCSTR           a_pchFileName,
+	    LPCVOID          a_pParentData,
+	    LPCVOID*         a_ppData,
+	    UINT*            a_puiBytes
+	) override
+	{
+		EnsureShaderIncludeCriticalSection();
+		EnterCriticalSection( &g_oShaderIncludeCriticalSection );
+
+		TASSERT( a_ppData != TNULL );
+		TASSERT( a_puiBytes != TNULL );
+
+		const TString8 strCurrentDir = m_DirectoryStack.Size() == 0 ? TString8() : m_DirectoryStack[ m_DirectoryStack.Size() - 1 ];
+		TString8       strFilepath   = JoinPath( strCurrentDir, a_pchFileName );
+
+		TFile* pFile = TFile::Create( strFilepath );
+
+		if ( !pFile && a_eIncludeType == D3D_INCLUDE_SYSTEM && m_DirectoryStack.Size() != 0 )
+		{
+			strFilepath = JoinPath( m_DirectoryStack[ 0 ], a_pchFileName );
+			pFile      = TFile::Create( strFilepath );
+		}
+
+		if ( !pFile )
+		{
+			LeaveCriticalSection( &g_oShaderIncludeCriticalSection );
+			return E_FAIL;
+		}
+
+		const TSIZE uiFileSize = pFile->GetSize();
+		TCHAR*      pData      = new TCHAR[ uiFileSize + 1 ];
+		const TSIZE uiReadSize = pFile->Read( pData, uiFileSize );
+		pFile->Destroy();
+
+		if ( uiReadSize != uiFileSize )
+		{
+			delete[] pData;
+			LeaveCriticalSection( &g_oShaderIncludeCriticalSection );
+			return E_FAIL;
+		}
+
+		pData[ uiFileSize ] = '\0';
+
+		*a_ppData   = pData;
+		*a_puiBytes = TUINT( uiFileSize );
+
+		m_DirectoryStack.Push( GetDirectory( strFilepath ) );
+		LeaveCriticalSection( &g_oShaderIncludeCriticalSection );
+		return S_OK;
+	}
+
+	HRESULT STDMETHODCALLTYPE Close( LPCVOID a_pData ) override
+	{
+		EnsureShaderIncludeCriticalSection();
+		EnterCriticalSection( &g_oShaderIncludeCriticalSection );
+
+		delete[] TREINTERPRETCAST( const TCHAR*, a_pData );
+
+		if ( m_DirectoryStack.Size() > 1 )
+			m_DirectoryStack.Pop();
+
+		LeaveCriticalSection( &g_oShaderIncludeCriticalSection );
+		return S_OK;
+	}
+
+private:
+	TArray<TString8> m_DirectoryStack;
+};
+
+static ID3DBlob* CompileShaderInternal(
+    const TCHAR*             a_pchSrcData,
+    const TCHAR*             a_pchSourceName,
+    LPCSTR                   a_pEntrypoint,
+    LPCSTR                   a_pTarget,
+    const D3D_SHADER_MACRO*  a_pDefines,
+    ID3DInclude*             a_pIncludeHandler
+)
 {
 	TSIZE srcLength = T2String8::Length( a_pchSrcData );
 
 	ID3DBlob* pShaderBlob = TNULL;
 	ID3DBlob* pErrorBlob  = TNULL;
 
-	HRESULT hRes = D3DCompile( a_pchSrcData, srcLength, NULL, a_pDefines, NULL, a_pEntrypoint, a_pTarget, D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_PACK_MATRIX_ROW_MAJOR | D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY, 0, &pShaderBlob, &pErrorBlob );
+	HRESULT hRes = D3DCompile(
+	    a_pchSrcData,
+	    srcLength,
+	    a_pchSourceName,
+	    a_pDefines,
+	    a_pIncludeHandler,
+	    a_pEntrypoint,
+	    a_pTarget,
+	    D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_PACK_MATRIX_ROW_MAJOR | D3DCOMPILE_AVOID_FLOW_CONTROL,
+	    0,
+	    &pShaderBlob,
+	    &pErrorBlob
+	);
 
 	if ( !SUCCEEDED( hRes ) )
 	{
@@ -28,6 +169,7 @@ ID3DBlob* remaster::dx11::CompileShader( const TCHAR* a_pchSrcData, LPCSTR a_pEn
 		if ( pErrorBlob != TNULL )
 		{
 			TERROR( (const TCHAR*)pErrorBlob->GetBufferPointer() );
+			OutputDebugStringA( (const TCHAR*)pErrorBlob->GetBufferPointer() );
 			pErrorBlob->Release();
 		}
 
@@ -35,6 +177,345 @@ ID3DBlob* remaster::dx11::CompileShader( const TCHAR* a_pchSrcData, LPCSTR a_pEn
 	}
 
 	return pShaderBlob;
+}
+
+static TBOOL ReadShaderSourceFile( const TCHAR* a_pchFilepath, TString8& a_rSource )
+{
+	TFile* pFile = TFile::Create( a_pchFilepath );
+	if ( !pFile )
+		return TFALSE;
+
+	const TSIZE uiFileSize = pFile->GetSize();
+	TCHAR*      pSrcData   = new TCHAR[ uiFileSize + 1 ];
+	const TSIZE uiReadSize = pFile->Read( pSrcData, uiFileSize );
+	pFile->Destroy();
+
+	if ( uiReadSize != uiFileSize )
+	{
+		delete[] pSrcData;
+		return TFALSE;
+	}
+
+	pSrcData[ uiFileSize ] = '\0';
+	a_rSource.Copy( pSrcData, TINT( uiFileSize ) );
+	delete[] pSrcData;
+	return TTRUE;
+}
+
+struct ShaderCompileWorkerContext
+{
+	const TCHAR*                   pchFilepath;
+	const TCHAR*                   pchSource;
+	LPCSTR                         pEntrypoint;
+	LPCSTR                         pTarget;
+	const remaster::dx11::ShaderComboDefinition* pCombos;
+	TUINT                          uiNumCombos;
+	TUINT                          uiNumPermutations;
+	ID3DBlob**                     ppBlobs;
+	volatile LONG                  iNextIndex;
+	volatile LONG                  iFailed;
+};
+
+static void CompileShaderComboPermutation( ShaderCompileWorkerContext* a_pContext, TUINT a_uiIndex )
+{
+	D3D_SHADER_MACRO* pDefines     = new D3D_SHADER_MACRO[ a_pContext->uiNumCombos + 1 ];
+	TCHAR*            pDefinitions = new TCHAR[ TMath::Max<TUINT>( a_pContext->uiNumCombos, 1 ) * 16 ];
+
+	for ( TUINT i = 0; i < a_pContext->uiNumCombos; i++ )
+	{
+		const remaster::dx11::ShaderComboDefinition& rCombo = a_pContext->pCombos[ i ];
+		const TINT iValue = rCombo.iMinValue + TINT( ( a_uiIndex / rCombo.uiStride ) % TUINT( rCombo.iMaxValue - rCombo.iMinValue + 1 ) );
+
+		TCHAR* pDefinition = pDefinitions + i * 16;
+		_snprintf_s( pDefinition, 16, _TRUNCATE, "%d", iValue );
+
+		pDefines[ i ].Name       = rCombo.pchName;
+		pDefines[ i ].Definition = pDefinition;
+	}
+
+	pDefines[ a_pContext->uiNumCombos ].Name       = TNULL;
+	pDefines[ a_pContext->uiNumCombos ].Definition = TNULL;
+
+	ShaderIncludeHandler includeHandler( a_pContext->pchFilepath );
+	a_pContext->ppBlobs[ a_uiIndex ] = CompileShaderInternal(
+	    a_pContext->pchSource,
+	    a_pContext->pchFilepath,
+	    a_pContext->pEntrypoint,
+	    a_pContext->pTarget,
+	    pDefines,
+	    &includeHandler
+	);
+
+	if ( !a_pContext->ppBlobs[ a_uiIndex ] )
+		InterlockedExchange( &a_pContext->iFailed, 1 );
+
+	delete[] pDefinitions;
+	delete[] pDefines;
+}
+
+static DWORD WINAPI ShaderCompileWorkerProc( LPVOID a_pParameter )
+{
+	ShaderCompileWorkerContext* pContext = TREINTERPRETCAST( ShaderCompileWorkerContext*, a_pParameter );
+
+	for ( ;; )
+	{
+		const LONG iIndex = InterlockedIncrement( &pContext->iNextIndex ) - 1;
+		if ( iIndex >= LONG( pContext->uiNumPermutations ) )
+			break;
+
+		CompileShaderComboPermutation( pContext, TUINT( iIndex ) );
+	}
+
+	return 0;
+}
+
+static TUINT GetShaderCompileThreadCount( TUINT a_uiNumPermutations )
+{
+	if ( a_uiNumPermutations <= 1 )
+		return 1;
+
+	// D3DCompile can allocate a lot of temporary memory per optimized shader.
+	// Keep this conservative because the game/mod runs as a 32-bit process.
+	return TMath::Min<TUINT>( a_uiNumPermutations, 4 );
+}
+
+remaster::dx11::ShaderCombo::ShaderCombo()
+{
+}
+
+remaster::dx11::ShaderCombo::~ShaderCombo()
+{
+	Clear();
+}
+
+void remaster::dx11::ShaderCombo::Clear()
+{
+	ReleasePixelShaders();
+	ReleaseVertexShaders();
+	ReleaseBlobs();
+
+	m_vecPixelShaders.Clear();
+	m_vecVertexShaders.Clear();
+	m_vecBlobs.Clear();
+}
+
+void remaster::dx11::ShaderCombo::ReleaseBlobs()
+{
+	for ( TINT i = 0; i < m_vecBlobs.Size(); i++ )
+	{
+		ID3DBlob* pBlob = m_vecBlobs[ i ];
+		if ( pBlob )
+		{
+			pBlob->Release();
+			m_vecBlobs[ i ] = TNULL;
+		}
+	}
+}
+
+void remaster::dx11::ShaderCombo::ReleaseVertexShaders()
+{
+	for ( TINT i = 0; i < m_vecVertexShaders.Size(); i++ )
+	{
+		ID3D11VertexShader* pVertexShader = m_vecVertexShaders[ i ];
+		if ( pVertexShader )
+		{
+			pVertexShader->Release();
+			m_vecVertexShaders[ i ] = TNULL;
+		}
+	}
+}
+
+void remaster::dx11::ShaderCombo::ReleasePixelShaders()
+{
+	for ( TINT i = 0; i < m_vecPixelShaders.Size(); i++ )
+	{
+		ID3D11PixelShader* pPixelShader = m_vecPixelShaders[ i ];
+		if ( pPixelShader )
+		{
+			pPixelShader->Release();
+			m_vecPixelShaders[ i ] = TNULL;
+		}
+	}
+}
+
+TBOOL remaster::dx11::ShaderCombo::CompileFromFile( const TCHAR* a_pchFilepath, LPCSTR a_pEntrypoint, LPCSTR a_pTarget, const ShaderComboDefinition* a_pCombos, TUINT a_uiNumCombos, TUINT a_uiNumPermutations )
+{
+	ReleaseBlobs();
+	m_vecBlobs.Clear();
+
+	TString8 strSource;
+	if ( !ReadShaderSourceFile( a_pchFilepath, strSource ) )
+		return TFALSE;
+
+	if ( a_uiNumPermutations == 0 )
+		return TFALSE;
+
+	m_vecBlobs.SetSize( a_uiNumPermutations, TNULL );
+
+	ShaderCompileWorkerContext context;
+	context.pchFilepath        = a_pchFilepath;
+	context.pchSource          = strSource.GetString();
+	context.pEntrypoint        = a_pEntrypoint;
+	context.pTarget            = a_pTarget;
+	context.pCombos            = a_pCombos;
+	context.uiNumCombos        = a_uiNumCombos;
+	context.uiNumPermutations  = a_uiNumPermutations;
+	context.ppBlobs            = &m_vecBlobs[ 0 ];
+	context.iNextIndex         = 0;
+	context.iFailed            = 0;
+
+	const TUINT uiThreadCount = GetShaderCompileThreadCount( a_uiNumPermutations );
+	if ( uiThreadCount == 1 )
+	{
+		ShaderCompileWorkerProc( &context );
+	}
+	else
+	{
+		T2DynamicVector<HANDLE> vecThreads( GetGlobalAllocator(), uiThreadCount, uiThreadCount );
+		vecThreads.SetSize( uiThreadCount, TNULL );
+
+		TUINT uiCreatedThreads = 0;
+		for ( TUINT i = 0; i < uiThreadCount; i++ )
+		{
+			vecThreads[ i ] = CreateThread( TNULL, 0, ShaderCompileWorkerProc, &context, 0, TNULL );
+			if ( !vecThreads[ i ] )
+				break;
+
+			uiCreatedThreads++;
+		}
+
+		if ( uiCreatedThreads == 0 )
+		{
+			context.iNextIndex = 0;
+			ShaderCompileWorkerProc( &context );
+		}
+		else
+		{
+			WaitForMultipleObjects( uiCreatedThreads, &vecThreads[ 0 ], TRUE, INFINITE );
+
+			for ( TUINT i = 0; i < uiCreatedThreads; i++ )
+				CloseHandle( vecThreads[ i ] );
+		}
+	}
+
+	if ( context.iFailed != 0 )
+	{
+		ReleaseBlobs();
+		return TFALSE;
+	}
+
+	for ( TUINT uiIndex = 0; uiIndex < a_uiNumPermutations; uiIndex++ )
+	{
+		if ( !m_vecBlobs[ uiIndex ] )
+		{
+			ReleaseBlobs();
+			return TFALSE;
+		}
+	}
+
+	return TTRUE;
+}
+
+TBOOL remaster::dx11::ShaderCombo::CreateVertexShaders()
+{
+	ReleaseVertexShaders();
+
+	if ( m_vecBlobs.IsEmpty() )
+		return TFALSE;
+
+	if ( m_vecVertexShaders.Size() != m_vecBlobs.Size() )
+	{
+		m_vecVertexShaders.Clear();
+		m_vecVertexShaders.SetSize( m_vecBlobs.Size(), TNULL );
+	}
+
+	for ( TINT i = 0; i < m_vecBlobs.Size(); i++ )
+	{
+		ID3DBlob* pBlob = m_vecBlobs[ i ];
+		TVALIDPTR( pBlob );
+		if ( !pBlob )
+			return TFALSE;
+
+		DX11_API_VALIDATE_EXIT( CreateVertexShader( pBlob->GetBufferPointer(), pBlob->GetBufferSize(), &m_vecVertexShaders[ i ] ) );
+	}
+
+	return TTRUE;
+}
+
+TBOOL remaster::dx11::ShaderCombo::CreatePixelShaders()
+{
+	ReleasePixelShaders();
+
+	if ( m_vecBlobs.IsEmpty() )
+		return TFALSE;
+
+	if ( m_vecPixelShaders.Size() != m_vecBlobs.Size() )
+	{
+		m_vecPixelShaders.Clear();
+		m_vecPixelShaders.SetSize( m_vecBlobs.Size(), TNULL );
+	}
+
+	for ( TINT i = 0; i < m_vecBlobs.Size(); i++ )
+	{
+		ID3DBlob* pBlob = m_vecBlobs[ i ];
+		TVALIDPTR( pBlob );
+		if ( !pBlob )
+			return TFALSE;
+
+		DX11_API_VALIDATE_EXIT( CreatePixelShader( pBlob->GetBufferPointer(), pBlob->GetBufferSize(), &m_vecPixelShaders[ i ] ) );
+	}
+
+	return TTRUE;
+}
+
+ID3DBlob* remaster::dx11::ShaderCombo::GetBlob( TUINT a_uiIndex ) const
+{
+	TASSERT( a_uiIndex < TUINT( m_vecBlobs.Size() ) );
+	if ( a_uiIndex >= TUINT( m_vecBlobs.Size() ) )
+		return TNULL;
+
+	return m_vecBlobs[ a_uiIndex ];
+}
+
+ID3D11VertexShader* remaster::dx11::ShaderCombo::GetVertexShader( TUINT a_uiIndex ) const
+{
+	TASSERT( a_uiIndex < TUINT( m_vecVertexShaders.Size() ) );
+	if ( a_uiIndex >= TUINT( m_vecVertexShaders.Size() ) )
+		return TNULL;
+
+	return m_vecVertexShaders[ a_uiIndex ];
+}
+
+ID3D11PixelShader* remaster::dx11::ShaderCombo::GetPixelShader( TUINT a_uiIndex ) const
+{
+	TASSERT( a_uiIndex < TUINT( m_vecPixelShaders.Size() ) );
+	if ( a_uiIndex >= TUINT( m_vecPixelShaders.Size() ) )
+		return TNULL;
+
+	return m_vecPixelShaders[ a_uiIndex ];
+}
+
+ID3D11VertexShader** remaster::dx11::ShaderCombo::GetVertexShaderPtr( TUINT a_uiIndex )
+{
+	TASSERT( a_uiIndex < TUINT( m_vecVertexShaders.Size() ) );
+	if ( a_uiIndex >= TUINT( m_vecVertexShaders.Size() ) )
+		return TNULL;
+
+	return &m_vecVertexShaders[ a_uiIndex ];
+}
+
+ID3D11PixelShader** remaster::dx11::ShaderCombo::GetPixelShaderPtr( TUINT a_uiIndex )
+{
+	TASSERT( a_uiIndex < TUINT( m_vecPixelShaders.Size() ) );
+	if ( a_uiIndex >= TUINT( m_vecPixelShaders.Size() ) )
+		return TNULL;
+
+	return &m_vecPixelShaders[ a_uiIndex ];
+}
+
+ID3DBlob* remaster::dx11::CompileShader( const TCHAR* a_pchSrcData, LPCSTR a_pEntrypoint, LPCSTR a_pTarget, const D3D_SHADER_MACRO* a_pDefines )
+{
+	return CompileShaderInternal( a_pchSrcData, TNULL, a_pEntrypoint, a_pTarget, a_pDefines, TNULL );
 }
 
 ID3DBlob* remaster::dx11::CompileShaderFromFile( const TCHAR* a_pchFilepath, LPCSTR a_pEntrypoint, LPCSTR a_pTarget, const D3D_SHADER_MACRO* a_pDefines )
@@ -46,7 +527,8 @@ ID3DBlob* remaster::dx11::CompileShaderFromFile( const TCHAR* a_pchFilepath, LPC
 	srcData[ fileSize ] = '\0';
 	pFile->Destroy();
 
-	ID3DBlob* shader = CompileShader( srcData, a_pEntrypoint, a_pTarget, a_pDefines );
+	ShaderIncludeHandler includeHandler( a_pchFilepath );
+	ID3DBlob* shader = CompileShaderInternal( srcData, a_pchFilepath, a_pEntrypoint, a_pTarget, a_pDefines, &includeHandler );
 	delete[] srcData;
 
 	return shader;

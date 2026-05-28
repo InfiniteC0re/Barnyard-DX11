@@ -1,0 +1,49 @@
+#include "ScreenSpace.hlsl"
+
+Texture2D    aoTexture    : register( t0 );
+Texture2D    depthTexture : register( t1 );
+SamplerState pointSampler : register( s0 );
+SamplerState linearSampler : register( s1 );
+
+cbuffer HBAOBlurCBuffer : register( b1 )
+{
+    float4 cb_BlurParams; // invWidth, invHeight, directionX, directionY
+    float4 cb_DepthParams; // near, far, sharpness, unused
+};
+
+float LinearizeDepth( float hardwareDepth )
+{
+    float invNear = 1.0f / max( cb_DepthParams.x, 0.00001f );
+    float invFar = 1.0f / max( cb_DepthParams.y, cb_DepthParams.x + 0.00001f );
+    return 1.0f / ( hardwareDepth * ( invFar - invNear ) + invNear );
+}
+
+float ps_main( PS_IN i ) : SV_TARGET
+{
+    float centerDepth = LinearizeDepth( depthTexture.SampleLevel( pointSampler, i.UV, 0 ).r );
+    float2 delta = cb_BlurParams.xy * cb_BlurParams.zw;
+
+    float totalAO = aoTexture.SampleLevel( pointSampler, i.UV, 0 ).r;
+    float totalWeight = 1.0f;
+
+    [unroll]
+    for ( int r = 1; r <= 4; r++ )
+    {
+        float kernel = exp2( -(float)( r * r ) / 8.0f );
+
+        [unroll]
+        for ( int side = -1; side <= 1; side += 2 )
+        {
+            float2 sampleUV = i.UV + delta * (float)( r * side );
+            float sampleDepth = LinearizeDepth( depthTexture.SampleLevel( pointSampler, sampleUV, 0 ).r );
+            float depthWeight = exp2( -abs( sampleDepth - centerDepth ) * cb_DepthParams.z );
+            float weight = kernel * depthWeight;
+
+            totalAO += aoTexture.SampleLevel( linearSampler, sampleUV, 0 ).r * weight;
+            totalWeight += weight;
+        }
+    }
+
+    // Return scalar -- the RT is R16_FLOAT so only the R channel is stored.
+    return totalAO / totalWeight;
+}

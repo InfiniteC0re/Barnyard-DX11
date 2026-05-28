@@ -64,6 +64,12 @@ project "ERRender"
 	filter "files:**.c"
 		flags { "NoPCH" }
 
+	filter "files:Source/DirectXTex/**"
+		flags { "NoPCH" }
+
+	filter "files:Source/ImGuizmo/**"
+		flags { "NoPCH" }
+
 	filter "configurations:Debug"
 		links { "freetype_debug.lib" }
 

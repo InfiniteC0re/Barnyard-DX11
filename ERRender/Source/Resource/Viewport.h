@@ -6,4 +6,6 @@ namespace remaster
 
 void SetupRenderHooks_Viewport();
 
+extern TBOOL g_bAllowClearingDepth;
+
 }; // namespace remaster

@@ -1,5 +1,9 @@
 #pragma once
+#include "RenderDX11.h"
+
 #include <d3d11.h>
+#include <Toshi/TString8.h>
+#include <ToshiTools/T2DynamicVector.h>
 
 namespace remaster
 {
@@ -11,6 +15,45 @@ ID3DBlob* CompileShader( const TCHAR* a_pchSrcData, LPCSTR a_pEntrypoint, LPCSTR
 ID3DBlob* CompileShaderFromFile( const TCHAR* a_pchFilepath, LPCSTR a_pEntrypoint, LPCSTR a_pTarget, const D3D_SHADER_MACRO* a_pDefines );
 HRESULT   CreatePixelShader( const void* a_pShaderBytecode, SIZE_T a_uiBytecodeLength, ID3D11PixelShader** a_ppPixelShader );
 HRESULT   CreateVertexShader( const void* a_pShaderBytecode, SIZE_T a_uiBytecodeLength, ID3D11VertexShader** a_ppVertexShader );
+
+struct ShaderComboDefinition
+{
+	const TCHAR* pchName;
+	TINT         iMinValue;
+	TINT         iMaxValue;
+	TUINT        uiStride;
+};
+
+class ShaderCombo
+{
+public:
+	ShaderCombo();
+	~ShaderCombo();
+
+	ShaderCombo( const ShaderCombo& )            = delete;
+	ShaderCombo& operator=( const ShaderCombo& ) = delete;
+
+	TBOOL CompileFromFile( const TCHAR* a_pchFilepath, LPCSTR a_pEntrypoint, LPCSTR a_pTarget, const ShaderComboDefinition* a_pCombos, TUINT a_uiNumCombos, TUINT a_uiNumPermutations );
+	TBOOL CreateVertexShaders();
+	TBOOL CreatePixelShaders();
+	void  Clear();
+
+	ID3DBlob*            GetBlob( TUINT a_uiIndex ) const;
+	ID3D11VertexShader*  GetVertexShader( TUINT a_uiIndex ) const;
+	ID3D11PixelShader*   GetPixelShader( TUINT a_uiIndex ) const;
+	ID3D11VertexShader** GetVertexShaderPtr( TUINT a_uiIndex );
+	ID3D11PixelShader**  GetPixelShaderPtr( TUINT a_uiIndex );
+	TUINT                GetNumPermutations() const { return TUINT( m_vecBlobs.Size() ); }
+
+private:
+	void ReleaseBlobs();
+	void ReleaseVertexShaders();
+	void ReleasePixelShaders();
+
+	Toshi::T2DynamicVector<ID3DBlob*>           m_vecBlobs;
+	Toshi::T2DynamicVector<ID3D11VertexShader*> m_vecVertexShaders;
+	Toshi::T2DynamicVector<ID3D11PixelShader*>  m_vecPixelShaders;
+};
 
 ID3D11Buffer* CreateBuffer(
     TUINT       a_uiFlags,

@@ -2,12 +2,16 @@
 #include "WorldShader.h"
 #include "WorldMaterial.h"
 #include "WorldMesh.h"
+#include "Generated/WorldShaderCombos.h"
+#include "Generated/ShadowDepthShaderCombos.h"
 #include "Resource/ClassPatcher.h"
 #include "Ref/AWorld.h"
 
 #include "RenderDX11.h"
 #include "RenderDX11Utils.h"
 #include "RenderContentDX11.h"
+#include "CSM/CSMManager.h"
+#include "DynamicGlowLights.h"
 
 #include <Render/TRenderPacket.h>
 #include <Platform/DX8/TRenderInterface_DX8.h>
@@ -48,6 +52,7 @@ void remaster::SetupRenderHooks_WorldShader()
 }
 
 remaster::WorldShaderDX11::WorldShaderDX11()
+    : m_pDynamicGlowLightBuffer( TNULL )
 {
 	// Set Singleton
 	*(AWorldShader**)( 0x0079a854 ) = this;
@@ -55,6 +60,11 @@ remaster::WorldShaderDX11::WorldShaderDX11()
 
 remaster::WorldShaderDX11::~WorldShaderDX11()
 {
+	if ( m_pDynamicGlowLightBuffer )
+	{
+		m_pDynamicGlowLightBuffer->Release();
+		m_pDynamicGlowLightBuffer = TNULL;
+	}
 }
 
 void remaster::WorldShaderDX11::Flush()
@@ -62,7 +72,6 @@ void remaster::WorldShaderDX11::Flush()
 	g_pRender->SetDepthWrite( TTRUE );
 	g_pRender->SetBlendEnabled( TTRUE );
 	g_pRender->SetCullMode( TFALSE ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
-
 	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
 }
 
@@ -72,11 +81,28 @@ void remaster::WorldShaderDX11::StartFlush()
 {
 	if ( !IsValidated() ) return;
 
+	if ( g_pCSMManager && g_pCSMManager->IsRenderingShadowPass() )
+	{
+		g_pRender->SetDepthEnabled( TTRUE );
+		g_pRender->SetDepthWrite( TTRUE );
+		g_pRender->SetBlendEnabled( TFALSE );
+		g_pRender->SetAlphaToCoverageEnabled( TFALSE );
+		g_pRender->SetCullMode( D3D11_CULL_FRONT );
+		return;
+	}
+
 	g_pRender->SetDepthWrite( TTRUE );
 	g_pRender->SetBlendEnabled( TTRUE );
 	g_pRender->SetCullMode( TFALSE ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
 
 	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
+
+	if ( g_bCSMEnabled && g_pCSMManager && g_flShadowIntensity > 0.0f )
+	{
+		g_pRender->PSSetShaderResource( 2, g_pCSMManager->GetShadowSRV() );
+		g_pRender->PSSetSamplerState( 2, g_pCSMManager->GetShadowSampler() );
+		g_pRender->PSSetConstantBuffer( 1, g_pRender->GetShadowConstantBuffer() );
+	}
 
 	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
 	s_flFogDensity                      = dx11::CalculateFogDensity(
@@ -87,20 +113,44 @@ void remaster::WorldShaderDX11::StartFlush()
 
 void remaster::WorldShaderDX11::EndFlush()
 {
-	g_pRender->SetShaderResource( 0, TNULL );
-	g_pRender->SetShaderResource( 1, TNULL );
+	if ( g_pCSMManager && g_pCSMManager->IsRenderingShadowPass() )
+		return;
+
+	g_pRender->PSSetShaderResource( 0, TNULL );
+	g_pRender->PSSetShaderResource( 1, TNULL );
+	g_pRender->PSSetShaderResource( 2, TNULL );
+	g_pRender->PSSetShaderResource( 6, TNULL );
+	g_pRender->PSSetConstantBuffer( 2, TNULL );
+
+	g_pRender->SetBlendEnabled( TFALSE );
+
+	g_pRender->SetCullMode( D3D11_CULL_NONE );
+	g_pRender->SetDepthWrite( TTRUE );
+	g_pRender->SetBlendEnabled( TFALSE );
+}
+
+void remaster::WorldShaderDX11::UploadDynamicGlowLights( Toshi::TRenderPacket* a_pRenderPacket )
+{
+	UploadDynamicGlowLightsCBuffer( a_pRenderPacket, m_pDynamicGlowLightBuffer );
 }
 
 TBOOL remaster::WorldShaderDX11::Create()
 {
-	m_aOrderTables[ 0 ].Create( this, -3000 );
-	m_aOrderTables[ 1 ].Create( this, 100 );
-	m_aOrderTables[ 2 ].Create( this, 101 );
-	m_aOrderTables[ 3 ].Create( this, 601 );
-	m_aOrderTables[ 4 ].Create( this, -400 );
-	m_aOrderTables[ 5 ].Create( this, 500 );
-	m_aOrderTables[ 6 ].Create( this, -6005 );
+	// Render with the same priority before everything to make the world serve as kind of depth prepass for rendering instances and skinned models
+	m_aOrderTables[ 0 ].Create( this, -7000 );
+	m_aOrderTables[ 1 ].Create( this, -7000 );
+	m_aOrderTables[ 2 ].Create( this, -7000 );
+	m_aOrderTables[ 3 ].Create( this, -7000 );
+	m_aOrderTables[ 4 ].Create( this, -7000 );
+	m_aOrderTables[ 5 ].Create( this, -7000 );
+	m_aOrderTables[ 6 ].Create( this, -7000 );
 	m_aOrderTables[ 7 ].Create( this, -7000 );
+
+	m_oShadowTable.Create( this, 0 );
+
+	m_oDummyMaterial.SetShader( this );
+	m_oDummyMaterial.SetOrderTable( &m_oShadowTable, 0 );
+	m_oDummyMaterial.CreateDummy();
 
 	return BaseClass::Create();
 }
@@ -110,16 +160,9 @@ TBOOL remaster::WorldShaderDX11::Validate()
 	if ( IsValidated() )
 		return TTRUE;
 
-	D3D_SHADER_MACRO aAlphaRefShaderMacro[] = { "ALPHAREF", "1", TNULL, TNULL };
-
-	m_pVSShaderBlob          = dx11::CompileShaderFromFile( "Data\\Shaders\\World.hlsl", "vs_main", "vs_5_0", TNULL );
-	m_pPSShaderBlob_Blending = dx11::CompileShaderFromFile( "Data\\Shaders\\World.hlsl", "ps_main", "ps_5_0", TNULL );
-	m_pPSShaderBlob_AlphaRef = dx11::CompileShaderFromFile( "Data\\Shaders\\World.hlsl", "ps_main", "ps_5_0", aAlphaRefShaderMacro );
-
-	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob_Blending && m_pPSShaderBlob_AlphaRef );
-	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_oShaderPipeline_AlphaRef.pVertexShader ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_AlphaRef->GetBufferPointer(), m_pPSShaderBlob_AlphaRef->GetBufferSize(), &m_oShaderPipeline_AlphaRef.pPixelShader ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob_Blending->GetBufferPointer(), m_pPSShaderBlob_Blending->GetBufferSize(), &m_oShaderPipeline_Blending.pPixelShader ) );
+	dx11::ShaderCombo& rWorldVSCombo       = shadercombos::GetWorldVertexShaderCombo_vs_main();
+	dx11::ShaderCombo& rWorldPSCombo       = shadercombos::GetWorldPixelShaderCombo_ps_main();
+	dx11::ShaderCombo& rShadowDepthVSCombo = shadercombos::GetShadowDepthVertexShaderCombo_vs_main_world();
 
 	D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
 		{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
@@ -128,23 +171,34 @@ TBOOL remaster::WorldShaderDX11::Validate()
 		{ .SemanticName = "TEXCOORD", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32_FLOAT, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
 	};
 
+	ID3D11InputLayout* pWorldInputLayout = TNULL;
 	DX11_API_VALIDATE(
 	    g_pRender->GetD3D11Device()->CreateInputLayout(
 	        aInputElements,
 	        TARRAYSIZE( aInputElements ),
-	        m_pVSShaderBlob->GetBufferPointer(),
-	        m_pVSShaderBlob->GetBufferSize(),
-	        &m_oShaderPipeline_AlphaRef.pInputLayout
+	        rWorldVSCombo.GetBlob( 0 )->GetBufferPointer(),
+	        rWorldVSCombo.GetBlob( 0 )->GetBufferSize(),
+	        &pWorldInputLayout
 	    )
 	);
 
-	// Both shaders share the same vertex shader and input layout
-	m_oShaderPipeline_Blending.pVertexShader = m_oShaderPipeline_AlphaRef.pVertexShader;
-	m_oShaderPipeline_Blending.pInputLayout  = m_oShaderPipeline_AlphaRef.pInputLayout;
+	ID3D11InputLayout* pShadowInputLayout = TNULL;
+	DX11_API_VALIDATE(
+	    g_pRender->GetD3D11Device()->CreateInputLayout(
+	        aInputElements,
+	        TARRAYSIZE( aInputElements ),
+	        rShadowDepthVSCombo.GetBlob( 0 )->GetBufferPointer(),
+	        rShadowDepthVSCombo.GetBlob( 0 )->GetBufferSize(),
+	        &pShadowInputLayout
+	    )
+	);
 
-	m_oShaderPipeline_Blending.SetName( "World_Blending" );
-	m_oShaderPipeline_AlphaRef.SetName( "World_AlphaRef" );
-	
+	TASSERT( shadercombos::CreateWorldShaderPipelines( rWorldVSCombo, &rWorldPSCombo, pWorldInputLayout, m_vecWorldPipelines, "World" ) );
+	TASSERT( shadercombos::CreateShadowDepthShaderPipelines( rShadowDepthVSCombo, TNULL, pShadowInputLayout, m_vecShadowDepthPipelines, "World_Shadow" ) );
+
+	if ( !m_pDynamicGlowLightBuffer )
+		TASSERT( CreateDynamicGlowLightsCBuffer( &m_pDynamicGlowLightBuffer ) );
+
 	return BaseClass::Validate();
 }
 
@@ -162,6 +216,8 @@ TBOOL remaster::WorldShaderDX11::TryValidate()
 	return TFALSE;
 }
 
+extern TBOOL g_bHasGlowObjectsThisFrame;
+
 void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 {
 	if ( !a_pRenderPacket || !a_pRenderPacket->GetMesh() ) return;
@@ -172,18 +228,81 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	AWorldMeshHAL*      pMesh           = TSTATICCAST( AWorldMeshHAL, a_pRenderPacket->GetMesh() );
 	AWorldMaterialHAL*  pMaterial       = TSTATICCAST( AWorldMaterialHAL, pMesh->GetMaterial() );
 
+	if ( g_pCSMManager && g_pCSMManager->IsRenderingShadowPass() )
+	{
+		g_pRender->SetShaderPipelineState( m_vecShadowDepthPipelines[ shadercombos::GetShadowDepthComboIndex( 0 ) ] );
+
+		TMatrix44 mShadowMVP;
+		mShadowMVP.Multiply( g_pCSMManager->GetCurrentLightProjection(), a_pRenderPacket->GetModelViewMatrix() );
+		g_pRender->VSBufferSetMat4( 0, mShadowMVP );
+
+		TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
+		TIndexPoolResource*  pIndexPool  = TSTATICCAST( TIndexPoolResource, pMesh->GetSubMesh( 0 )->pIndexPool );
+		TVALIDPTR( pVertexPool );
+		TVALIDPTR( pIndexPool );
+
+		TVertexBlockResource::HALBuffer vertexBuffer;
+		CALL_THIS( 0x006d6660, TVertexPoolResource*, TBOOL, pVertexPool, TVertexBlockResource::HALBuffer&, vertexBuffer ); // pVertexPool->GetHALBuffer( &vertexBuffer );
+
+		TIndexBlockResource::HALBuffer indexBuffer;
+		CALL_THIS( 0x006d6180, TIndexPoolResource*, TBOOL, pIndexPool, TIndexBlockResource::HALBuffer&, indexBuffer ); // pIndexPool->GetHALBuffer( &indexBuffer );
+
+		g_pRender->DrawIndexed(
+		    D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
+		    pIndexPool->GetNumIndices(),
+		    (ID3D11Buffer*)indexBuffer.pIndexBuffer,
+		    indexBuffer.uiIndexOffset,
+		    DXGI_FORMAT_R16_UINT,
+		    (ID3D11Buffer*)vertexBuffer.apVertexBuffers[ 0 ],
+		    sizeof( WorldVertex ),
+		    vertexBuffer.uiVertexOffset,
+		    TNULL
+		);
+		return;
+	}
+
+	// Normal pass
+	const TBOOL bIsGlowing = pMaterial->GetFlags() & TMaterial::FLAGS_GLOW;
+
+	ID3D11RenderTargetView* pOldRenderTargetView;
+	ID3D11DepthStencilView* pOldDepthStencilView;
+	if ( bIsGlowing )
+	{
+		g_bHasGlowObjectsThisFrame = TTRUE;
+		g_pRender->GetRenderTargetView( pOldRenderTargetView, pOldDepthStencilView );
+		g_pRender->SetRenderTargetView( g_pRender->GetD3D11GlowRenderTargetView(), pOldDepthStencilView );
+	}
+
 	const TFLOAT flPacketAlpha = a_pRenderPacket->GetAlpha();
 	const TBOOL  bIsBlending   = pMaterial->GetBlendMode() != 0 || flPacketAlpha < 1.0f || pMaterial->IsBlending();
+	const TBOOL  bHasDynLight  = g_bDynamicGlowEnabled && a_pRenderPacket->m_ui8Unk1 >= 0;
+	g_pRender->SetBlendEnabled( bIsBlending );
 
 	// Use either blending shader or alpharef shader
 	// The only used alpharef value is 128, so no need to dynamically change it
-	g_pRender->SetShaderPipelineState( bIsBlending ? m_oShaderPipeline_Blending : m_oShaderPipeline_AlphaRef );
+	TUINT uiComboFlags = bIsBlending ? 0 : shadercombos::World_ALPHAREF;
+	if ( bIsGlowing || pMesh->IsWater() || !g_bCSMEnabled || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
+		uiComboFlags |= shadercombos::World_NO_CSM;
+	if ( bIsGlowing || !pCurrentContext->IsFogEnabled() || s_flFogDensity <= 0.0f )
+		uiComboFlags |= shadercombos::World_NO_FOG;
+	if ( !g_bDynamicGlowEnabled )
+		uiComboFlags |= shadercombos::World_NO_DYN_LIGHT;
+	if ( bIsGlowing )
+		uiComboFlags |= shadercombos::World_GLOW;
+	if ( !bHasDynLight )
+		uiComboFlags |= shadercombos::World_NO_DYN_LIGHT;
+
+	g_pRender->SetShaderPipelineState( m_vecWorldPipelines[ shadercombos::GetWorldComboIndex( uiComboFlags ) ] );
 
 	// Fill vertex constant buffer
 	// Setup model view projection matrix
 	TMatrix44 mMVP;
 	mMVP.Multiply( pCurrentContext->GetProjectionMatrix(), a_pRenderPacket->GetModelViewMatrix() );
 	g_pRender->VSBufferSetMat4( 0, mMVP );
+
+	TMatrix44 mModel;
+	mModel.Multiply( pCurrentContext->GetViewWorldMatrix(), a_pRenderPacket->GetModelViewMatrix() );
+	g_pRender->VSBufferSetMat4( 9, mModel );
 	
 	// Setup UV offset and alpha
 	TVector4 vecUVOffsetAndAlpha;
@@ -216,6 +335,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	g_pRender->VSBufferSetVec4( 7, vMiscSettings );
 	g_pRender->VSBufferSetVec4( 8, vFogColor );
+	if ( bHasDynLight ) UploadDynamicGlowLights( a_pRenderPacket );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
@@ -238,8 +358,15 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	    DXGI_FORMAT_R16_UINT,
 	    (ID3D11Buffer*)vertexBuffer.apVertexBuffers[ 0 ],
 	    sizeof( WorldVertex ),
-	    vertexBuffer.uiVertexOffset
+	    vertexBuffer.uiVertexOffset,
+	    TNULL
 	);
+
+	// Restore usual render target if needed
+	if ( bIsGlowing )
+	{
+		g_pRender->SetRenderTargetView( pOldRenderTargetView, pOldDepthStencilView );
+	}
 }
 
 void remaster::WorldShaderDX11::EnableRenderEnvMap( TBOOL a_bEnable )

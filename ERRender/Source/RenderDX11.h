@@ -1,6 +1,7 @@
 #pragma once
 #include "UI/FontAtlas.h"
 #include "SDLWindow.h"
+#include "CSM/CSMManager.h"
 
 #include <Toshi/TDList.h>
 #include <Toshi/T2Pair.h>
@@ -13,7 +14,7 @@
 #include <Platform/DX8/TMSWindow.h>
 
 #include <xmmintrin.h>
-#include <d3d11.h>
+#include <d3d11_1.h>
 
 #define DX11_API_VALIDATE( CALL )       \
 	{                                   \
@@ -38,12 +39,14 @@ class RenderDX11 : public Toshi::TRenderInterface
 public:
 	TDECLARE_CLASS( RenderDX11, Toshi::TRenderInterface );
 
+	static constexpr TUINT MSAA_SAMPLE_COUNT            = 4;
 	static constexpr TSIZE HEAPSIZE                     = 0x10000;
-	static constexpr TSIZE VERTEX_CONSTANT_BUFFER_SIZE  = 0x1000;
+	static constexpr TSIZE VERTEX_CONSTANT_BUFFER_SIZE  = 0x400;
 	static constexpr TSIZE PIXEL_CONSTANT_BUFFER_SIZE   = 0x400;
+	static constexpr TSIZE SHADOW_CONSTANT_BUFFER_SIZE  = sizeof( ShadowCBufferData );
 	static constexpr TSIZE NUMBUFFERS                   = 1;
-	static constexpr TSIZE IMMEDIATE_VERTEX_BUFFER_SIZE = 0x100;
-	static constexpr TSIZE IMMEDIATE_INDEX_BUFFER_SIZE  = 0x10;
+	static constexpr TSIZE IMMEDIATE_VERTEX_BUFFER_SIZE = 0x4000;
+	static constexpr TSIZE IMMEDIATE_INDEX_BUFFER_SIZE  = 0x1000;
 
 	typedef TUINT8 BlendMode;
 	enum BlendMode_ : BlendMode
@@ -101,7 +104,7 @@ public:
 
 		TINT   DepthBias;
 		TFLOAT SlopeScaledDepthBias;
-		TBOOL operator!=( const RasterizerId& other ) const { return Flags.Raw != other.Flags.Raw || DepthBias != other.DepthBias || SlopeScaledDepthBias != other.SlopeScaledDepthBias; }
+		TBOOL  operator!=( const RasterizerId& other ) const { return Flags.Raw != other.Flags.Raw || DepthBias != other.DepthBias || SlopeScaledDepthBias != other.SlopeScaledDepthBias; }
 	};
 
 	struct RasterizerIdComparator
@@ -110,7 +113,7 @@ public:
 		{
 			if ( a.Flags.Raw < b.Flags.Raw && a.DepthBias < b.DepthBias && a.SlopeScaledDepthBias < b.SlopeScaledDepthBias )
 				return 1;
-			
+
 			if ( a.Flags.Raw == b.Flags.Raw && a.DepthBias == b.DepthBias && a.SlopeScaledDepthBias == b.SlopeScaledDepthBias )
 				return 0;
 
@@ -219,6 +222,7 @@ public:
 public:
 	TBOOL Create( const TCHAR* a_pchWindowTitle );
 	void  CreateRenderObjects();
+	void  CreateRenderTargets();
 
 	ID3D11SamplerState* CreateSamplerState(
 	    D3D11_FILTER               filter,
@@ -276,7 +280,8 @@ public:
 	void SetZMode( TBOOL a_bDepthEnable, D3D11_COMPARISON_FUNC a_eComparisonFunc, D3D11_DEPTH_WRITE_MASK a_eDepthWriteMask );
 	void SetDepthClip( TBOOL a_bClip );
 	void SetDepthBias( TINT a_iDepthBias );
-	void SetAlphaToCoverageEnabled( TBOOL a_bEnabled ) { m_BlendState.Parts.bAlphaToCoverage = a_bEnabled; }
+	void SetSlopeScaledDepthBias( TFLOAT a_fDepthBias );
+	void SetAlphaToCoverageEnabled( TBOOL a_bEnabled ) { m_BlendState.Parts.bAlphaToCoverage = TFALSE; }
 
 	D3D11_BLEND_OP        GetBlendOp() const { return m_BlendState.Parts.BlendOp; }
 	TBOOL                 IsBlendEnabled() const { return m_BlendState.Parts.bBlendEnabled; }
@@ -284,23 +289,36 @@ public:
 	D3D11_COMPARISON_FUNC GetDepthFunc() const { return TCAST( D3D11_COMPARISON_FUNC, m_DepthState.first.Parts.DepthFunc ); }
 
 	void DrawImmediately( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUINT a_iIndexCount, const void* a_pIndexData, DXGI_FORMAT a_eFormat, const void* a_pVertexData, TUINT a_iStrideSize, TUINT a_iStrides );
-	void DrawIndexed( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUINT a_uiIndexCount, ID3D11Buffer* a_pIndexBuffer, TUINT a_uiIndexBufferOffset, DXGI_FORMAT a_eIndexBufferFormat, ID3D11Buffer* a_pVertexBuffer, TUINT a_pStrides, TUINT a_pOffsets );
-	void DrawNonIndexed( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveTopology, ID3D11Buffer* a_pVertexBuffer, TUINT a_uiVertexCount, TUINT a_uiStrides, TUINT a_uiStartVertex, TUINT a_uiOffsets );
+	void DrawScreenRectangle();
+	void DrawScreenRectangle( ID3D11PixelShader* a_pPixelShader );
+	void DrawScreenRectangle( TFLOAT a_fX, TFLOAT a_fY, TFLOAT a_fWidth, TFLOAT a_fHeight );
+	void DrawScreenRectangle( ID3D11PixelShader* a_pPixelShader, TFLOAT a_fX, TFLOAT a_fY, TFLOAT a_fWidth, TFLOAT a_fHeight );
+	void DrawIndexed( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUINT a_uiIndexCount, ID3D11Buffer* a_pIndexBuffer, TUINT a_uiIndexBufferOffset, DXGI_FORMAT a_eIndexBufferFormat, ID3D11Buffer* a_pVertexBuffer, TUINT a_pStrides, TUINT a_pOffsets, ID3D11Buffer* a_pConstantBuffer );
+	void DrawIndexedInstanced( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveType, TUINT a_uiIndexCount, TUINT a_uiInstanceCount, ID3D11Buffer* a_pIndexBuffer, TUINT a_uiIndexBufferOffset, DXGI_FORMAT a_eIndexBufferFormat, ID3D11Buffer* a_pVertexBuffer, TUINT a_pStrides, TUINT a_pOffsets, ID3D11Buffer* a_pConstantBuffer, TUINT a_uiStartInstanceLocation = 0 );
+	void DrawNonIndexed( D3D11_PRIMITIVE_TOPOLOGY a_ePrimitiveTopology, ID3D11Buffer* a_pVertexBuffer, TUINT a_uiVertexCount, TUINT a_uiStrides, TUINT a_uiStartVertex, TUINT a_uiOffsets, ID3D11Buffer* a_pConstantBuffer );
 	void CopyDataToTexture( ID3D11ShaderResourceView* a_pSRTex, TUINT a_uiDataSize, const void* a_pData, TUINT a_uiTextureSize );
 	void SetCullMode( D3D11_CULL_MODE a_eMode ) { m_RasterizerState.Flags.Parts.CullMode = a_eMode; }
 	void WaitForEndOfRender();
 	void UpdateRenderStates();
 	void FlushConstantBuffers();
+	void UpdateShadowCBuffer( const ShadowCBufferData& a_rData );
+
+	void FlushShaders();
 
 	void ClearStateCache()
 	{
-		m_eCurrentTopology     = decltype( m_eCurrentTopology )( ~TUINT( m_eCurrentTopology ) );
-		m_pCurrentVertexBuffer = decltype( m_pCurrentVertexBuffer )( ~TUINT( m_pCurrentVertexBuffer ) );
-		m_uiVBCurrentStride    = decltype( m_uiVBCurrentStride )( ~TUINT( m_uiVBCurrentStride ) );
-		m_uiVBCurrentOffset    = decltype( m_uiVBCurrentOffset )( ~TUINT( m_uiVBCurrentOffset ) );
-		m_pCurrentIndexBuffer  = decltype( m_pCurrentIndexBuffer )( ~TUINT( m_pCurrentIndexBuffer ) );
-		m_eIBCurrentFormat     = decltype( m_eIBCurrentFormat )( ~TUINT( m_eIBCurrentFormat ) );
-		m_uiIBCurrentOffset    = decltype( m_uiIBCurrentOffset )( ~TUINT( m_uiIBCurrentOffset ) );
+		m_pCurrentRenderTargetView       = decltype( m_pCurrentRenderTargetView )( ~TUINT( m_pCurrentRenderTargetView ) );
+		m_pCurrentDepthStencilView       = decltype( m_pCurrentDepthStencilView )( ~TUINT( m_pCurrentDepthStencilView ) );
+		m_eCurrentTopology               = decltype( m_eCurrentTopology )( ~TUINT( m_eCurrentTopology ) );
+		m_pCurrentVertexBuffer           = decltype( m_pCurrentVertexBuffer )( ~TUINT( m_pCurrentVertexBuffer ) );
+		m_uiVBCurrentStride              = decltype( m_uiVBCurrentStride )( ~TUINT( m_uiVBCurrentStride ) );
+		m_uiVBCurrentOffset              = decltype( m_uiVBCurrentOffset )( ~TUINT( m_uiVBCurrentOffset ) );
+		m_pCurrentIndexBuffer            = decltype( m_pCurrentIndexBuffer )( ~TUINT( m_pCurrentIndexBuffer ) );
+		m_eIBCurrentFormat               = decltype( m_eIBCurrentFormat )( ~TUINT( m_eIBCurrentFormat ) );
+		m_uiIBCurrentOffset              = decltype( m_uiIBCurrentOffset )( ~TUINT( m_uiIBCurrentOffset ) );
+		m_PreviousRasterizerId.Flags.Raw = ~m_RasterizerState.Flags.Raw;
+		m_PreviousDepth.first.Raw        = ~m_DepthState.first.Raw;
+		m_PreviousBlendState.Raw         = ~m_BlendState.Raw;
 	}
 
 	void SetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY a_eCurrentTopology )
@@ -394,9 +412,26 @@ public:
 		}
 	}
 
+	void PSSetSamplerState( TUINT a_uiStartSlot, ID3D11SamplerState* a_pSampler )
+	{
+		TASSERT( a_uiStartSlot < TARRAYSIZE( m_aPSCurrentSampleStates ) );
+
+		if ( m_aPSCurrentSampleStates[ a_uiStartSlot ] != a_pSampler )
+		{
+			m_pDeviceContext->PSSetSamplers( a_uiStartSlot, 1, &a_pSampler );
+			m_aPSCurrentSampleStates[ a_uiStartSlot ] = a_pSampler;
+		}
+	}
+
 	void ClearRenderTarget( ID3D11RenderTargetView* a_pRenderTargetView, const TFLOAT a_pColorRGBA[ 4 ] )
 	{
 		m_pDeviceContext->ClearRenderTargetView( a_pRenderTargetView, a_pColorRGBA );
+	}
+
+	void DiscardView( ID3D11View* a_pView )
+	{
+		if ( m_pDeviceContext1 )
+			m_pDeviceContext1->DiscardView( a_pView );
 	}
 
 	void ClearCurrentRenderTarget( const TFLOAT a_pColorRGBA[ 4 ] )
@@ -406,25 +441,29 @@ public:
 
 	struct ShaderPipelineState
 	{
-		ID3D11VertexShader* pVertexShader;
-		ID3D11PixelShader*  pPixelShader;
-		ID3D11InputLayout*  pInputLayout;
-		
-		void SetName( const TCHAR* a_pchName );
+		ID3D11VertexShader** ppVertexShader;
+		ID3D11PixelShader**  ppPixelShader;
+		ID3D11InputLayout*   pInputLayout;
+
+		ID3D11VertexShader* GetVertexShader() const { return ppVertexShader ? *ppVertexShader : TNULL; }
+		ID3D11PixelShader*  GetPixelShader() const { return ppPixelShader ? *ppPixelShader : TNULL; }
+		void                SetName( const TCHAR* a_pchName );
 	};
 
 	void GetCurrentShaderPipelineState( ShaderPipelineState& a_rOutState ) const
 	{
-		a_rOutState.pVertexShader = m_pCurrentVertexShader;
-		a_rOutState.pPixelShader  = m_pCurrentPixelShader;
-		a_rOutState.pInputLayout  = m_pCurrentInputLayout;
+		m_pCurrentPipelineVertexShaderSlot = m_pCurrentVertexShader;
+		m_pCurrentPipelinePixelShaderSlot  = m_pCurrentPixelShader;
+		a_rOutState.ppVertexShader         = &m_pCurrentPipelineVertexShaderSlot;
+		a_rOutState.ppPixelShader          = &m_pCurrentPipelinePixelShaderSlot;
+		a_rOutState.pInputLayout           = m_pCurrentInputLayout;
 	}
 
 	void SetShaderPipelineState( const ShaderPipelineState& a_rPipelineState )
 	{
 		SetInputLayout( a_rPipelineState.pInputLayout );
-		SetVertexShader( a_rPipelineState.pVertexShader );
-		SetPixelShader( a_rPipelineState.pPixelShader );
+		SetVertexShader( a_rPipelineState.GetVertexShader() );
+		SetPixelShader( a_rPipelineState.GetPixelShader() );
 	}
 
 	ID3D11VertexShader* GetVertexShader() const { return m_pCurrentVertexShader; }
@@ -458,18 +497,27 @@ public:
 		}
 	}
 
-	ID3D11ShaderResourceView* GetShaderResource( TUINT a_uiSlot ) const
+	ID3D11ShaderResourceView* PSGetShaderResource( TUINT a_uiSlot ) const
 	{
 		TASSERT( a_uiSlot < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT );
-		return m_apShaderResourceViews[ a_uiSlot ];
+		return m_apShaderResourceViewsPS[ a_uiSlot ];
 	}
 
-	void SetShaderResource( TUINT a_uiSlot, ID3D11ShaderResourceView* a_pResourceView )
+	void PSSetShaderResource( TUINT a_uiSlot, ID3D11ShaderResourceView* a_pResourceView )
 	{
-		if ( m_apShaderResourceViews[ a_uiSlot ] != a_pResourceView )
+		if ( m_apShaderResourceViewsPS[ a_uiSlot ] != a_pResourceView )
 		{
-			m_apShaderResourceViews[ a_uiSlot ] = a_pResourceView;
+			m_apShaderResourceViewsPS[ a_uiSlot ] = a_pResourceView;
 			m_pDeviceContext->PSSetShaderResources( a_uiSlot, 1, &a_pResourceView );
+		}
+	}
+
+	void VSSetShaderResource( TUINT a_uiSlot, ID3D11ShaderResourceView* a_pResourceView )
+	{
+		if ( m_apShaderResourceViewsVS[ a_uiSlot ] != a_pResourceView )
+		{
+			m_apShaderResourceViewsVS[ a_uiSlot ] = a_pResourceView;
+			m_pDeviceContext->VSSetShaderResources( a_uiSlot, 1, &a_pResourceView );
 		}
 	}
 
@@ -483,51 +531,72 @@ public:
 	ID3D11DeviceContext*                 GetD3D11DeviceContext() const { return m_pDeviceContext; }
 	IDXGISwapChain*                      GetD3D11SwapChain() const { return m_pSwapChain; }
 	ID3D11RenderTargetView*              GetD3D11RenderTargetView() const { return m_pRenderTargetView; }
+	ID3D11ShaderResourceView*            GetD3D11RenderTargetSRV() const { return m_pRenderTargetSRV; }
+	ID3D11Texture2D*                     GetD3D11RenderTargetTexture() const { return m_pRenderTargetTexture; }
+	ID3D11RenderTargetView*              GetD3D11GlowRenderTargetView() const { return m_pGlowRenderTargetView; }
+	ID3D11ShaderResourceView*            GetD3D11GlowRenderTargetSRV() const { return m_pGlowRenderTargetSRV; }
+	ID3D11Texture2D*                     GetD3D11GlowRenderTargetTexture() const { return m_pGlowRenderTargetTexture; }
 	ID3D11DepthStencilView*              GetD3D11DepthStencilView() const { return m_pDepthStencilView; }
+	ID3D11ShaderResourceView*            GetD3D11DepthStencilSRV() const { return m_pDepthStencilSRV; }
+	ID3D11Buffer*                        GetShadowConstantBuffer() const { return m_pShadowConstantBuffer; }
+	ID3D11Buffer*                        GetDepthPassConstantBuffer() const { return m_pDepthPassConstantBuffer; }
+	ID3D11PixelShader*                   GetRedTintPixelShader() const { return m_pRedTintPixelShader; }
+
+	const DXGI_SWAP_CHAIN_DESC* GetSwapChainDesc() const { return &m_oSwapChainDesc; }
 
 	TFLOAT GetSurfaceWidth() const { return TFLOAT( m_oSwapChainDesc.BufferDesc.Width ); }
 	TFLOAT GetSurfaceHeight() const { return TFLOAT( m_oSwapChainDesc.BufferDesc.Height ); }
 
 	FontAtlas* GetFontAtlas( FONT a_eFontIndex ) const { return m_pFontAtlases[ a_eFontIndex ]; }
 
+	CSMManager& GetCSMManager() { return m_oCSMManager; }
+
 private:
 	void BuildAdapterDatabase();
 
 private:
-	ID3D11Device*        m_pDevice        = TNULL; // NOTE: DUE TO COMPATIBILITY, IT NEEDS TO BE AT THIS OFFSET!!!
-	ID3D11DeviceContext* m_pDeviceContext = TNULL; // NOTE: DUE TO COMPATIBILITY, IT NEEDS TO BE AT THIS OFFSET!!!
+	ID3D11Device*         m_pDevice         = TNULL; // NOTE: DUE TO COMPATIBILITY, IT NEEDS TO BE AT THIS OFFSET!!!
+	ID3D11DeviceContext*  m_pDeviceContext  = TNULL; // NOTE: DUE TO COMPATIBILITY, IT NEEDS TO BE AT THIS OFFSET!!!
 
 	// Things left from TRenderD3DInterface (D3D8)
 	TBYTE                                PADDING1[ 84 ];
-	TFLOAT                               m_fPixelAspectRatio;               // Pixel aspect ratio
-	HACCEL                               m_AcceleratorTable;                // Accelerator table
-	Toshi::TRenderAdapter::Mode::Device* m_pAdapterDevice;                  // Current device
-	DISPLAYPARAMS                        m_oDisplayParams;                  // Display parameters
-	
-	SDLWindow                            m_Window;                          // Window
-	TBOOL                                m_bExited;                         // Exit flag
-	TFLOAT                               m_fContrast;                       // Contrast value
-	TFLOAT                               m_fBrightness;                     // Brightness value
-	TFLOAT                               m_fGamma;                          // Gamma value
-	TFLOAT                               m_fSaturate;                       // Saturation value
-	TBOOL                                m_bChangedColourSettings;          // Color settings changed flag
-	TBOOL                                m_bCheckedCapableColourCorrection; // Color correction capability checked flag
-	TBOOL                                m_bCapableColourCorrection;        // Color correction capability flag
-	TBOOL                                m_bEnableColourCorrection;         // Color correction enabled flag
-	TBYTE                                PADDING2[ 1536 ];
-	TBOOL                                m_bFailed;     // Failure flag
-	void*                                m_Unk1;        // Unknown 1
-	void*                                m_Unk2;        // Unknown 2
-	Toshi::TPriList<Toshi::TOrderTable>  m_OrderTables; // Order tables
+	TFLOAT                               m_fPixelAspectRatio; // Pixel aspect ratio
+	HACCEL                               m_AcceleratorTable;  // Accelerator table
+	Toshi::TRenderAdapter::Mode::Device* m_pAdapterDevice;    // Current device
+	DISPLAYPARAMS                        m_oDisplayParams;    // Display parameters
+
+	SDLWindow                           m_Window;                          // Window
+	TBOOL                               m_bExited;                         // Exit flag
+	TFLOAT                              m_fContrast;                       // Contrast value
+	TFLOAT                              m_fBrightness;                     // Brightness value
+	TFLOAT                              m_fGamma;                          // Gamma value
+	TFLOAT                              m_fSaturate;                       // Saturation value
+	TBOOL                               m_bChangedColourSettings;          // Color settings changed flag
+	TBOOL                               m_bCheckedCapableColourCorrection; // Color correction capability checked flag
+	TBOOL                               m_bCapableColourCorrection;        // Color correction capability flag
+	TBOOL                               m_bEnableColourCorrection;         // Color correction enabled flag
+	TBYTE                               PADDING2[ 1536 ];
+	TBOOL                               m_bFailed;     // Failure flag
+	void*                               m_Unk1;        // Unknown 1
+	void*                               m_Unk2;        // Unknown 2
+	Toshi::TPriList<Toshi::TOrderTable> m_OrderTables; // Order tables
 
 	// D3D11 main objects
-	D3D_FEATURE_LEVEL       m_eFeatureLevel;
-	IDXGISwapChain*         m_pSwapChain           = TNULL;
-	ID3D11RenderTargetView* m_pRenderTargetView    = TNULL;
-	ID3D11Texture2D*        m_pRenderTargetTexture = TNULL;
-	ID3D11Texture2D*        m_pDepthStencilTexture = TNULL;
-	ID3D11DepthStencilView* m_pDepthStencilView    = TNULL;
-	DXGI_SWAP_CHAIN_DESC    m_oSwapChainDesc;
+	D3D_FEATURE_LEVEL         m_eFeatureLevel;
+	IDXGISwapChain*           m_pSwapChain               = TNULL;
+	ID3D11Texture2D*          m_pSwapChainBackBuffer     = TNULL;
+	ID3D11RenderTargetView*   m_pRenderTargetView        = TNULL;
+	ID3D11Texture2D*          m_pRenderTargetTexture     = TNULL;
+	ID3D11ShaderResourceView* m_pRenderTargetSRV         = TNULL;
+	ID3D11Texture2D*          m_pDepthStencilTexture     = TNULL;
+	ID3D11DepthStencilView*   m_pDepthStencilView        = TNULL;
+	ID3D11ShaderResourceView* m_pDepthStencilSRV         = TNULL;
+	ID3D11RenderTargetView*   m_pGlowRenderTargetView    = TNULL;
+	ID3D11Texture2D*          m_pGlowRenderTargetTexture = TNULL;
+	ID3D11ShaderResourceView* m_pGlowRenderTargetSRV     = TNULL;
+	DXGI_SWAP_CHAIN_DESC      m_oSwapChainDesc;
+
+	ID3D11DeviceContext1* m_pDeviceContext1 = TNULL; // D3D11.1 context
 
 	// Font rendering
 	// TODO: move this away from here
@@ -553,9 +622,18 @@ private:
 	ID3D11Buffer* m_MainIndexBuffer;
 	TUINT         m_iImmediateIndexCurrentOffset;
 
+	ID3D11Buffer* m_pShadowConstantBuffer;
+
+	ID3D11Buffer* m_pDepthPassConstantBuffer;
+
+	ID3D11VertexShader* m_pScreenRectangleVertexShader;
+	ID3D11PixelShader*  m_pRedTintPixelShader;
+	ID3D11InputLayout*  m_pScreenRectangleInputLayout;
+
 	// Various states
 	TFLOAT              m_aClearColor[ 4 ];
 	ID3D11SamplerState* m_aSamplerStates[ 12 ];
+	CSMManager          m_oCSMManager;
 
 	// Depth states
 	Toshi::T2Map<DepthState, ID3D11DepthStencilState*, DepthStateComparator> m_DepthStatesTree;
@@ -593,11 +671,14 @@ private:
 	ID3D11RenderTargetView* m_pCurrentRenderTargetView;
 	ID3D11DepthStencilView* m_pCurrentDepthStencilView;
 
-	ID3D11VertexShader* m_pCurrentVertexShader;
-	ID3D11PixelShader*  m_pCurrentPixelShader;
-	ID3D11InputLayout*  m_pCurrentInputLayout;
+	ID3D11VertexShader*         m_pCurrentVertexShader;
+	ID3D11PixelShader*          m_pCurrentPixelShader;
+	ID3D11InputLayout*          m_pCurrentInputLayout;
+	mutable ID3D11VertexShader* m_pCurrentPipelineVertexShaderSlot;
+	mutable ID3D11PixelShader*  m_pCurrentPipelinePixelShaderSlot;
 
-	ID3D11ShaderResourceView* m_apShaderResourceViews[ D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT ];
+	ID3D11ShaderResourceView* m_apShaderResourceViewsPS[ D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT ];
+	ID3D11ShaderResourceView* m_apShaderResourceViewsVS[ D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT ];
 };
 
 extern RenderDX11* g_pRender;

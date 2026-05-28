@@ -1,3 +1,5 @@
+// STATIC: "TEXTURED" "0..1"
+
 struct VS_IN
 {
     float3 ObjPos : POSITION;
@@ -36,7 +38,7 @@ SamplerState sampler0 : register(s0);
 
 float4 ps_main(PS_IN In) : SV_TARGET
 {
-#ifdef TEXTURED
+#if TEXTURED
 	float4 color = texture0.Sample(sampler0, In.UV0);
 
 	color.xyz *= In.Color.xyz;

@@ -1,3 +1,7 @@
+// STATIC: "TEXTURED" "0..1"
+// STATIC: "FONT" "0..1"
+// STATIC: "ALPHA_REF" "0..1"
+
 struct VS_IN
 {
     float3 position : POSITION;
@@ -34,16 +38,17 @@ SamplerState ui_texture_sampler : register(s0);
 
 float4 ps_main(PS_IN input) : SV_TARGET
 {
-#if defined(TEXTURED)
+#if TEXTURED
 
     float4 texColor = ui_texture.Sample(ui_texture_sampler, input.texcoord);
-
-    // texColor.a = 0.3f;
-    if (texColor.a < 0.235f) discard;
+	
+#if ALPHA_REF
+    clip(texColor.a - 60.0f / 255.0f);
+#endif
 
     return texColor * input.color;
 
-#elif defined(FONT) // TEXTURED
+#elif FONT // TEXTURED
 
     float sdf = ui_texture.Sample(ui_texture_sampler, input.texcoord).r;
     float pxRange = 0.03f;

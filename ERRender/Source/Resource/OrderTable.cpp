@@ -6,6 +6,7 @@
 #include <HookHelpers.h>
 
 #include <Render/TOrderTable.h>
+#include <Render/TShader.h>
 
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
@@ -17,7 +18,7 @@ TOSHI_NAMESPACE_USING
 
 HOOK( 0x006d5a60, TOrderTable_CreateStaticData, void, TUINT a_uiMaxMaterials, TUINT a_uiMaxRenderPackets )
 {
-	Toshi::TOrderTable::CreateStaticData( a_uiMaxMaterials, a_uiMaxRenderPackets );
+	Toshi::TOrderTable::CreateStaticData( a_uiMaxMaterials, a_uiMaxRenderPackets * 2 );
 }
 
 MEMBER_HOOK( 0x006d58e0, TOrderTable, TOrderTable_Create, void, Toshi::TShader* a_pShader, TINT a_iPriority )
@@ -39,12 +40,43 @@ MEMBER_HOOK( 0x006d5c60, TOrderTable, TOrderTable_DeregisterMaterial, void, Tosh
 
 MEMBER_HOOK( 0x006d5970, TOrderTable, TOrderTable_Flush, void )
 {
-	Flush();
+	TPROFILER_SCOPE();
+
+	if ( s_uiMaxNumRenderPackets < s_uiNumRenderPackets )
+	{
+		s_uiMaxNumRenderPackets = s_uiNumRenderPackets;
+	}
+
+	if ( m_pLastRegMat != TNULL )
+	{
+		m_pShader->StartFlush();
+
+		for ( auto it = m_pLastRegMat; it != TNULL; it = it->GetNextRegMat() )
+		{
+			it->Render();
+		}
+
+		m_pShader->EndFlush();
+	}
+
+	s_uiNumRenderPackets = 0;
+	m_pLastRegMat        = TNULL;
 }
 
 MEMBER_HOOK( 0x006d5910, TOrderTable, TOrderTable_Render, void )
 {
-	Render();
+	TPROFILER_SCOPE();
+
+	if ( m_pLastRegMat != TNULL )
+	{
+		for ( auto it = m_pLastRegMat; it != TNULL; it = it->GetNextRegMat() )
+		{
+			it->Render();
+		}
+	}
+
+	s_uiNumRenderPackets = 0;
+	m_pLastRegMat        = TNULL;
 }
 
 MEMBER_HOOK( 0x006d5d60, TOrderTable, TOrderTable_Destructor, void )

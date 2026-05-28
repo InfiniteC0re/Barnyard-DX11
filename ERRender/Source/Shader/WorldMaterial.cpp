@@ -62,17 +62,13 @@ void remaster::WorldMaterial::PreRender()
 	{
 		auto pTexture = TSTATICCAST( TTextureResourceHAL, m_aTextures[ i ] );
 
-		if ( pTexture == TNULL )
-		{
-			//g_pRender->GetD3D11DeviceContext()->PSSetShaderResources( 0, 0, TNULL );
-		}
-		else
+		if ( pTexture )
 		{
 			pTexture->Validate();
 			auto pD3DTexture = (ID3D11ShaderResourceView*)pTexture->GetD3DTexture();
 
 			if ( pD3DTexture )
-				g_pRender->SetShaderResource( 0, pD3DTexture );
+				g_pRender->PSSetShaderResource( 0, pD3DTexture );
 
 			if ( pTexture->GetAddressUState() == ADDRESSINGMODE_CLAMP && pTexture->GetAddressVState() == ADDRESSINGMODE_CLAMP )
 				g_pRender->PSSetSamplerState( i, 1 );
@@ -81,60 +77,81 @@ void remaster::WorldMaterial::PreRender()
 		}
 	}
 
-	// Animate UV
-	TFLOAT fDeltaTime = Toshi::g_oSystemManager.GetScheduler()->GetCurrentDeltaTime();
-	m_fUVAnimX += fDeltaTime * m_fUVAnimSpeedX;
-	m_fUVAnimY += fDeltaTime * m_fUVAnimSpeedY;
-
-	// Make sure value of m_fUVAnimX is in [-1; 1] range so we won't overflow
-	if ( m_fUVAnimX <= 1.0f )
+	if ( !remaster::g_pRender->GetCSMManager().IsRenderingShadowPass() )
 	{
-		if ( m_fUVAnimX < -1.0f && !isnan( m_fUVAnimX ) )
+		// Normal pass
+
+		// Animate UV
+		TFLOAT fDeltaTime = Toshi::g_oSystemManager.GetScheduler()->GetCurrentDeltaTime();
+		m_fUVAnimX += fDeltaTime * m_fUVAnimSpeedX;
+		m_fUVAnimY += fDeltaTime * m_fUVAnimSpeedY;
+
+		// Make sure value of m_fUVAnimX is in [-1; 1] range so we won't overflow
+		if ( m_fUVAnimX <= 1.0f )
 		{
-			m_fUVAnimX += 1.0f;
+			if ( m_fUVAnimX < -1.0f && !isnan( m_fUVAnimX ) )
+			{
+				m_fUVAnimX += 1.0f;
+			}
+		}
+		else
+		{
+			m_fUVAnimX -= 1.0f;
+		}
+
+		// Make sure value of m_fUVAnimY is in [-1; 1] range so we won't overflow
+		if ( m_fUVAnimY <= 1.0f )
+		{
+			if ( m_fUVAnimY < -1.0f && !isnan( m_fUVAnimY ) )
+			{
+				m_fUVAnimY += 1.0f;
+			}
+		}
+		else
+		{
+			m_fUVAnimY -= 1.0f;
+		}
+
+		// Save current UV offset
+		m_aHasUVOffsets[ 0 ] = TTRUE;
+		m_aUVOffsetsX[ 0 ]   = m_fUVAnimX;
+		m_aUVOffsetsY[ 0 ]   = m_fUVAnimY;
+
+		// Apply blend settings
+		switch ( m_eBlendMode )
+		{
+			case 1:
+				g_pRender->SetBlendMode( g_pRender->IsBlendEnabled(), g_pRender->GetBlendOp(), D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
+				g_pRender->SetDepthWrite( TFALSE );
+				break;
+			case 3:
+				g_pRender->SetBlendMode( g_pRender->IsBlendEnabled(), g_pRender->GetBlendOp(), D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ONE );
+				g_pRender->SetDepthWrite( TFALSE );
+				break;
+			default:
+				g_pRender->SetBlendMode( g_pRender->IsBlendEnabled(), g_pRender->GetBlendOp(), D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
+				g_pRender->SetDepthWrite( TTRUE );
+				break;
 		}
 	}
 	else
 	{
-		m_fUVAnimX -= 1.0f;
-	}
+		// Shadow pass
 
-	// Make sure value of m_fUVAnimY is in [-1; 1] range so we won't overflow
-	if ( m_fUVAnimY <= 1.0f )
-	{
-		if ( m_fUVAnimY < -1.0f && !isnan( m_fUVAnimY ) )
+		// Apply blend settings
+		switch ( m_eBlendMode )
 		{
-			m_fUVAnimY += 1.0f;
+			case 1:
+			case 3:
+				g_pRender->SetDepthWrite( TFALSE );
+				break;
+			default:
+				g_pRender->SetDepthWrite( TTRUE );
+				break;
 		}
-	}
-	else
-	{
-		m_fUVAnimY -= 1.0f;
-	}
 
-	// Save current UV offset
-	m_aHasUVOffsets[ 0 ] = TTRUE;
-	m_aUVOffsetsX[ 0 ]   = m_fUVAnimX;
-	m_aUVOffsetsY[ 0 ]   = m_fUVAnimY;
-
-	// Apply blend settings
-	switch ( m_eBlendMode )
-	{
-		case 1:
-			g_pRender->SetBlendMode( g_pRender->IsBlendEnabled(), g_pRender->GetBlendOp(), D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
-			g_pRender->SetDepthWrite( TFALSE );
-			break;
-		case 3:
-			g_pRender->SetBlendMode( g_pRender->IsBlendEnabled(), g_pRender->GetBlendOp(), D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ONE );
-			g_pRender->SetDepthWrite( TFALSE );
-			break;
-		default:
-			g_pRender->SetBlendMode( g_pRender->IsBlendEnabled(), g_pRender->GetBlendOp(), D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
-			g_pRender->SetDepthWrite( TTRUE );
-			break;
+		g_pRender->SetCullMode( D3D11_CULL_NONE );
 	}
-
-	g_pRender->SetCullMode( D3D11_CULL_NONE );
 }
 
 void remaster::WorldMaterial::PostRender()
@@ -182,6 +199,11 @@ void remaster::WorldMaterial::SetBlendMode( BLENDMODE a_eBlendMode )
 	}
 
 	BaseClass::SetBlendMode( a_eBlendMode );
+}
+
+TBOOL remaster::WorldMaterial::CreateDummy()
+{
+	return AWorldMaterial::Create( 0 );
 }
 
 void remaster::WorldMaterial::CopyToAlphaBlendMaterial()

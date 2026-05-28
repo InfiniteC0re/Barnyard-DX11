@@ -1,8 +1,11 @@
 #pragma once
 #include "RenderDX11.h"
+#include "RenderDX11Utils.h"
+#include "WorldMaterial.h"
 #include "Ref/AWorldShader/AWorldShader_DX8.h"
 
 #include <d3d11.h>
+#include <ToshiTools/T2DynamicVector.h>
 
 namespace remaster
 {
@@ -74,6 +77,9 @@ public:
 	// Probably used in debug mode but is stripped out in release
 	virtual void* CreateUnknown( void*, void*, void*, void* );
 
+private:
+	void UploadDynamicGlowLights( Toshi::TRenderPacket* a_pRenderPacket );
+
 public:
 	Toshi::TOrderTable* GetOrderTable( TUINT a_uiIndex )
 	{
@@ -81,8 +87,31 @@ public:
 		return &m_aOrderTables[ a_uiIndex ];
 	}
 
+	Toshi::TOrderTable* GetShadowOrderTable()
+	{
+		return &m_oShadowTable;
+	}
+
+	remaster::WorldMaterial* GetShadowMaterial()
+	{
+		return &m_oDummyMaterial;
+	}
+
 	const Toshi::TVector4& GetShadowColour() const { return m_ShadowColour; }
 	const Toshi::TVector4& GetAmbientColour() const { return m_AmbientColour; }
+
+	void SetColours( const Toshi::TVector4& a_rShadowColour, const Toshi::TVector4 a_rAmbientColour )
+	{
+		m_ShadowColour  = a_rShadowColour;
+		m_AmbientColour = a_rAmbientColour;
+
+		Toshi::TMath::Clip( m_ShadowColour.x, 0.0f, 1.0f );
+		Toshi::TMath::Clip( m_ShadowColour.y, 0.0f, 1.0f );
+		Toshi::TMath::Clip( m_ShadowColour.z, 0.0f, 1.0f );
+		Toshi::TMath::Clip( m_AmbientColour.x, 0.0f, 1.0f );
+		Toshi::TMath::Clip( m_AmbientColour.y, 0.0f, 1.0f );
+		Toshi::TMath::Clip( m_AmbientColour.z, 0.0f, 1.0f );
+	}
 
 private:
 	Toshi::TNodeList<AUnknown> m_SomeList;
@@ -98,12 +127,13 @@ private:
 	Toshi::TVector4            m_ShadowColour;
 	Toshi::TVector4            m_AmbientColour;
 
-	ID3DBlob* m_pVSShaderBlob;
-	ID3DBlob* m_pPSShaderBlob_AlphaRef;
-	ID3DBlob* m_pPSShaderBlob_Blending;
+	Toshi::T2DynamicVector<RenderDX11::ShaderPipelineState> m_vecWorldPipelines;
+	Toshi::T2DynamicVector<RenderDX11::ShaderPipelineState> m_vecShadowDepthPipelines;
 
-	RenderDX11::ShaderPipelineState m_oShaderPipeline_AlphaRef;
-	RenderDX11::ShaderPipelineState m_oShaderPipeline_Blending;
+	ID3D11Buffer* m_pDynamicGlowLightBuffer;
+
+	inline static Toshi::TOrderTable      m_oShadowTable;
+	inline static remaster::WorldMaterial m_oDummyMaterial;
 };
 
 }; // namespace remaster

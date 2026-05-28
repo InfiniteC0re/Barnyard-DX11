@@ -2,10 +2,14 @@
 #include "GrassShader.h"
 #include "GrassMesh.h"
 #include "GrassMaterial.h"
+#include "Generated/GrassShaderCombos.h"
+#include "Generated/ShadowDepthShaderCombos.h"
 #include "Resource/ClassPatcher.h"
 #include "RenderDX11Utils.h"
 #include "RenderContentDX11.h"
 #include "WorldShader.h"
+#include "CSM/CSMManager.h"
+#include "DynamicGlowLights.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -48,6 +52,7 @@ static TVector4     g_vecAnimOffset;
 static const TFLOAT g_fAnimationSpeed = 2.25f;
 
 remaster::GrassShaderDX11::GrassShaderDX11()
+    : m_pDynamicGlowLightBuffer( TNULL )
 {
 	// Set Singleton
 	*(AGrassShader**)( 0x0079aa24 ) = this;
@@ -55,6 +60,11 @@ remaster::GrassShaderDX11::GrassShaderDX11()
 
 remaster::GrassShaderDX11::~GrassShaderDX11()
 {
+	if ( m_pDynamicGlowLightBuffer )
+	{
+		m_pDynamicGlowLightBuffer->Release();
+		m_pDynamicGlowLightBuffer = TNULL;
+	}
 }
 
 void remaster::GrassShaderDX11::Flush()
@@ -71,8 +81,26 @@ void remaster::GrassShaderDX11::StartFlush()
 {
 	if ( !IsValidated() ) return;
 
+	if ( g_pCSMManager && g_pCSMManager->IsRenderingShadowPass() )
+	{
+		g_pRender->SetDepthEnabled( TTRUE );
+		g_pRender->SetDepthWrite( TTRUE );
+		g_pRender->SetBlendEnabled( TFALSE );
+		g_pRender->SetAlphaToCoverageEnabled( TFALSE );
+		g_pRender->SetCullMode( D3D11_CULL_FRONT );
+		UpdateAnimation();
+		return;
+	}
+
 	g_pRender->PSSetSamplerState( 0, 2 );
 	g_pRender->SetDepthWrite( TTRUE );
+
+	if ( g_bCSMEnabled && g_pCSMManager && g_flShadowIntensity > 0.0f )
+	{
+		g_pRender->PSSetShaderResource( 2, g_pCSMManager->GetShadowSRV() );
+		g_pRender->PSSetSamplerState( 2, g_pCSMManager->GetShadowSampler() );
+		g_pRender->PSSetConstantBuffer( 1, g_pRender->GetShadowConstantBuffer() );
+	}
 
 	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
 	s_flFogDensity                      = dx11::CalculateFogDensity(
@@ -83,29 +111,17 @@ void remaster::GrassShaderDX11::StartFlush()
 	g_pRender->SetCullMode( D3D11_CULL_FRONT );
 		
 	UpdateAnimation();
-
-
-	{
-// 		pD3DDevice->SetRenderState( D3DRS_ZWRITEENABLE, TRUE );
-// 		pD3DDevice->SetRenderState( D3DRS_ALPHATESTENABLE, TRUE );
-// 		pD3DDevice->SetRenderState( D3DRS_ALPHABLENDENABLE, FALSE );
-// 		pD3DDevice->SetRenderState( D3DRS_ALPHAFUNC, 5 );
-// 
-// 		pD3DDevice->SetTextureStageState( 0, D3DTSS_COLOROP, 4 );
-// 		pD3DDevice->SetTextureStageState( 0, D3DTSS_COLORARG1, 2 );
-// 		pD3DDevice->SetTextureStageState( 0, D3DTSS_COLORARG2, 0 );
-// 		pD3DDevice->SetTextureStageState( 0, D3DTSS_ALPHAOP, 4 );
-// 		pD3DDevice->SetTextureStageState( 0, D3DTSS_ALPHAARG1, 2 );
-// 		pD3DDevice->SetTextureStageState( 0, D3DTSS_ALPHAARG2, 0 );
-// 		pD3DDevice->SetTextureStageState( 1, D3DTSS_COLOROP, 1 );
-// 		pD3DDevice->SetTextureStageState( 1, D3DTSS_ALPHAOP, 1 );
-
-	}
 }
 
 void remaster::GrassShaderDX11::EndFlush()
 {
+	if ( g_pCSMManager && g_pCSMManager->IsRenderingShadowPass() )
+		return;
+
 	g_pRender->SetBlendEnabled( TTRUE );
+	g_pRender->PSSetShaderResource( 2, TNULL );
+	g_pRender->PSSetShaderResource( 6, TNULL );
+	g_pRender->PSSetConstantBuffer( 2, TNULL );
 
 // 	TRenderD3DInterface* pRenderInterface = TRenderD3DInterface::Interface();
 // 	IDirect3DDevice8*    pD3DDevice       = pRenderInterface->GetDirect3DDevice();
@@ -128,14 +144,9 @@ TBOOL remaster::GrassShaderDX11::Validate()
 	if ( IsValidated() )
 		return TTRUE;
 
-	//D3D_SHADER_MACRO aTexturedShaderMacro[] = { "TEXTURED", "1", TNULL, TNULL };
-
-	m_pVSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\Grass.hlsl", "vs_main", "vs_5_0", TNULL );
-	m_pPSShaderBlob = dx11::CompileShaderFromFile( "Data\\Shaders\\Grass.hlsl", "ps_main", "ps_5_0", TNULL );
-
-	TASSERT( m_pVSShaderBlob && m_pPSShaderBlob );
-	DX11_API_VALIDATE( dx11::CreateVertexShader( m_pVSShaderBlob->GetBufferPointer(), m_pVSShaderBlob->GetBufferSize(), &m_oShaderPipeline.pVertexShader ) );
-	DX11_API_VALIDATE( dx11::CreatePixelShader( m_pPSShaderBlob->GetBufferPointer(), m_pPSShaderBlob->GetBufferSize(), &m_oShaderPipeline.pPixelShader ) );
+	dx11::ShaderCombo& rGrassVSCombo       = shadercombos::GetGrassVertexShaderCombo_vs_main();
+	dx11::ShaderCombo& rGrassPSCombo       = shadercombos::GetGrassPixelShaderCombo_ps_main();
+	dx11::ShaderCombo& rShadowDepthVSCombo = shadercombos::GetShadowDepthVertexShaderCombo_vs_main_world();
 
 	D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
 		{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
@@ -144,17 +155,33 @@ TBOOL remaster::GrassShaderDX11::Validate()
 		{ .SemanticName = "TEXCOORD", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32_FLOAT, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
 	};
 
+	ID3D11InputLayout* pGrassInputLayout = TNULL;
 	DX11_API_VALIDATE(
 	    g_pRender->GetD3D11Device()->CreateInputLayout(
 	        aInputElements,
 	        TARRAYSIZE( aInputElements ),
-	        m_pVSShaderBlob->GetBufferPointer(),
-	        m_pVSShaderBlob->GetBufferSize(),
-	        &m_oShaderPipeline.pInputLayout
+	        rGrassVSCombo.GetBlob( 0 )->GetBufferPointer(),
+	        rGrassVSCombo.GetBlob( 0 )->GetBufferSize(),
+	        &pGrassInputLayout
 	    )
 	);
 
-	m_oShaderPipeline.SetName( "Grass" );
+	ID3D11InputLayout* pShadowInputLayout = TNULL;
+	DX11_API_VALIDATE(
+	    g_pRender->GetD3D11Device()->CreateInputLayout(
+	        aInputElements,
+	        TARRAYSIZE( aInputElements ),
+	        rShadowDepthVSCombo.GetBlob( 0 )->GetBufferPointer(),
+	        rShadowDepthVSCombo.GetBlob( 0 )->GetBufferSize(),
+	        &pShadowInputLayout
+	    )
+	);
+
+	TASSERT( shadercombos::CreateGrassShaderPipelines( rGrassVSCombo, &rGrassPSCombo, pGrassInputLayout, m_vecGrassPipelines, "Grass" ) );
+	TASSERT( shadercombos::CreateShadowDepthShaderPipelines( rShadowDepthVSCombo, TNULL, pShadowInputLayout, m_vecShadowDepthPipelines, "Grass_Shadow" ) );
+
+	if ( !m_pDynamicGlowLightBuffer )
+		TASSERT( CreateDynamicGlowLightsCBuffer( &m_pDynamicGlowLightBuffer ) );
 
 	return BaseClass::Validate();
 }
@@ -185,13 +212,59 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	GrassMesh*          pMesh           = TSTATICCAST( GrassMesh, a_pRenderPacket->GetMesh() );
 	GrassMaterial*      pMaterial       = TSTATICCAST( GrassMaterial, pMesh->GetMaterial() );
 
-	g_pRender->SetShaderPipelineState( m_oShaderPipeline );
+	if ( g_pCSMManager && g_pCSMManager->IsRenderingShadowPass() )
+	{
+		g_pRender->SetShaderPipelineState( m_vecShadowDepthPipelines[ shadercombos::GetShadowDepthComboIndex( 0 ) ] );
+
+		TMatrix44 mShadowMVP;
+		mShadowMVP.Multiply( g_pCSMManager->GetCurrentLightProjection(), a_pRenderPacket->GetModelViewMatrix() );
+		g_pRender->VSBufferSetMat4( 0, mShadowMVP );
+
+		TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
+		TIndexPoolResource*  pIndexPool  = TSTATICCAST( TIndexPoolResource, pMesh->GetSubMesh( 0 )->pIndexPool );
+		TVALIDPTR( pVertexPool );
+		TVALIDPTR( pIndexPool );
+
+		TVertexBlockResource::HALBuffer vertexBuffer;
+		CALL_THIS( 0x006d6660, TVertexPoolResource*, TBOOL, pVertexPool, TVertexBlockResource::HALBuffer&, vertexBuffer ); // pVertexPool->GetHALBuffer( &vertexBuffer );
+
+		TIndexBlockResource::HALBuffer indexBuffer;
+		CALL_THIS( 0x006d6180, TIndexPoolResource*, TBOOL, pIndexPool, TIndexBlockResource::HALBuffer&, indexBuffer ); // pIndexPool->GetHALBuffer( &indexBuffer );
+
+		g_pRender->DrawIndexed(
+		    D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
+		    pIndexPool->GetNumIndices(),
+		    (ID3D11Buffer*)indexBuffer.pIndexBuffer,
+		    indexBuffer.uiIndexOffset,
+		    DXGI_FORMAT_R16_UINT,
+		    (ID3D11Buffer*)vertexBuffer.apVertexBuffers[ 0 ],
+		    sizeof( WorldVertex ),
+		    vertexBuffer.uiVertexOffset,
+			TNULL
+		);
+
+		return;
+	}
+
+	TUINT uiComboFlags = 0;
+	if ( !g_bCSMEnabled || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
+		uiComboFlags |= shadercombos::Grass_NO_CSM;
+	if ( !pCurrentContext->IsFogEnabled() || s_flFogDensity <= 0.0f )
+		uiComboFlags |= shadercombos::Grass_NO_FOG;
+	if ( !g_bDynamicGlowEnabled )
+		uiComboFlags |= shadercombos::Grass_NO_DYN_LIGHT;
+
+	g_pRender->SetShaderPipelineState( m_vecGrassPipelines[ shadercombos::GetGrassComboIndex( uiComboFlags ) ] );
 
 	// Fill vertex constant buffer
 	// Setup model view projection matrix
 	TMatrix44 mMVP;
 	mMVP.Multiply( pCurrentContext->GetProjectionMatrix(), a_pRenderPacket->GetModelViewMatrix() );
 	g_pRender->VSBufferSetMat4( 0, mMVP );
+
+	TMatrix44 mModel;
+	mModel.Multiply( pCurrentContext->GetViewWorldMatrix(), a_pRenderPacket->GetModelViewMatrix() );
+	g_pRender->VSBufferSetMat4( 10, mModel );
 
 	// Setup UV offset
 	g_vecAnimOffset.w = 1.0f;
@@ -230,8 +303,10 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	TIndexBlockResource::HALBuffer indexBuffer;
 	CALL_THIS( 0x006d6180, TIndexPoolResource*, TBOOL, pIndexPool, TIndexBlockResource::HALBuffer&, indexBuffer ); // pIndexPool->GetHALBuffer( &indexBuffer );
 
+	UploadDynamicGlowLights( a_pRenderPacket );
+
 	// Set grass texture
-	g_pRender->SetShaderResource( 0, g_pGrassTexture );
+	g_pRender->PSSetShaderResource( 0, g_pGrassTexture );
 
 	// Draw mesh
 	g_pRender->DrawIndexed(
@@ -242,7 +317,8 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	    DXGI_FORMAT_R16_UINT,
 	    (ID3D11Buffer*)vertexBuffer.apVertexBuffers[ 0 ],
 	    sizeof( WorldVertex ),
-	    vertexBuffer.uiVertexOffset
+	    vertexBuffer.uiVertexOffset,
+		TNULL
 	);
 
 	// Layers...
@@ -281,12 +357,13 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		{
 			T2Texture** g_aGrassLayers = TREINTERPRETCAST( T2Texture**, 0x007b4638 );
 
-			g_pRender->SetShaderResource( 0, (ID3D11ShaderResourceView*)g_aGrassLayers[ i ]->GetD3DTexture() );
+			g_pRender->PSSetShaderResource( 0, (ID3D11ShaderResourceView*)g_aGrassLayers[ i ]->GetD3DTexture() );
 
 			vecOffset.x += fStepSize;
 			vecOffset.y += fStepSize;
 			vecOffset.z += fStepSize;
 			g_pRender->VSBufferSetVec4( 9, vecOffset );
+			g_pRender->VSBufferSetMat4( 10, mModel );
 
 			// Draw layer
 			g_pRender->DrawIndexed(
@@ -297,7 +374,8 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 			    DXGI_FORMAT_R16_UINT,
 			    (ID3D11Buffer*)vertexBuffer.apVertexBuffers[ 0 ],
 			    sizeof( WorldVertex ),
-			    vertexBuffer.uiVertexOffset
+			    vertexBuffer.uiVertexOffset,
+				TNULL
 			);
 		}
 	}
@@ -326,6 +404,11 @@ AGrassMesh* remaster::GrassShaderDX11::CreateMesh( const TCHAR* a_szName )
 	pMesh->SetOwnerShader( this );
 
 	return pMesh;
+}
+
+void remaster::GrassShaderDX11::UploadDynamicGlowLights( Toshi::TRenderPacket* a_pRenderPacket )
+{
+	UploadDynamicGlowLightsCBuffer( a_pRenderPacket, m_pDynamicGlowLightBuffer );
 }
 
 void remaster::GrassShaderDX11::UpdateAnimation()

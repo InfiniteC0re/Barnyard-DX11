@@ -1,11 +1,13 @@
 #pragma once
 #include "RenderDX11.h"
+#include "RenderDX11Utils.h"
 
 #include <Math/TMatrix44.h>
 #include <GUI/T2GUIRenderer.h>
 #include <BYardSDK/SDK_T2GUIMaterial.h>
 
 #include <d3d11.h>
+#include <ToshiTools/T2DynamicVector.h>
 
 namespace remaster
 {
@@ -108,14 +110,7 @@ private:
 	TBOOL                  m_bIsTransformDirty;
 	Toshi::T2GUIMaterial*  m_pMaterial;
 
-	ID3DBlob* m_pVSShaderBlob;
-	ID3DBlob* m_pPSShaderBlob_Textured;
-	ID3DBlob* m_pPSShaderBlob_Solid;
-	ID3DBlob* m_pPSShaderBlob_Font;
-
-	RenderDX11::ShaderPipelineState m_oShaderPipeline_Textured;
-	RenderDX11::ShaderPipelineState m_oShaderPipeline_Solid;
-	RenderDX11::ShaderPipelineState m_oShaderPipeline_Font;
+	Toshi::T2DynamicVector<RenderDX11::ShaderPipelineState> m_vecUIPipelines;
 
 	Toshi::TMatrix44 m_matProjection;
 	Toshi::TMatrix44 m_matView;
@@ -126,6 +121,7 @@ private:
 	TFLOAT m_flUIScaleY;
 
 	TBOOL m_bHasTextureRV;
+	TBOOL m_bSetAlphaRef;
 };
 
 extern UIRendererDX11* g_pUIRender;

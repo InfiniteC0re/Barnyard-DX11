@@ -38,7 +38,7 @@ void remaster::SysMaterial::PreRender()
 
 		auto pD3DTexture = (ID3D11ShaderResourceView*)pTexture->GetD3DTexture();
 
-		g_pRender->SetShaderResource( 0, pD3DTexture );
+		g_pRender->PSSetShaderResource( 0, pD3DTexture );
 
 		if ( pTexture->GetAddressUState() == ADDRESSINGMODE_CLAMP && pTexture->GetAddressVState() == ADDRESSINGMODE_CLAMP )
 			g_pRender->PSSetSamplerState( 0, 1 );
@@ -47,7 +47,7 @@ void remaster::SysMaterial::PreRender()
 	}
 	else
 	{
-		g_pRender->SetShaderResource( 0, TNULL );
+		g_pRender->PSSetShaderResource( 0, TNULL );
 	}
 
 	if ( m_Flags & FLAGS_NO_CULL )
@@ -96,7 +96,7 @@ void remaster::SysMaterial::PostRender()
 		g_pRender->SetCullMode( D3D11_CULL_BACK );
 	}
 
-	g_pRender->SetShaderResource( 0, TNULL );
+	g_pRender->PSSetShaderResource( 0, TNULL );
 	g_pRender->SetDepthWrite( TTRUE );
 	g_pRender->SetDepthEnabled( TTRUE );
 }

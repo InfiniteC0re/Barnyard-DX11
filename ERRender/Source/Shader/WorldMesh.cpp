@@ -1,6 +1,9 @@
 #include "pch.h"
 #include "WorldMesh.h"
+#include "WorldShader.h"
+#include "DynamicGlowLights.h"
 #include "Resource/ClassPatcher.h"
+#include "RenderDX11.h"
 
 #include <Platform/DX8/TRenderInterface_DX8.h>
 #include <Platform/DX8/TRenderContext_DX8.h>
@@ -30,6 +33,11 @@ TBOOL remaster::WorldMesh::Render()
 
 	TMaterial* pMaterial = m_pMaterial;
 
+	if ( remaster::g_pRender->GetCSMManager().IsRenderingShadowPass() )
+	{
+		pMaterial = TSTATICCAST( remaster::WorldShaderDX11, remaster::WorldShaderDX11::GetSingleton() )->GetShadowMaterial();
+	}
+
 	/*if ( !TSTATICCAST( AWorldShaderHAL, m_pOwnerShader )->IsAlphaBlendMaterial() ||
 	     pCurrentContext->GetAlphaBlend() >= 1.0f )
 	{
@@ -43,6 +51,8 @@ TBOOL remaster::WorldMesh::Render()
 	auto pRenderPacket = pMaterial->AddRenderPacket( this );
 	pRenderPacket->SetModelViewMatrix( pCurrentContext->GetModelViewMatrix() );
 	pRenderPacket->SetAlpha( 1.0f );
+	pRenderPacket->m_ui8Unk1 = pCurrentContext->m_oLightIds[ 0 ];
+	pRenderPacket->m_pUnk    = PackRenderPacketLights( pCurrentContext->m_oLightIds );
 
 	return TTRUE;
 }
