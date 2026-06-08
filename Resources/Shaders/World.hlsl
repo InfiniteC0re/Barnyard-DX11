@@ -40,7 +40,10 @@ cbuffer ConstantBuffer : register(b0)
 #include "ShadowSampling.hlsli"
 #endif
 
+#if !NO_DYN_LIGHT
 #include "DynamicLights.hlsli"
+#endif
+
 #include "Tonemap.hlsli"
 
 PS_IN vs_main(VS_IN In)

@@ -275,7 +275,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	const TFLOAT flPacketAlpha = a_pRenderPacket->GetAlpha();
 	const TBOOL  bIsBlending   = pMaterial->GetBlendMode() != 0 || flPacketAlpha < 1.0f || pMaterial->IsBlending();
-	const TBOOL  bHasDynLight  = g_bDynamicGlowEnabled && a_pRenderPacket->m_ui8Unk1 >= 0;
+	const TBOOL  bHasDynLight  = g_bDynamicGlowEnabled && TINT8( a_pRenderPacket->m_ui8Unk1 ) >= 0 && !bIsGlowing;
 	g_pRender->SetBlendEnabled( bIsBlending );
 
 	// Use either blending shader or alpharef shader

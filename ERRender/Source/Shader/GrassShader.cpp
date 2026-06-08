@@ -246,12 +246,14 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		return;
 	}
 
+	const TBOOL bHasDynLight = g_bDynamicGlowEnabled && TINT8( a_pRenderPacket->m_ui8Unk1 ) >= 0;
+
 	TUINT uiComboFlags = 0;
 	if ( !g_bCSMEnabled || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
 		uiComboFlags |= shadercombos::Grass_NO_CSM;
 	if ( !pCurrentContext->IsFogEnabled() || s_flFogDensity <= 0.0f )
 		uiComboFlags |= shadercombos::Grass_NO_FOG;
-	if ( !g_bDynamicGlowEnabled )
+	if ( !bHasDynLight )
 		uiComboFlags |= shadercombos::Grass_NO_DYN_LIGHT;
 
 	g_pRender->SetShaderPipelineState( m_vecGrassPipelines[ shadercombos::GetGrassComboIndex( uiComboFlags ) ] );
@@ -303,7 +305,7 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	TIndexBlockResource::HALBuffer indexBuffer;
 	CALL_THIS( 0x006d6180, TIndexPoolResource*, TBOOL, pIndexPool, TIndexBlockResource::HALBuffer&, indexBuffer ); // pIndexPool->GetHALBuffer( &indexBuffer );
 
-	UploadDynamicGlowLights( a_pRenderPacket );
+	if ( bHasDynLight ) UploadDynamicGlowLights( a_pRenderPacket );
 
 	// Set grass texture
 	g_pRender->PSSetShaderResource( 0, g_pGrassTexture );

@@ -339,7 +339,7 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	const TFLOAT flPacketAlpha     = a_pRenderPacket->GetAlpha();
 	const TBOOL  bUseBakedLighting = pMaterial->IsHDLighting() && pMaterial->HasLighting1Tex() && pMaterial->HasLighting2Tex();
 	const TBOOL  bIsFOB            = pMesh->IsFOB();
-	const TBOOL  bHasDynLight      = g_bDynamicGlowEnabled && a_pRenderPacket->m_ui8Unk1 >= 0;
+	const TBOOL  bHasDynLight      = g_bDynamicGlowEnabled && TINT8( a_pRenderPacket->m_ui8Unk1 ) >= 0;
 
 	g_pRender->SetShaderPipelineState( GetSkinPipeline( bUseBakedLighting, bIsFOB, bHasDynLight, bIsAnimated ) );
 

@@ -261,16 +261,23 @@ static TBOOL FillDynamicGlowLightCBufferEntry(
 	return TTRUE;
 }
 
+static DynamicGlowLightCBuffer s_oPreviousBuffer;
+
 static void UploadDynamicGlowLightsCBufferData( const DynamicGlowLightCBuffer& a_rCBuffer, ID3D11Buffer* a_pBuffer )
 {
-	D3D11_MAPPED_SUBRESOURCE mappedResource;
-	HRESULT hMapResult = g_pRender->GetD3D11DeviceContext()->Map( a_pBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource );
-	TASSERT( S_OK == hMapResult );
-	if ( S_OK != hMapResult )
-		return;
+	if ( TUtil::MemCompare( &s_oPreviousBuffer, &a_rCBuffer, sizeof( DynamicGlowLightCBuffer ) ) != 0 )
+	{
+		s_oPreviousBuffer = a_rCBuffer;
 
-	TUtil::MemCopy( mappedResource.pData, &a_rCBuffer, sizeof( a_rCBuffer ) );
-	g_pRender->GetD3D11DeviceContext()->Unmap( a_pBuffer, 0 );
+		D3D11_MAPPED_SUBRESOURCE mappedResource;
+		HRESULT hMapResult = g_pRender->GetD3D11DeviceContext()->Map( a_pBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource );
+		TASSERT( S_OK == hMapResult );
+		if ( S_OK != hMapResult ) return;
+
+		TUtil::MemCopy( mappedResource.pData, &a_rCBuffer, sizeof( a_rCBuffer ) );
+		g_pRender->GetD3D11DeviceContext()->Unmap( a_pBuffer, 0 );
+	}
+
 	g_pRender->PSSetConstantBuffer( 2, a_pBuffer );
 	g_pRender->PSSetShaderResource( 6, s_pDynamicGlowShadowSRV );
 	g_pRender->PSSetSamplerState( 6, s_pDynamicGlowShadowSampler );

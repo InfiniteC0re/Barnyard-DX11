@@ -64,7 +64,9 @@ cbuffer BoneCBuffer : register(b1)
 #include "ShadowSampling.hlsli"
 #endif
 
+#if !NO_DYN_LIGHT
 #include "DynamicLights.hlsli"
+#endif
 
 PS_IN vs_main(VS_IN In, uint instanceID : SV_InstanceID)
 {
