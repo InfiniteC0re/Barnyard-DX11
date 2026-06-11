@@ -68,7 +68,7 @@ cbuffer BoneCBuffer : register(b1)
 #include "DynamicLights.hlsli"
 #endif
 
-PS_IN vs_main(VS_IN In, uint instanceID : SV_InstanceID)
+PS_IN vs_main(VS_IN In)
 {
     PS_IN Out;
 

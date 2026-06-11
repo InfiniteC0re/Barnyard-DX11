@@ -10,20 +10,23 @@ namespace shadercombos
 enum ShadowDepthComboFlags : TUINT
 {
 	ShadowDepth_ANIMATED = BITFLAG( 0 ),
+	ShadowDepth_ALPHATEST = BITFLAG( 1 ),
 };
 
 static constexpr dx11::ShaderComboDefinition ShadowDepthCombos[] =
 {
 	{ "ANIMATED", 0, 1, 1 },
+	{ "ALPHATEST", 0, 1, 2 },
 };
 
-static constexpr TUINT ShadowDepthNumCombos = 1;
-static constexpr TUINT ShadowDepthNumPermutations = 2;
+static constexpr TUINT ShadowDepthNumCombos = 2;
+static constexpr TUINT ShadowDepthNumPermutations = 4;
 
 TINLINE TUINT GetShadowDepthComboIndex( TUINT a_uiComboFlags )
 {
 	TUINT uiIndex = 0;
 	uiIndex += ( ( ( a_uiComboFlags & ShadowDepth_ANIMATED ) ? 1U : 0U ) - 0U ) * 1U;
+	uiIndex += ( ( ( a_uiComboFlags & ShadowDepth_ALPHATEST ) ? 1U : 0U ) - 0U ) * 2U;
 	return uiIndex;
 }
 
@@ -131,6 +134,37 @@ TINLINE TBOOL CreateShadowDepthVertexShader_vs_main_skin( ID3D11VertexShader** a
 	return TTRUE;
 }
 
+inline dx11::ShaderCombo g_oShadowDepthPixelShaderCombo_ps_main;
+inline TBOOL g_bShadowDepthPixelShaderComboCompiled_ps_main = TFALSE;
+
+TINLINE TBOOL EnsureShadowDepthPixelShaderCombo_ps_main()
+{
+	if ( !g_bShadowDepthPixelShaderComboCompiled_ps_main )
+		g_bShadowDepthPixelShaderComboCompiled_ps_main = g_oShadowDepthPixelShaderCombo_ps_main.CompileFromFile( "Data\\Shaders\\ShadowDepth.hlsl", "ps_main", "ps_5_0", ShadowDepthCombos, ShadowDepthNumCombos, ShadowDepthNumPermutations );
+
+	return g_bShadowDepthPixelShaderComboCompiled_ps_main;
+}
+
+TINLINE dx11::ShaderCombo& GetShadowDepthPixelShaderCombo_ps_main()
+{
+	TASSERT( g_bShadowDepthPixelShaderComboCompiled_ps_main );
+	return g_oShadowDepthPixelShaderCombo_ps_main;
+}
+
+TINLINE TBOOL CreateShadowDepthPixelShader_ps_main( ID3D11PixelShader** a_ppShader )
+{
+	if ( !g_bShadowDepthPixelShaderComboCompiled_ps_main )
+		return TFALSE;
+
+	dx11::ShaderCombo& rCombo = g_oShadowDepthPixelShaderCombo_ps_main;
+	ID3D11PixelShader** ppShader = rCombo.GetPixelShaderPtr( 0 );
+	TVALIDPTR( ppShader );
+	if ( !ppShader || !*ppShader )
+		return TFALSE;
+	*a_ppShader = *ppShader;
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileShadowDepthShaderCombos()
 {
 	if ( !EnsureShadowDepthVertexShaderCombo_vs_main_world() )
@@ -142,6 +176,11 @@ TINLINE TBOOL CompileShadowDepthShaderCombos()
 		return TFALSE;
 
 	if ( !g_oShadowDepthVertexShaderCombo_vs_main_skin.CreateVertexShaders() )
+		return TFALSE;
+	if ( !EnsureShadowDepthPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	if ( !g_oShadowDepthPixelShaderCombo_ps_main.CreatePixelShaders() )
 		return TFALSE;
 
 	return TTRUE;

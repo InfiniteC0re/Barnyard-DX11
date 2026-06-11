@@ -65,6 +65,7 @@ MEMBER_HOOK( 0x00615bc0, Toshi::T2Texture, T2Texture_Load, HRESULT )
 	TPROFILER_SCOPE();
 	TASSERT( m_pData != TNULL && m_uiDataSize != 0 );
 
+	// NOTE: m_ImageInfo must be here because the game reads it to assign blend states!!!
 	D3DXGetImageInfoFromFileInMemory( m_pData, m_uiDataSize, &m_ImageInfo );
 
 	// Create D3D11 texture and write it to the structure

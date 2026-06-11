@@ -33,7 +33,7 @@ TBOOL remaster::WorldMesh::Render()
 
 	TMaterial* pMaterial = m_pMaterial;
 
-	if ( remaster::g_pRender->GetCSMManager().IsRenderingShadowPass() )
+	if ( remaster::g_pRender->GetCSMManager().IsRenderingShadowPass() && TFALSE )
 	{
 		pMaterial = TSTATICCAST( remaster::WorldShaderDX11, remaster::WorldShaderDX11::GetSingleton() )->GetShadowMaterial();
 	}

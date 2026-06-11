@@ -154,6 +154,7 @@ TBOOL remaster::SkinShaderDX11::Validate()
 	dx11::ShaderCombo& rSkinVSCombo       = shadercombos::GetSkinVertexShaderCombo_vs_main();
 	dx11::ShaderCombo& rSkinPSCombo       = shadercombos::GetSkinPixelShaderCombo_ps_main();
 	dx11::ShaderCombo& rSkinShadowVSCombo = shadercombos::GetShadowDepthVertexShaderCombo_vs_main_skin();
+	dx11::ShaderCombo& rSkinShadowPSCombo = shadercombos::GetShadowDepthPixelShaderCombo_ps_main();
 
 	D3D11_INPUT_ELEMENT_DESC aInputElements[] = {
 		{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
@@ -186,7 +187,7 @@ TBOOL remaster::SkinShaderDX11::Validate()
 	);
 
 	TASSERT( shadercombos::CreateSkinShaderPipelines( rSkinVSCombo, &rSkinPSCombo, pSkinInputLayout, m_vecSkinPipelines, "Skin" ) );
-	TASSERT( shadercombos::CreateShadowDepthShaderPipelines( rSkinShadowVSCombo, TNULL, pShadowInputLayout, m_vecSkinShadowPipelines, "Skin_Shadow" ) );
+	TASSERT( shadercombos::CreateShadowDepthShaderPipelines( rSkinShadowVSCombo, &rSkinShadowPSCombo, pShadowInputLayout, m_vecSkinShadowPipelines, "Skin_Shadow" ) );
 
 	if ( !m_pDynamicGlowLightBuffer )
 		TASSERT( CreateDynamicGlowLightsCBuffer( &m_pDynamicGlowLightBuffer ) );
@@ -253,6 +254,8 @@ const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetSh
 
 	if ( a_bIsAnimated )
 		uiComboFlags |= shadercombos::ShadowDepth_ANIMATED;
+
+	uiComboFlags |= shadercombos::ShadowDepth_ALPHATEST;
 
 	return m_vecSkinShadowPipelines[ shadercombos::GetShadowDepthComboIndex( uiComboFlags ) ];
 }

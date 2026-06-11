@@ -1,4 +1,5 @@
 // STATIC: "ANIMATED" "0..1"
+// STATIC: "ALPHATEST" "0..1"
 
 cbuffer ShadowPassBuffer : register(b0)
 {
@@ -19,12 +20,50 @@ struct VS_IN_SKIN
     float2 UV : TEXCOORD0;
 };
 
-float4 vs_main_world(float3 pos : POSITION) : SV_POSITION
+#ifdef ALPHATEST
+
+struct VS_IN_WORLD
 {
-    return mul(float4(pos, 1.0f), cb_matShadowMVP);
+    float3 ObjPos : POSITION;
+    float3 normal : NORMAL;
+    float4 Color : Color;
+    float2 UV : TEXCOORD0;
+};
+
+struct PS_IN
+{
+    float4 ProjPos : SV_POSITION;
+    float2 UV : TEXCOORD0;
+};
+
+#define VS_OUT PS_IN
+
+#else  // ALPHATEST
+
+#define VS_OUT float4
+
+#endif // !ALPHATEST
+
+VS_OUT vs_main_world(VS_IN_WORLD In)
+{
+    float4 proj = mul(float4(In.ObjPos, 1.0), cb_matShadowMVP);
+    
+#ifdef ALPHATEST
+
+    VS_OUT result;
+    result.ProjPos = proj;
+    result.UV = In.UV;
+
+    return result;
+
+#else  // ALPHATEST
+
+    return proj;
+
+#endif // !ALPHATEST
 }
 
-float4 vs_main_skin(VS_IN_SKIN In, uint instanceID : SV_InstanceID) : SV_POSITION
+VS_OUT vs_main_skin(VS_IN_SKIN In)
 {
 #if ANIMATED
 
@@ -53,6 +92,35 @@ float4 vs_main_skin(VS_IN_SKIN In, uint instanceID : SV_InstanceID) : SV_POSITIO
 	float3 vertex = In.ObjPos;
 
 #endif // !ANIMATED
+
+    float4 proj = mul(float4(vertex, 1.0), cb_matShadowMVP);
     
-    return mul(float4(vertex, 1.0), cb_matShadowMVP);
+#ifdef ALPHATEST
+
+    VS_OUT result;
+    result.ProjPos = proj;
+    result.UV = In.UV;
+
+    return result;
+
+#else  // ALPHATEST
+
+    return proj;
+
+#endif // !ALPHATEST
 }
+
+#ifdef ALPHATEST
+
+Texture2D texture0 : register(t0);
+SamplerState sampler0 : register(s0);
+
+float4 ps_main(VS_OUT In) : SV_TARGET
+{
+    float4 texColor = texture0.Sample(sampler0, In.UV);
+	clip(texColor.a - 0.8f);
+
+    return float4(1, 1, 1, 1);
+}
+
+#endif // ALPHATEST
