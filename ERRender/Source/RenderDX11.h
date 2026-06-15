@@ -41,8 +41,8 @@ public:
 
 	static constexpr TUINT MSAA_SAMPLE_COUNT            = 4;
 	static constexpr TSIZE HEAPSIZE                     = 0x10000;
-	static constexpr TSIZE VERTEX_CONSTANT_BUFFER_SIZE  = 208;
-	static constexpr TSIZE PIXEL_CONSTANT_BUFFER_SIZE   = 208;
+	static constexpr TSIZE VERTEX_CONSTANT_BUFFER_SIZE  = 256;
+	static constexpr TSIZE PIXEL_CONSTANT_BUFFER_SIZE   = 256;
 	static constexpr TSIZE SHADOW_CONSTANT_BUFFER_SIZE  = sizeof( ShadowCBufferData );
 	static constexpr TSIZE NUMBUFFERS                   = 1;
 	static constexpr TSIZE IMMEDIATE_VERTEX_BUFFER_SIZE = 0x4000;

@@ -107,7 +107,6 @@ private:
 	Toshi::TMatrix44 m_oWorldViewMatrix;
 	Toshi::TMatrix44 m_oViewWorldMatrix;
 
-	ID3D11Buffer* m_pDynamicGlowLightBuffer;
 	ID3D11Buffer* m_pBoneCBuffer;
 };
 

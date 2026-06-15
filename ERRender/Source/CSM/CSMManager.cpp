@@ -22,23 +22,23 @@ TOSHI_NAMESPACE_USING
 namespace remaster
 {
 
-CSMManager* g_pCSMManager               = TNULL;
-TBOOL       g_bCSMEnabled               = TTRUE;
-TINT        g_iCSMDebugCascade          = -1;
-TBOOL       g_bCSMDebugFullRange        = TTRUE;
-TBOOL       g_bCSMDebugMaskBySplit      = TTRUE;
-TBOOL       g_bOverrideSunDirection     = TTRUE;
-TFLOAT      g_flSunAzimuth              = 9.0f;
-TFLOAT      g_flSunElevation            = 139.0f;
-TFLOAT      g_flShadowIntensity         = 0.185f;
-TFLOAT      g_flShadowDistance          = 80.0f;
-TFLOAT      g_flShadowCasterPadding     = 50.0f;
-TFLOAT      g_flShadowCascadePadding    = 8.0f;
-TFLOAT      g_flShadowSlopeScaledDepthBias = CSM_DEPTH_BIAS_SLOPE;
+CSMManager* g_pCSMManager                     = TNULL;
+TBOOL       g_bCSMEnabled                     = TTRUE;
+TINT        g_iCSMDebugCascade                = -1;
+TBOOL       g_bCSMDebugFullRange              = TTRUE;
+TBOOL       g_bCSMDebugMaskBySplit            = TTRUE;
+TBOOL       g_bOverrideSunDirection           = TTRUE;
+TFLOAT      g_flSunAzimuth                    = 9.0f;
+TFLOAT      g_flSunElevation                  = 139.0f;
+TFLOAT      g_flShadowIntensity               = 0.185f;
+TFLOAT      g_flShadowDistance                = 80.0f;
+TFLOAT      g_flShadowCasterPadding           = 50.0f;
+TFLOAT      g_flShadowCascadePadding          = 8.0f;
+TFLOAT      g_flShadowSlopeScaledDepthBias    = CSM_DEPTH_BIAS_SLOPE;
 TFLOAT      g_flShadowMinSlopeScaledDepthBias = CSM_MIN_SLOPE_DEPTH_BIAS;
-TFLOAT      g_flShadowReceiverBias      = CSM_RECEIVER_BIAS;
-TFLOAT      g_flShadowReceiverPlaneBias = CSM_RECEIVER_PLANE_BIAS;
-TFLOAT      g_flShadowPCFRadius         = CSM_PCF_RADIUS;
+TFLOAT      g_flShadowReceiverBias            = CSM_RECEIVER_BIAS;
+TFLOAT      g_flShadowReceiverPlaneBias       = CSM_RECEIVER_PLANE_BIAS;
+TFLOAT      g_flShadowPCFRadius               = CSM_PCF_RADIUS;
 
 CSMManager::CSMManager()
     : m_pShadowTexture( TNULL )

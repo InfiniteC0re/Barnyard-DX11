@@ -50,8 +50,7 @@ void remaster::SetupRenderHooks_SkinShader()
 }
 
 remaster::SkinShaderDX11::SkinShaderDX11()
-    : m_pDynamicGlowLightBuffer( TNULL )
-    , m_pBoneCBuffer( TNULL )
+    : m_pBoneCBuffer( TNULL )
 {
 	// Set Singleton
 	*(ASkinShader**)( 0x0079a4f8 ) = this;
@@ -59,11 +58,6 @@ remaster::SkinShaderDX11::SkinShaderDX11()
 
 remaster::SkinShaderDX11::~SkinShaderDX11()
 {
-	if ( m_pDynamicGlowLightBuffer )
-	{
-		m_pDynamicGlowLightBuffer->Release();
-		m_pDynamicGlowLightBuffer = TNULL;
-	}
 
 	if ( m_pBoneCBuffer )
 	{
@@ -188,9 +182,6 @@ TBOOL remaster::SkinShaderDX11::Validate()
 
 	TASSERT( shadercombos::CreateSkinShaderPipelines( rSkinVSCombo, &rSkinPSCombo, pSkinInputLayout, m_vecSkinPipelines, "Skin" ) );
 	TASSERT( shadercombos::CreateShadowDepthShaderPipelines( rSkinShadowVSCombo, &rSkinShadowPSCombo, pShadowInputLayout, m_vecSkinShadowPipelines, "Skin_Shadow" ) );
-
-	if ( !m_pDynamicGlowLightBuffer )
-		TASSERT( CreateDynamicGlowLightsCBuffer( &m_pDynamicGlowLightBuffer ) );
 
 	if ( !m_pBoneCBuffer )
 	{
@@ -477,7 +468,7 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 
 void remaster::SkinShaderDX11::UploadDynamicGlowLights( Toshi::TRenderPacket* a_pRenderPacket )
 {
-	UploadDynamicGlowLightsCBuffer( a_pRenderPacket, m_pDynamicGlowLightBuffer );
+	UploadDynamicGlowLightsCBuffer( a_pRenderPacket );
 }
 
 void remaster::SkinShaderDX11::EnableRenderEnvMap( TBOOL a_bEnable )

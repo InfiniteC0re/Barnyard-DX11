@@ -96,12 +96,12 @@ TBOOL CreateDynamicGlowShadowResources();
 void  DestroyDynamicGlowShadowResources();
 void  RenderDynamicGlowShadowMaps();
 
-// Fills the dynamic glow lights cbuffer from the render packet's attached light,
-// uploads it, and binds it to PS constant buffer slot 2.
-void UploadDynamicGlowLightsCBuffer( Toshi::TRenderPacket* a_pRenderPacket, ID3D11Buffer* a_pBuffer );
+// Fills the shared dynamic glow lights cbuffer from the render packet's attached
+// lights, uploads it, and binds it to PS constant buffer slot 2.
+void UploadDynamicGlowLightsCBuffer( Toshi::TRenderPacket* a_pRenderPacket );
 
-// Fills the dynamic glow lights cbuffer from the visible glow lights collected
-// for shadow rendering this frame, uploads it, and binds it to PS slot 2.
-void UploadVolumetricDynamicGlowLightsCBuffer( ID3D11Buffer* a_pBuffer );
+// Fills the shared dynamic glow lights cbuffer from the visible glow lights
+// collected for shadow rendering this frame, uploads it, and binds it to PS slot 2.
+void UploadVolumetricDynamicGlowLightsCBuffer();
 
 } // namespace remaster

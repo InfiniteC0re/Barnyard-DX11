@@ -52,7 +52,6 @@ static TVector4     g_vecAnimOffset;
 static const TFLOAT g_fAnimationSpeed = 2.25f;
 
 remaster::GrassShaderDX11::GrassShaderDX11()
-    : m_pDynamicGlowLightBuffer( TNULL )
 {
 	// Set Singleton
 	*(AGrassShader**)( 0x0079aa24 ) = this;
@@ -60,11 +59,6 @@ remaster::GrassShaderDX11::GrassShaderDX11()
 
 remaster::GrassShaderDX11::~GrassShaderDX11()
 {
-	if ( m_pDynamicGlowLightBuffer )
-	{
-		m_pDynamicGlowLightBuffer->Release();
-		m_pDynamicGlowLightBuffer = TNULL;
-	}
 }
 
 void remaster::GrassShaderDX11::Flush()
@@ -179,9 +173,6 @@ TBOOL remaster::GrassShaderDX11::Validate()
 
 	TASSERT( shadercombos::CreateGrassShaderPipelines( rGrassVSCombo, &rGrassPSCombo, pGrassInputLayout, m_vecGrassPipelines, "Grass" ) );
 	TASSERT( shadercombos::CreateShadowDepthShaderPipelines( rShadowDepthVSCombo, TNULL, pShadowInputLayout, m_vecShadowDepthPipelines, "Grass_Shadow" ) );
-
-	if ( !m_pDynamicGlowLightBuffer )
-		TASSERT( CreateDynamicGlowLightsCBuffer( &m_pDynamicGlowLightBuffer ) );
 
 	return BaseClass::Validate();
 }
@@ -410,7 +401,7 @@ AGrassMesh* remaster::GrassShaderDX11::CreateMesh( const TCHAR* a_szName )
 
 void remaster::GrassShaderDX11::UploadDynamicGlowLights( Toshi::TRenderPacket* a_pRenderPacket )
 {
-	UploadDynamicGlowLightsCBuffer( a_pRenderPacket, m_pDynamicGlowLightBuffer );
+	UploadDynamicGlowLightsCBuffer( a_pRenderPacket );
 }
 
 void remaster::GrassShaderDX11::UpdateAnimation()

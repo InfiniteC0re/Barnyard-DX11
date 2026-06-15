@@ -130,8 +130,6 @@ private:
 	Toshi::T2DynamicVector<RenderDX11::ShaderPipelineState> m_vecWorldPipelines;
 	Toshi::T2DynamicVector<RenderDX11::ShaderPipelineState> m_vecShadowDepthPipelines;
 
-	ID3D11Buffer* m_pDynamicGlowLightBuffer;
-
 	inline static Toshi::TOrderTable      m_oShadowTable;
 	inline static remaster::WorldMaterial m_oDummyMaterial;
 };

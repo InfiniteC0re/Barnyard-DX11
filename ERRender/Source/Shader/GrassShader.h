@@ -50,8 +50,6 @@ private:
 
 	Toshi::T2DynamicVector<RenderDX11::ShaderPipelineState> m_vecGrassPipelines;
 	Toshi::T2DynamicVector<RenderDX11::ShaderPipelineState> m_vecShadowDepthPipelines;
-
-	ID3D11Buffer* m_pDynamicGlowLightBuffer;
 };
 
 }; // namespace remaster

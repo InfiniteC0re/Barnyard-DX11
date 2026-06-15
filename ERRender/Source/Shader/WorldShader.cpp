@@ -52,7 +52,6 @@ void remaster::SetupRenderHooks_WorldShader()
 }
 
 remaster::WorldShaderDX11::WorldShaderDX11()
-    : m_pDynamicGlowLightBuffer( TNULL )
 {
 	// Set Singleton
 	*(AWorldShader**)( 0x0079a854 ) = this;
@@ -60,11 +59,6 @@ remaster::WorldShaderDX11::WorldShaderDX11()
 
 remaster::WorldShaderDX11::~WorldShaderDX11()
 {
-	if ( m_pDynamicGlowLightBuffer )
-	{
-		m_pDynamicGlowLightBuffer->Release();
-		m_pDynamicGlowLightBuffer = TNULL;
-	}
 }
 
 void remaster::WorldShaderDX11::Flush()
@@ -131,7 +125,7 @@ void remaster::WorldShaderDX11::EndFlush()
 
 void remaster::WorldShaderDX11::UploadDynamicGlowLights( Toshi::TRenderPacket* a_pRenderPacket )
 {
-	UploadDynamicGlowLightsCBuffer( a_pRenderPacket, m_pDynamicGlowLightBuffer );
+	UploadDynamicGlowLightsCBuffer( a_pRenderPacket );
 }
 
 TBOOL remaster::WorldShaderDX11::Create()
@@ -196,9 +190,6 @@ TBOOL remaster::WorldShaderDX11::Validate()
 
 	TASSERT( shadercombos::CreateWorldShaderPipelines( rWorldVSCombo, &rWorldPSCombo, pWorldInputLayout, m_vecWorldPipelines, "World" ) );
 	TASSERT( shadercombos::CreateShadowDepthShaderPipelines( rShadowDepthVSCombo, &rShadowDepthPSCombo, pShadowInputLayout, m_vecShadowDepthPipelines, "World_Shadow" ) );
-
-	if ( !m_pDynamicGlowLightBuffer )
-		TASSERT( CreateDynamicGlowLightsCBuffer( &m_pDynamicGlowLightBuffer ) );
 
 	return BaseClass::Validate();
 }

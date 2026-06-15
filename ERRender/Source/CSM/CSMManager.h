@@ -9,14 +9,14 @@
 namespace remaster
 {
 
-static constexpr TINT   CSM_CASCADE_COUNT       = 3;
-static constexpr TINT   CSM_RESOLUTION          = 4096;
-static constexpr TFLOAT CSM_SPLIT_LAMBDA        = 0.5f;
-static constexpr TFLOAT CSM_DEPTH_BIAS_SLOPE    = 2.0f;
-static constexpr TINT   CSM_DEPTH_BIAS_UNITS    = 100;
-static constexpr TFLOAT CSM_RECEIVER_BIAS       = 0.0005f;
-static constexpr TFLOAT CSM_RECEIVER_PLANE_BIAS = 1.0f;
-static constexpr TFLOAT CSM_PCF_RADIUS          = 1.0f;
+static constexpr TINT   CSM_CASCADE_COUNT        = 3;
+static constexpr TINT   CSM_RESOLUTION           = 2048;
+static constexpr TFLOAT CSM_SPLIT_LAMBDA         = 0.5f;
+static constexpr TFLOAT CSM_DEPTH_BIAS_SLOPE     = 2.0f;
+static constexpr TINT   CSM_DEPTH_BIAS_UNITS     = 100;
+static constexpr TFLOAT CSM_RECEIVER_BIAS        = 0.0005f;
+static constexpr TFLOAT CSM_RECEIVER_PLANE_BIAS  = 1.0f;
+static constexpr TFLOAT CSM_PCF_RADIUS           = 1.0f;
 static constexpr TFLOAT CSM_MIN_SLOPE_DEPTH_BIAS = 0.25f;
 
 struct ShadowCBufferData

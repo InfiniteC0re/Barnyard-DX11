@@ -246,12 +246,20 @@ static TBOOL FillDynamicGlowLightCBufferEntry(
 	if ( iShadowIndex >= 0 )
 	{
 		a_rCBuffer.matLightVP[ a_iLightIndex ] = s_aShadowLightViewProj[ iShadowIndex ];
-		a_rCBuffer.shadowParams[ a_iLightIndex ] = TVector4(
-		    TFLOAT( iShadowIndex ),
-		    1.0f / TFLOAT( DYNAMIC_GLOW_SHADOW_RESOLUTION ),
-		    a_rSettings.flShadowBias,
-		    a_rSettings.flShadowIntensity
-		);
+
+		if ( g_bDynamicGlowShadowsEnabled )
+		{
+			a_rCBuffer.shadowParams[ a_iLightIndex ] = TVector4(
+			    TFLOAT( iShadowIndex ),
+			    1.0f / TFLOAT( DYNAMIC_GLOW_SHADOW_RESOLUTION ),
+			    a_rSettings.flShadowBias,
+			    a_rSettings.flShadowIntensity
+			);
+		}
+		else
+		{
+			a_rCBuffer.shadowParams[ a_iLightIndex ] = TVector4( -1.0f, 0.0f, 0.0f, 0.0f );
+		}
 	}
 	else
 	{
@@ -261,24 +269,30 @@ static TBOOL FillDynamicGlowLightCBufferEntry(
 	return TTRUE;
 }
 
+static ID3D11Buffer*           s_pDynamicGlowLightBuffer = TNULL;
 static DynamicGlowLightCBuffer s_oPreviousBuffer;
+static TBOOL                   s_bPreviousBufferValid = TFALSE;
 
-static void UploadDynamicGlowLightsCBufferData( const DynamicGlowLightCBuffer& a_rCBuffer, ID3D11Buffer* a_pBuffer )
+static void UploadDynamicGlowLightsCBufferData( const DynamicGlowLightCBuffer& a_rCBuffer )
 {
-	if ( TUtil::MemCompare( &s_oPreviousBuffer, &a_rCBuffer, sizeof( DynamicGlowLightCBuffer ) ) != 0 )
+	if ( !s_pDynamicGlowLightBuffer && !CreateDynamicGlowLightsCBuffer( &s_pDynamicGlowLightBuffer ) )
+		return;
+
+	if ( !s_bPreviousBufferValid || TUtil::MemCompare( &s_oPreviousBuffer, &a_rCBuffer, sizeof( DynamicGlowLightCBuffer ) ) != 0 )
 	{
-		s_oPreviousBuffer = a_rCBuffer;
+		s_oPreviousBuffer      = a_rCBuffer;
+		s_bPreviousBufferValid = TTRUE;
 
 		D3D11_MAPPED_SUBRESOURCE mappedResource;
-		HRESULT hMapResult = g_pRender->GetD3D11DeviceContext()->Map( a_pBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource );
+		HRESULT hMapResult = g_pRender->GetD3D11DeviceContext()->Map( s_pDynamicGlowLightBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource );
 		TASSERT( S_OK == hMapResult );
 		if ( S_OK != hMapResult ) return;
 
 		TUtil::MemCopy( mappedResource.pData, &a_rCBuffer, sizeof( a_rCBuffer ) );
-		g_pRender->GetD3D11DeviceContext()->Unmap( a_pBuffer, 0 );
+		g_pRender->GetD3D11DeviceContext()->Unmap( s_pDynamicGlowLightBuffer, 0 );
 	}
 
-	g_pRender->PSSetConstantBuffer( 2, a_pBuffer );
+	g_pRender->PSSetConstantBuffer( 2, s_pDynamicGlowLightBuffer );
 	g_pRender->PSSetShaderResource( 6, s_pDynamicGlowShadowSRV );
 	g_pRender->PSSetSamplerState( 6, s_pDynamicGlowShadowSampler );
 }
@@ -378,13 +392,20 @@ void DestroyDynamicGlowShadowResources()
 		s_pDynamicGlowShadowTexture->Release();
 		s_pDynamicGlowShadowTexture = TNULL;
 	}
+
+	if ( s_pDynamicGlowLightBuffer )
+	{
+		s_pDynamicGlowLightBuffer->Release();
+		s_pDynamicGlowLightBuffer = TNULL;
+	}
+	s_bPreviousBufferValid = TFALSE;
 }
 
 void RenderDynamicGlowShadowMaps()
 {
 	s_iNumShadowLights = 0;
 
-	if ( !g_bDynamicGlowEnabled || !g_bDynamicGlowShadowsEnabled || !g_pCSMManager )
+	if ( !g_bDynamicGlowEnabled )
 		return;
 
 	AGlowViewport* pGlowViewport = AGlowViewport::GetSingleton();
@@ -393,6 +414,8 @@ void RenderDynamicGlowShadowMaps()
 
 	if ( !CreateDynamicGlowShadowResources() )
 		return;
+
+	const TBOOL bRenderShadows = g_bDynamicGlowShadowsEnabled && g_pCSMManager;
 
 	TVector3 vCameraPos = g_pRender->GetCurrentContext()->GetViewWorldMatrix().GetTranslation3();
 	if ( ACameraManager::GetSingleton() )
@@ -428,22 +451,22 @@ void RenderDynamicGlowShadowMaps()
 		s_aiShadowLightIDs[ iShadowIndex ] = pGlowObject->m_iID;
 		s_aShadowLightViewProj[ iShadowIndex ].Multiply( oLightProjection, oLightView );
 
-		g_pCSMManager->RenderCustomShadowMap(
-		    oLightView,
-		    oLightProjection,
-		    pGlowObject->m_oProjectionParams,
-		    pGlowObject->m_eCameraMode,
-		    s_apDynamicGlowShadowDSV[ iShadowIndex ],
-		    DYNAMIC_GLOW_SHADOW_RESOLUTION
-		);
+		if ( bRenderShadows )
+		{
+			g_pCSMManager->RenderCustomShadowMap(
+			    oLightView,
+			    oLightProjection,
+			    pGlowObject->m_oProjectionParams,
+			    pGlowObject->m_eCameraMode,
+			    s_apDynamicGlowShadowDSV[ iShadowIndex ],
+			    DYNAMIC_GLOW_SHADOW_RESOLUTION
+			);
+		}
 	}
 }
 
-void UploadDynamicGlowLightsCBuffer( Toshi::TRenderPacket* a_pRenderPacket, ID3D11Buffer* a_pBuffer )
+void UploadDynamicGlowLightsCBuffer( Toshi::TRenderPacket* a_pRenderPacket )
 {
-	if ( !a_pBuffer )
-		return;
-
 	DynamicGlowLightCBuffer cbData    = {};
 	TINT                    iNumLights = 0;
 
@@ -466,6 +489,21 @@ void UploadDynamicGlowLightsCBuffer( Toshi::TRenderPacket* a_pRenderPacket, ID3D
 		if ( iLightID < 0 )
 			continue;
 
+		// Skip duplicate light IDs. The per-object light list can legitimately
+		// carry the same light more than once; filling it into multiple slots
+		// would stack the light's contribution and over-brighten the mesh.
+		TBOOL bDuplicate = TFALSE;
+		for ( TINT j = 0; j < i; j++ )
+		{
+			if ( aLightIDs[ j ] == iLightID )
+			{
+				bDuplicate = TTRUE;
+				break;
+			}
+		}
+		if ( bDuplicate )
+			continue;
+
 		AGlowViewport::GlowObject* pGlowObject = GetGlowObjectByID( iLightID );
 		const GlowLightSettings    settings    = GetGlowLightSettings( iLightID );
 		const TFLOAT               flFlicker   = ComputeFlickerMultiplier( settings );
@@ -476,14 +514,11 @@ void UploadDynamicGlowLightsCBuffer( Toshi::TRenderPacket* a_pRenderPacket, ID3D
 
 	cbData.params.x = g_bDynamicGlowEnabled ? TFLOAT( iNumLights ) : 0.0f;
 
-	UploadDynamicGlowLightsCBufferData( cbData, a_pBuffer );
+	UploadDynamicGlowLightsCBufferData( cbData );
 }
 
-void UploadVolumetricDynamicGlowLightsCBuffer( ID3D11Buffer* a_pBuffer )
+void UploadVolumetricDynamicGlowLightsCBuffer()
 {
-	if ( !a_pBuffer )
-		return;
-
 	DynamicGlowLightCBuffer cbData    = {};
 	TINT                    iNumLights = 0;
 
@@ -499,9 +534,9 @@ void UploadVolumetricDynamicGlowLightsCBuffer( ID3D11Buffer* a_pBuffer )
 			iNumLights++;
 	}
 
-	cbData.params.x = ( g_bDynamicGlowEnabled && g_bDynamicGlowShadowsEnabled ) ? TFLOAT( iNumLights ) : 0.0f;
+	cbData.params.x = g_bDynamicGlowEnabled ? TFLOAT( iNumLights ) : 0.0f;
 
-	UploadDynamicGlowLightsCBufferData( cbData, a_pBuffer );
+	UploadDynamicGlowLightsCBufferData( cbData );
 }
 
 } // namespace remaster

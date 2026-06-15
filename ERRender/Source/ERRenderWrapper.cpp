@@ -347,7 +347,6 @@ struct VolumetricFogCompositeCBuffer
 
 static ID3D11Buffer* s_pVolumetricFogConstantBuffer          = TNULL;
 static ID3D11Buffer* s_pVolumetricFogCompositeConstantBuffer = TNULL;
-static ID3D11Buffer* s_pVolumetricDynamicGlowLightBuffer     = TNULL;
 
 namespace remaster
 {
@@ -573,7 +572,6 @@ void remaster::RenderDX11::CreateRenderTargets()
 		fogCBDesc.BindFlags          = D3D11_BIND_CONSTANT_BUFFER;
 		fogCBDesc.CPUAccessFlags     = D3D11_CPU_ACCESS_WRITE;
 		DX11_API_VALIDATE( GetD3D11Device()->CreateBuffer( &fogCBDesc, TNULL, &s_pVolumetricFogConstantBuffer ) );
-		TASSERT( CreateDynamicGlowLightsCBuffer( &s_pVolumetricDynamicGlowLightBuffer ) );
 
 		D3D11_BUFFER_DESC fogCompositeCBDesc = {};
 		fogCompositeCBDesc.ByteWidth         = sizeof( VolumetricFogCompositeCBuffer );
@@ -950,7 +948,6 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->PSSetConstantBuffer( 1, s_pVolumetricFogConstantBuffer );
 		TUINT uiVolumetricFogComboFlags = 0;
 		if ( !remaster::g_bDynamicGlowEnabled ||
-		     !remaster::g_bDynamicGlowShadowsEnabled ||
 		     remaster::g_iVolumetricFogCompositeMode == 1
 			// TODO: check if any light is actually visible rn
 			)
@@ -959,7 +956,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		}
 		else
 		{
-			remaster::UploadVolumetricDynamicGlowLightsCBuffer( s_pVolumetricDynamicGlowLightBuffer );
+			remaster::UploadVolumetricDynamicGlowLightsCBuffer();
 		}
 		const TUINT uiVolumetricFogComboIndex = remaster::shadercombos::GetVolumetricFogComboIndex( uiVolumetricFogComboFlags );
 		remaster::g_pRender->SetCullMode( D3D11_CULL_NONE );
