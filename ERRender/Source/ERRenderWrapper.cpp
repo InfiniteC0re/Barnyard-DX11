@@ -249,6 +249,11 @@ static ID3D11Texture2D*          s_pHBAOBlurTexture = TNULL;
 static ID3D11RenderTargetView*   s_pHBAOBlurRTV     = TNULL;
 static ID3D11ShaderResourceView* s_pHBAOBlurSRV     = TNULL;
 
+// AO is computed and blurred at half-width x half-height (quarter the pixels),
+// then upsampled with a linear sampler during the composite pass.
+static TUINT                     s_uiHBAOWidth     = 0;
+static TUINT                     s_uiHBAOHeight    = 0;
+
 static ID3D11Texture2D*          s_pVolumetricFogTexture = TNULL;
 static ID3D11RenderTargetView*   s_pVolumetricFogRTV     = TNULL;
 static ID3D11ShaderResourceView* s_pVolumetricFogSRV     = TNULL;
@@ -463,11 +468,14 @@ void remaster::RenderDX11::CreateRenderTargets()
 		DX11_API_VALIDATE( GetD3D11Device()->CreateShaderResourceView( s_pResolvedDepthTexture, TNULL, &s_pResolvedDepthSRV ) );
 	}
 
-	// HBAO+ style AO buffers
+	// HBAO+ style AO buffers (computed at half resolution -- quarter the pixels)
 	{
+		s_uiHBAOWidth  = TMath::Max<TUINT>( pSwapChainDesc->BufferDesc.Width  >> 1, 1 );
+		s_uiHBAOHeight = TMath::Max<TUINT>( pSwapChainDesc->BufferDesc.Height >> 1, 1 );
+
 		D3D11_TEXTURE2D_DESC desc = {};
-		desc.Width                = pSwapChainDesc->BufferDesc.Width;
-		desc.Height               = pSwapChainDesc->BufferDesc.Height;
+		desc.Width                = s_uiHBAOWidth;
+		desc.Height               = s_uiHBAOHeight;
 		desc.MipLevels            = 1;
 		desc.ArraySize            = 1;
 		desc.Format               = DXGI_FORMAT_R16_FLOAT;
@@ -685,6 +693,16 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		auto             pContext = TSTATICCAST( remaster::RenderContextD3D11, m_pViewport->GetRenderContext() );
 		const TMatrix44& proj     = pContext->GetProjectionMatrix();
 
+		// AO + blur run at half resolution; shrink the viewport to match the
+		// half-res render targets, then restore it before the full-res composite.
+		D3D11_VIEWPORT oHBAOOldVP;
+		TUINT          uiHBAONumVP = 1;
+		remaster::g_pRender->GetD3D11DeviceContext()->RSGetViewports( &uiHBAONumVP, &oHBAOOldVP );
+		D3D11_VIEWPORT oHBAOHalfVP = oHBAOOldVP;
+		oHBAOHalfVP.Width  = TFLOAT( s_uiHBAOWidth );
+		oHBAOHalfVP.Height = TFLOAT( s_uiHBAOHeight );
+		remaster::g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &oHBAOHalfVP );
+
 		remaster::g_pRender->DiscardView( s_pHBAORTV );
 		remaster::g_pRender->SetRenderTargetView( s_pHBAORTV, TNULL );
 		remaster::g_pRender->PSSetShaderResource( 0, s_pResolvedDepthSRV );
@@ -708,8 +726,8 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 			cbData.params[ 1 ] = remaster::g_flXeGTAOFalloffRange;
 			cbData.params[ 2 ] = remaster::g_flHBAOIntensity;
 			cbData.params[ 3 ] = remaster::g_flHBAOPower;
-			cbData.bufferSize[ 0 ] = TFLOAT( pSwapChainDesc->BufferDesc.Width );
-			cbData.bufferSize[ 1 ] = TFLOAT( pSwapChainDesc->BufferDesc.Height );
+			cbData.bufferSize[ 0 ] = TFLOAT( s_uiHBAOWidth );
+			cbData.bufferSize[ 1 ] = TFLOAT( s_uiHBAOHeight );
 			cbData.bufferSize[ 2 ] = 1.0f / cbData.bufferSize[ 0 ];
 			cbData.bufferSize[ 3 ] = 1.0f / cbData.bufferSize[ 1 ];
 			cbData.xeParams[ 0 ] = remaster::g_flXeGTAORadiusMultiplier;
@@ -742,8 +760,8 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 			cbData.params[ 1 ] = remaster::g_flHBAOBias;
 			cbData.params[ 2 ] = remaster::g_flHBAOIntensity;
 			cbData.params[ 3 ] = remaster::g_flHBAOPower;
-			cbData.bufferSize[ 0 ] = TFLOAT( pSwapChainDesc->BufferDesc.Width );
-			cbData.bufferSize[ 1 ] = TFLOAT( pSwapChainDesc->BufferDesc.Height );
+			cbData.bufferSize[ 0 ] = TFLOAT( s_uiHBAOWidth );
+			cbData.bufferSize[ 1 ] = TFLOAT( s_uiHBAOHeight );
 			cbData.bufferSize[ 2 ] = 1.0f / cbData.bufferSize[ 0 ];
 			cbData.bufferSize[ 3 ] = 1.0f / cbData.bufferSize[ 1 ];
 
@@ -763,11 +781,11 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		const TFLOAT fNearClip = pContext->GetProjectionParams().m_fNearClip;
 		const TFLOAT fFarClip  = pContext->GetProjectionParams().m_fFarClip;
 
-		auto fnBlurHBAO = [ &pSwapChainDesc, fNearClip, fFarClip ]( ID3D11RenderTargetView* a_pRTV, ID3D11ShaderResourceView* a_pInputSRV, TFLOAT a_fDirX, TFLOAT a_fDirY )
+		auto fnBlurHBAO = [ fNearClip, fFarClip ]( ID3D11RenderTargetView* a_pRTV, ID3D11ShaderResourceView* a_pInputSRV, TFLOAT a_fDirX, TFLOAT a_fDirY )
 		{
 			HBAOBlurCBuffer blurData;
-			blurData.blurParams[ 0 ] = 1.0f / TFLOAT( pSwapChainDesc->BufferDesc.Width );
-			blurData.blurParams[ 1 ] = 1.0f / TFLOAT( pSwapChainDesc->BufferDesc.Height );
+			blurData.blurParams[ 0 ] = 1.0f / TFLOAT( s_uiHBAOWidth );
+			blurData.blurParams[ 1 ] = 1.0f / TFLOAT( s_uiHBAOHeight );
 			blurData.blurParams[ 2 ] = a_fDirX;
 			blurData.blurParams[ 3 ] = a_fDirY;
 			blurData.depthParams[ 0 ] = fNearClip;
@@ -796,6 +814,9 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 		fnBlurHBAO( s_pHBAOBlurRTV, s_pHBAOSRV, 1.0f, 0.0f );
 		fnBlurHBAO( s_pHBAORTV, s_pHBAOBlurSRV, 0.0f, 1.0f );
+
+		// Restore the full-resolution viewport for the composite pass.
+		remaster::g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &oHBAOOldVP );
 
 		remaster::g_pRender->SetRenderTargetView(
 		    remaster::g_pRender->GetD3D11RenderTargetView(),
