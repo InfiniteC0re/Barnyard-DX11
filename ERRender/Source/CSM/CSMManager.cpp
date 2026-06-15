@@ -31,8 +31,8 @@ TBOOL       g_bOverrideSunDirection           = TTRUE;
 TFLOAT      g_flSunAzimuth                    = 9.0f;
 TFLOAT      g_flSunElevation                  = 139.0f;
 TFLOAT      g_flShadowIntensity               = 0.185f;
-TFLOAT      g_flShadowDistance                = 80.0f;
-TFLOAT      g_flShadowCasterPadding           = 50.0f;
+TFLOAT      g_flShadowDistance                = 56.0f;
+TFLOAT      g_flShadowCasterPadding           = 3.0f;
 TFLOAT      g_flShadowCascadePadding          = 8.0f;
 TFLOAT      g_flShadowSlopeScaledDepthBias    = CSM_DEPTH_BIAS_SLOPE;
 TFLOAT      g_flShadowMinSlopeScaledDepthBias = CSM_MIN_SLOPE_DEPTH_BIAS;
@@ -568,7 +568,7 @@ void CSMManager::BuildCascade( TRenderContext* a_pRenderContext, TINT a_iCascade
 	fMaxX = fMinX + TFLOAT( CSM_RESOLUTION ) * fTexelSize;
 	fMaxY = fMinY + TFLOAT( CSM_RESOLUTION ) * fTexelSize;
 
-	fMinZ -= g_flShadowCasterPadding;
+	fMinZ -= fRadius * 2.0f + g_flShadowCasterPadding;
 
 	BuildOrthoMatrix( m_LightProj[ a_iCascade ], fMinX, fMaxX, fMinY, fMaxY, fMinZ, fMaxZ );
 	m_LightViewProj[ a_iCascade ].Multiply( m_LightProj[ a_iCascade ], m_LightView );
