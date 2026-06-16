@@ -373,7 +373,7 @@ TINT   g_iGlowBloomKawaseLevels  = 2;
 TFLOAT g_flGlowBloomKawaseOffset = 1.7f;
 TFLOAT g_flGlowBloomIntensity    = 0.715f;
 
-TBOOL  g_bHBAOEnabled       = TFALSE;
+TBOOL  g_bHBAOEnabled       = TTRUE;
 TBOOL  g_bHBAODebug         = TFALSE;
 TINT   g_iAOAlgorithm       = 0;
 TFLOAT g_flHBAORadius       = 0.7f;
