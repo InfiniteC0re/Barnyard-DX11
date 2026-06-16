@@ -67,7 +67,7 @@ void remaster::WorldShaderDX11::Flush()
 {
 	g_pRender->SetDepthWrite( TTRUE );
 	g_pRender->SetBlendEnabled( TTRUE );
-	g_pRender->SetCullMode( TFALSE ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
+	g_pRender->SetCullMode( D3D11_CULL_NONE );
 	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
 }
 
@@ -83,13 +83,13 @@ void remaster::WorldShaderDX11::StartFlush()
 		g_pRender->SetDepthWrite( TTRUE );
 		g_pRender->SetBlendEnabled( TFALSE );
 		g_pRender->SetAlphaToCoverageEnabled( TFALSE );
-		g_pRender->SetCullMode( D3D11_CULL_FRONT );
+		g_pRender->SetCullMode( D3D11_CULL_NONE );
 		return;
 	}
 
 	g_pRender->SetDepthWrite( TTRUE );
 	g_pRender->SetBlendEnabled( TTRUE );
-	g_pRender->SetCullMode( TFALSE ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
+	g_pRender->SetCullMode( D3D11_CULL_NONE );
 
 	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
 
@@ -132,14 +132,13 @@ void remaster::WorldShaderDX11::UploadDynamicGlowLights( Toshi::TRenderPacket* a
 
 TBOOL remaster::WorldShaderDX11::Create()
 {
-	// Render with the same priority before everything to make the world serve as kind of depth prepass for rendering instances and skinned models
-	m_aOrderTables[ 0 ].Create( this, -7000 );
-	m_aOrderTables[ 1 ].Create( this, -7000 );
-	m_aOrderTables[ 2 ].Create( this, -7000 );
-	m_aOrderTables[ 3 ].Create( this, -7000 );
-	m_aOrderTables[ 4 ].Create( this, -7000 );
-	m_aOrderTables[ 5 ].Create( this, -7000 );
-	m_aOrderTables[ 6 ].Create( this, -7000 );
+	m_aOrderTables[ 0 ].Create( this, -3000 );
+	m_aOrderTables[ 1 ].Create( this, 100 );
+	m_aOrderTables[ 2 ].Create( this, 101 );
+	m_aOrderTables[ 3 ].Create( this, 601 );
+	m_aOrderTables[ 4 ].Create( this, -400 );
+	m_aOrderTables[ 5 ].Create( this, 500 );
+	m_aOrderTables[ 6 ].Create( this, -6005 );
 	m_aOrderTables[ 7 ].Create( this, -7000 );
 
 	m_oShadowTable.Create( this, 0 );
@@ -272,6 +271,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		g_bHasGlowObjectsThisFrame = TTRUE;
 		g_pRender->GetRenderTargetView( pOldRenderTargetView, pOldDepthStencilView );
 		g_pRender->SetRenderTargetView( g_pRender->GetD3D11GlowRenderTargetView(), pOldDepthStencilView );
+		g_pRender->SetDepthBias( -50 );
 	}
 
 	const TFLOAT flPacketAlpha = a_pRenderPacket->GetAlpha();
@@ -282,8 +282,6 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	// Use either blending shader or alpharef shader
 	// The only used alpharef value is 128, so no need to dynamically change it
 	TUINT uiComboFlags = bIsBlending ? 0 : shadercombos::World_ALPHAREF;
-	if ( bIsGlowing || pMesh->IsWater() || !g_bCSMEnabled || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
-		uiComboFlags |= shadercombos::World_NO_CSM;
 	if ( bIsGlowing || !pCurrentContext->IsFogEnabled() || s_flFogDensity <= 0.0f )
 		uiComboFlags |= shadercombos::World_NO_FOG;
 	if ( !g_bDynamicGlowEnabled )
@@ -367,6 +365,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	if ( bIsGlowing )
 	{
 		g_pRender->SetRenderTargetView( pOldRenderTargetView, pOldDepthStencilView );
+		g_pRender->SetDepthBias( 0 );
 	}
 }
 

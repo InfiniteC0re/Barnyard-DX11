@@ -1,4 +1,3 @@
-// STATIC: "ANIMATED" "0..1"
 // STATIC: "ALPHATEST" "0..1"
 
 cbuffer ShadowPassBuffer : register(b0)
@@ -65,8 +64,6 @@ VS_OUT vs_main_world(VS_IN_WORLD In)
 
 VS_OUT vs_main_skin(VS_IN_SKIN In)
 {
-#if ANIMATED
-
 	// Animate bones
     float BoneWeights[4];
     BoneWeights[0] = In.Weights.x;
@@ -87,12 +84,6 @@ VS_OUT vs_main_skin(VS_IN_SKIN In)
         vertex += mul(float4(In.ObjPos, 1.0), BoneMatrix) * BoneWeights[i];
     }
 	
-#else // ANIMATED
-	
-	float3 vertex = In.ObjPos;
-
-#endif // !ANIMATED
-
     float4 proj = mul(float4(vertex, 1.0), cb_matShadowMVP);
     
 #ifdef ALPHATEST

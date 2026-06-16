@@ -25,7 +25,7 @@ namespace remaster
 {
 
 CSMManager* g_pCSMManager                     = TNULL;
-TBOOL       g_bCSMEnabled                     = TTRUE;
+TBOOL       g_bCSMEnabled                     = TFALSE;
 TINT        g_iCSMDebugCascade                = -1;
 TBOOL       g_bCSMDebugFullRange              = TTRUE;
 TBOOL       g_bCSMDebugMaskBySplit            = TTRUE;

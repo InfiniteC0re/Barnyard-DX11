@@ -116,14 +116,14 @@ TBOOL  g_bDynamicGlowEnabled              = TTRUE;
 TFLOAT g_flDynamicGlowIntensity           = 1.75f;
 TFLOAT g_flDynamicGlowVolumetricIntensity = 0.3f;
 TFLOAT g_flDynamicGlowColor[ 3 ]          = { 255.0f / 255.0f, 181.0f / 255.0f, 110.0f / 255.0f };
-TBOOL  g_bDynamicGlowShadowsEnabled   = TTRUE;
-TFLOAT g_flDynamicGlowShadowDistance  = 45.0f;
-TFLOAT g_flDynamicGlowShadowIntensity = 1.0f;
-TFLOAT g_flDynamicGlowShadowBias      = 0.0015f;
-TFLOAT g_flDynamicGlowBumpScale       = 3.5f;
-TBOOL  g_bDynamicGlowFlickerEnabled   = TTRUE;
-TFLOAT g_flDynamicGlowFlickerSpeed    = 5.0f;
-TFLOAT g_flDynamicGlowFlickerStrength = 0.1f;
+TBOOL  g_bDynamicGlowShadowsEnabled       = TTRUE;
+TFLOAT g_flDynamicGlowShadowDistance      = 45.0f;
+TFLOAT g_flDynamicGlowShadowIntensity     = 1.0f;
+TFLOAT g_flDynamicGlowShadowBias          = 0.0015f;
+TFLOAT g_flDynamicGlowBumpScale           = 3.5f;
+TBOOL  g_bDynamicGlowFlickerEnabled       = TTRUE;
+TFLOAT g_flDynamicGlowFlickerSpeed        = 5.0f;
+TFLOAT g_flDynamicGlowFlickerStrength     = 0.1f;
 
 // Per-light overrides -- zero-initialised so bOverride starts TFALSE for all slots.
 GlowLightSettings g_aGlowLightSettings[ MAX_GLOW_LIGHT_SETTINGS ] = {};

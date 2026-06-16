@@ -127,7 +127,7 @@ void remaster::GrassShaderDX11::EndFlush()
 
 TBOOL remaster::GrassShaderDX11::Create()
 {
-	m_oOrderTable.Create( this, 6999 );
+	m_oOrderTable.Create( this, -2000 );
 	AGrassShader::Create();
 
 	return Validate();
@@ -240,8 +240,6 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	const TBOOL bHasDynLight = g_bDynamicGlowEnabled && TINT8( a_pRenderPacket->m_ui8Unk1 ) >= 0;
 
 	TUINT uiComboFlags = 0;
-	if ( !g_bCSMEnabled || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
-		uiComboFlags |= shadercombos::Grass_NO_CSM;
 	if ( !pCurrentContext->IsFogEnabled() || s_flFogDensity <= 0.0f )
 		uiComboFlags |= shadercombos::Grass_NO_FOG;
 	if ( !bHasDynLight )

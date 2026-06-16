@@ -40,10 +40,8 @@ void remaster::SysMaterial::PreRender()
 
 		g_pRender->PSSetShaderResource( 0, pD3DTexture );
 
-		if ( pTexture->GetAddressUState() == ADDRESSINGMODE_CLAMP && pTexture->GetAddressVState() == ADDRESSINGMODE_CLAMP )
-			g_pRender->PSSetSamplerState( 0, 1 );
-		else
-			g_pRender->PSSetSamplerState( 0, 3 );
+		// DX8 used a single uniform addressing mode for both axes (GetAddressing)
+		g_pRender->PSSetSamplerState( 0, GetLinearSamplerForAddressing( pTexture->GetAddressing(), pTexture->GetAddressing() ) );
 	}
 	else
 	{
@@ -93,7 +91,8 @@ void remaster::SysMaterial::PostRender()
 {
 	if ( m_Flags & FLAGS_NO_CULL )
 	{
-		g_pRender->SetCullMode( D3D11_CULL_BACK );
+		// DX8 restored D3DCULL_CW, which maps to CULL_FRONT in this port's winding
+		g_pRender->SetCullMode( D3D11_CULL_FRONT );
 	}
 
 	g_pRender->PSSetShaderResource( 0, TNULL );

@@ -293,7 +293,7 @@ public:
 
 	TBOOL HasSettingsUI() OVERRIDE
 	{
-		return TTRUE;
+		return TFALSE;
 	}
 
 	virtual TBOOL IsOverlayVisible() OVERRIDE
@@ -314,6 +314,10 @@ extern "C"
 		toshiParams.szLogAppName  = "ERRender";
 
 		TUtil::ToshiCreate( toshiParams );
+
+		// Override bike light pos
+		*(TUINT32*)( 0x007838bc ) |= 1;
+		*(TVector4*)( 0x007838ac ) = TVector4::VEC_ZERO;
 
 		remaster::fontrenderer::SetHDEnabled( !a_pCommandLine->HasParameter( "-nohdfonts" ) );
 

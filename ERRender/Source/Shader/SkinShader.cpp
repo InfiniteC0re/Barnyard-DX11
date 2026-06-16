@@ -220,15 +220,6 @@ const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetSk
 	if ( a_bBakedLighting )
 		uiComboFlags |= shadercombos::Skin_BAKED_LIGHTING;
 
-	if ( a_bFOB )
-		uiComboFlags |= shadercombos::Skin_FOB;
-
-	if ( a_bIsAnimated )
-		uiComboFlags |= shadercombos::Skin_ANIMATED;
-
-	if ( !g_bCSMEnabled || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
-		uiComboFlags |= shadercombos::Skin_NO_CSM;
-
 	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
 	if ( !pCurrentContext->IsFogEnabled() || s_flFogDensity <= 0.0f )
 		uiComboFlags |= shadercombos::Skin_NO_FOG;
@@ -242,9 +233,6 @@ const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetSk
 const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetShadowPipeline( TBOOL a_bIsAnimated ) const
 {
 	TUINT uiComboFlags = 0;
-
-	if ( a_bIsAnimated )
-		uiComboFlags |= shadercombos::ShadowDepth_ANIMATED;
 
 	uiComboFlags |= shadercombos::ShadowDepth_ALPHATEST;
 
@@ -268,7 +256,7 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	SkinMesh*           pMesh             = TSTATICCAST( SkinMesh, a_pRenderPacket->GetMesh() );
 	SkinMaterial*       pMaterial         = TSTATICCAST( SkinMaterial, a_pRenderPacket->GetMaterial() );
 
-	const TBOOL bIsAnimated = pSkeletonInstance->IsAnyAnimationPlaying();
+	const TBOOL bIsAnimated = TTRUE;
 
 	if ( g_pCSMManager && g_pCSMManager->IsRenderingShadowPass() )
 	{

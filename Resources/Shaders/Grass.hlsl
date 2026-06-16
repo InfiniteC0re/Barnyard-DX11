@@ -1,4 +1,3 @@
-// STATIC: "NO_CSM" "0..1"
 // STATIC: "NO_FOG" "0..1"
 // STATIC: "NO_DYN_LIGHT" "0..1"
 
@@ -32,10 +31,6 @@ cbuffer ConstantBuffer : register(b0)
 	float4   cb_WorldOffset;
     float4x4 cb_matModel;
 };
-
-#if !NO_CSM
-#include "ShadowSampling.hlsli"
-#endif
 
 #if !NO_DYN_LIGHT
 #include "DynamicLights.hlsli"
@@ -85,16 +80,7 @@ float4 ps_main(PS_IN In) : SV_TARGET
 	texColor.rgb = ApplyDynamicGlowLighting(texColor.rgb, glow);
 #endif
 
-#if !NO_CSM
-    float shadow = SampleShadow(In.WorldPos, In.ViewDepth);
-    float shadowStrength = cb_ShadowParams.w;
-    float shadowScale = shadow * shadowStrength + (1.0f - shadowStrength);
-    #if !NO_DYN_LIGHT
-    shadowScale = lerp(shadowScale, 1.0f, saturate(max(glow.r, max(glow.g, glow.b))));
-    #endif
-#else
     float shadowScale = 1.0f;
-#endif
 
 #if !NO_FOG
     float fogFactor = CalculateExponentialSquaredFog(In.ProjPos.w, cb_FogStart, cb_FogColor.w);

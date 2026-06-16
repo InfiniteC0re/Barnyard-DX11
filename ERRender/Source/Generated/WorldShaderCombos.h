@@ -10,32 +10,29 @@ namespace shadercombos
 enum WorldComboFlags : TUINT
 {
 	World_ALPHAREF = BITFLAG( 0 ),
-	World_NO_CSM = BITFLAG( 1 ),
-	World_NO_FOG = BITFLAG( 2 ),
-	World_NO_DYN_LIGHT = BITFLAG( 3 ),
-	World_GLOW = BITFLAG( 4 ),
+	World_NO_FOG = BITFLAG( 1 ),
+	World_NO_DYN_LIGHT = BITFLAG( 2 ),
+	World_GLOW = BITFLAG( 3 ),
 };
 
 static constexpr dx11::ShaderComboDefinition WorldCombos[] =
 {
 	{ "ALPHAREF", 0, 1, 1 },
-	{ "NO_CSM", 0, 1, 2 },
-	{ "NO_FOG", 0, 1, 4 },
-	{ "NO_DYN_LIGHT", 0, 1, 8 },
-	{ "GLOW", 0, 1, 16 },
+	{ "NO_FOG", 0, 1, 2 },
+	{ "NO_DYN_LIGHT", 0, 1, 4 },
+	{ "GLOW", 0, 1, 8 },
 };
 
-static constexpr TUINT WorldNumCombos = 5;
-static constexpr TUINT WorldNumPermutations = 32;
+static constexpr TUINT WorldNumCombos = 4;
+static constexpr TUINT WorldNumPermutations = 16;
 
 TINLINE TUINT GetWorldComboIndex( TUINT a_uiComboFlags )
 {
 	TUINT uiIndex = 0;
 	uiIndex += ( ( ( a_uiComboFlags & World_ALPHAREF ) ? 1U : 0U ) - 0U ) * 1U;
-	uiIndex += ( ( ( a_uiComboFlags & World_NO_CSM ) ? 1U : 0U ) - 0U ) * 2U;
-	uiIndex += ( ( ( a_uiComboFlags & World_NO_FOG ) ? 1U : 0U ) - 0U ) * 4U;
-	uiIndex += ( ( ( a_uiComboFlags & World_NO_DYN_LIGHT ) ? 1U : 0U ) - 0U ) * 8U;
-	uiIndex += ( ( ( a_uiComboFlags & World_GLOW ) ? 1U : 0U ) - 0U ) * 16U;
+	uiIndex += ( ( ( a_uiComboFlags & World_NO_FOG ) ? 1U : 0U ) - 0U ) * 2U;
+	uiIndex += ( ( ( a_uiComboFlags & World_NO_DYN_LIGHT ) ? 1U : 0U ) - 0U ) * 4U;
+	uiIndex += ( ( ( a_uiComboFlags & World_GLOW ) ? 1U : 0U ) - 0U ) * 8U;
 	return uiIndex;
 }
 

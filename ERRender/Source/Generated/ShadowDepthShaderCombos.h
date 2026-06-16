@@ -9,24 +9,21 @@ namespace shadercombos
 
 enum ShadowDepthComboFlags : TUINT
 {
-	ShadowDepth_ANIMATED = BITFLAG( 0 ),
-	ShadowDepth_ALPHATEST = BITFLAG( 1 ),
+	ShadowDepth_ALPHATEST = BITFLAG( 0 ),
 };
 
 static constexpr dx11::ShaderComboDefinition ShadowDepthCombos[] =
 {
-	{ "ANIMATED", 0, 1, 1 },
-	{ "ALPHATEST", 0, 1, 2 },
+	{ "ALPHATEST", 0, 1, 1 },
 };
 
-static constexpr TUINT ShadowDepthNumCombos = 2;
-static constexpr TUINT ShadowDepthNumPermutations = 4;
+static constexpr TUINT ShadowDepthNumCombos = 1;
+static constexpr TUINT ShadowDepthNumPermutations = 2;
 
 TINLINE TUINT GetShadowDepthComboIndex( TUINT a_uiComboFlags )
 {
 	TUINT uiIndex = 0;
-	uiIndex += ( ( ( a_uiComboFlags & ShadowDepth_ANIMATED ) ? 1U : 0U ) - 0U ) * 1U;
-	uiIndex += ( ( ( a_uiComboFlags & ShadowDepth_ALPHATEST ) ? 1U : 0U ) - 0U ) * 2U;
+	uiIndex += ( ( ( a_uiComboFlags & ShadowDepth_ALPHATEST ) ? 1U : 0U ) - 0U ) * 1U;
 	return uiIndex;
 }
 

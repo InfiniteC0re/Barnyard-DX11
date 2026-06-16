@@ -1,9 +1,6 @@
 // STATIC: "BAKED_LIGHTING" "0..1"
-// STATIC: "FOB" "0..1"
-// STATIC: "NO_CSM" "0..1"
 // STATIC: "NO_FOG" "0..1"
 // STATIC: "NO_DYN_LIGHT" "0..1"
-// STATIC: "ANIMATED" "0..1"
 
 struct VS_IN
 {
@@ -48,21 +45,13 @@ cbuffer ConstantBuffer : register(b0)
     float4x4 cb_matModel;
 };
 
-#ifdef ANIMATED
-
 cbuffer BoneCBuffer : register(b1)
 {
     float4x4 cb_bones[28];
 };
 
-#endif // ANIMATED
-
 #define SHADOW_TEXTURE_REGISTER t5
 #define SHADOW_SAMPLER_REGISTER s5
-
-#if !NO_CSM
-#include "ShadowSampling.hlsli"
-#endif
 
 #if !NO_DYN_LIGHT
 #include "DynamicLights.hlsli"
@@ -71,8 +60,6 @@ cbuffer BoneCBuffer : register(b1)
 PS_IN vs_main(VS_IN In)
 {
     PS_IN Out;
-
-#if ANIMATED
 
 	// Animate bones
     float BoneWeights[4];
@@ -98,13 +85,6 @@ PS_IN vs_main(VS_IN In)
 		normal += mul(In.Normal, BoneNormal) * BoneWeights[i];
 	}
 	
-#else // ANIMATED
-	
-	float3 vertex = In.ObjPos;
-	float3 normal = In.Normal;
-
-#endif // !ANIMATED
-
 	Out.ProjPos = mul(float4(vertex, 1.0), cb_matWVP);
 	Out.ViewDepth = Out.ProjPos.w;
 	Out.AlphaRef = cb_lightColor.w;
@@ -129,46 +109,16 @@ PS_IN vs_main(VS_IN In)
 	Out.LightingLerp1 = cb_lightingLerp;
 	Out.LightingLerp2 = float4(1.0f, 1.0f, 1.0f, 0.0f) - cb_lightingLerp;
 
-#elif FOB // BAKED_LIGHTING
-
-	// FOB Lighting
-	// NdotL = abs(NdotL);
-	NdotL = clamp(NdotL, 0.0f, 1.0f);
-
-	// float3 lightColor = cb_ambientColor.xyz;
-	// lightColor.r *= 0.9f;
-	// lightColor.z *= 0.5f;
-
-	// lightColor += NdotL * 1.2f * cb_lightColor.xyz;
-
-	// Out.Color.xyz = lightColor;
-
-	const float3 baseColor = float3(0.54509807f, 0.60784316f, 0.47058824f);
-	const float3 lightColor = float3(0.7372549f, 0.8156863f, 0.5254902f);
-	// float3(0.54509807f, 0.60784316f, 0.47058824f) - usual
-	// float3(0.9529412f, 0.75686276f, 0.54509807f) - yellow
-	// float3(0.7372549f, 0.8156863f, 0.5254902f) - lighted
-
-	float3 colorA = float3(188, 201, 103) / 255.0f;
-	float3 colorB = float3(111, 114, 143) / 255.0f;
-
-	// Out.Color.xyz = NdotL * cb_lightColor.xyz + cb_ambientColor.xyz;
-	// Out.Color.xyz = float3(1.0f, 1.0f, 1.0f) * (NdotL * lightColor + (1.0f - NdotL) * baseColor);
-	Out.Color.xyz = colorB + (colorA - colorB) * 1;
-	Out.Color.w = cb_ambientColor.a;
-	// Out.Color.xyz = lerp(float3(0.54509807f, 0.60784316f, 0.47058824f), cb_lightColor.xyz + float3(0.7372549f, 0.8156863f, 0.5254902f), NdotL);
-
-#else // !FOB && !BAKED_LIGHTING
-
+#else // BAKED_LIGHTING
 	// Runtime lighting calculation
 
 	NdotL = clamp(NdotL, 0.0f, 1.0f);
 
 	// Original PC shading:
-	// Out.Color.xyz = NdotL * cb_lightColor.xyz + (1.0f - NdotL) * cb_ambientColor.xyz;
+	Out.Color.xyz = NdotL * cb_lightColor.xyz + (1.0f - NdotL) * cb_ambientColor.xyz;
 
 	// Correct console shading:
-	Out.Color.xyz = NdotL * cb_lightColor.xyz + cb_ambientColor.xyz;
+	// Out.Color.xyz = NdotL * cb_lightColor.xyz + cb_ambientColor.xyz;
 	
 	Out.Color.w = cb_ambientColor.a;
 
@@ -222,16 +172,6 @@ float4 ps_main(PS_IN In) : SV_TARGET
 #if !NO_DYN_LIGHT
 	float3 glow = SampleDynamicGlowLights(In.WorldPos, ComputeDerivedWorldNormal(In.WorldPos, In.WorldNormal, In.UV0, texture0, sampler0, cb_glowLightIntensity[0].y));
 	texColor.rgb = ApplyDynamicGlowLighting(texColor.rgb, glow);
-#endif
-
-#if !NO_CSM
-	float shadow = SampleShadow(In.WorldPos, In.ViewDepth);
-	float shadowStrength = cb_ShadowParams.w;
-	float shadowScale = shadow * shadowStrength + (1.0f - shadowStrength);
-	#if !NO_DYN_LIGHT
-	shadowScale = lerp(shadowScale, 1.0f, saturate(max(glow.r, max(glow.g, glow.b))));
-	#endif
-	texColor.rgb *= shadowScale;
 #endif
 
 #if !NO_FOG

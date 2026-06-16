@@ -361,7 +361,7 @@ static ID3D11Buffer* s_pVolumetricFogCompositeConstantBuffer = TNULL;
 
 namespace remaster
 {
-TBOOL  g_bSunShaftsEnabled       = TTRUE;
+TBOOL  g_bSunShaftsEnabled       = TFALSE;
 TFLOAT g_flSunShaftsAlpha        = 0.04f;
 TFLOAT g_flSunShaftsRaysLength   = 0.3f;
 TFLOAT g_flSunShaftsTint[ 3 ]    = { 1.0f, 0.91f, 0.8f };
@@ -373,7 +373,7 @@ TINT   g_iGlowBloomKawaseLevels  = 4;
 TFLOAT g_flGlowBloomKawaseOffset = 2.887f;
 TFLOAT g_flGlowBloomIntensity    = 0.9f;
 
-TBOOL  g_bHBAOEnabled       = TTRUE;
+TBOOL  g_bHBAOEnabled       = TFALSE;
 TBOOL  g_bHBAODebug         = TFALSE;
 TINT   g_iAOAlgorithm       = 0;
 TFLOAT g_flHBAORadius       = 0.7f;
@@ -387,7 +387,7 @@ TFLOAT g_flXeGTAOFalloffRange = 0.9f;
 TFLOAT g_flXeGTAOSampleDistributionPower = 2.8f;
 TFLOAT g_flXeGTAOThinOccluderCompensation = 0.5f;
 
-TBOOL  g_bVolumetricFogEnabled       = TTRUE;
+TBOOL  g_bVolumetricFogEnabled       = TFALSE;
 TINT   g_iVolumetricFogCompositeMode = 0;
 TFLOAT g_flVolumetricFogDensity      = 0.019f;
 TFLOAT g_flVolumetricFogG            = 0.0f;
@@ -1407,6 +1407,14 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	}
 }
 
+MEMBER_HOOK( 0x00608540, AGlowViewport, AGlowViewport_AddGlowObject, AGlowViewport::GlowObject* )
+{
+	AGlowViewport::GlowObject* pGlowObject = CallOriginal();
+
+	pGlowObject->m_bIsNightLight = TFALSE;
+	return pGlowObject;
+}
+
 void remaster::SetupRenderHooks()
 {
 	InstallHook<TRenderD3DInterface_Create>();
@@ -1418,6 +1426,7 @@ void remaster::SetupRenderHooks()
 	InstallHook<RenderCellMeshWin>();
 	InstallHook<RenderCellMeshDefault>();
 	InstallHook<AModelLoader_LoadWorldMeshTRB_Shadow>();
+	InstallHook<AGlowViewport_AddGlowObject>();
 	
 	SetupRenderHooks_GrassShader();
 	SetupRenderHooks_SkinShader();
