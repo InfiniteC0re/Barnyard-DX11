@@ -11,11 +11,13 @@
 #include "RenderDX11Utils.h"
 #include "RenderContentDX11.h"
 #include "CSM/CSMManager.h"
+#include "CSM/CSMShadowBatch.h"
 #include "DynamicGlowLights.h"
 
 #include <Render/TRenderPacket.h>
 #include <Platform/DX8/TRenderInterface_DX8.h>
 #include <Platform/DX8/TRenderContext_DX8.h>
+#include <Platform/DX8/TTextureResourceHAL_DX8.h>
 #include <Platform/DX8/TVertexBlockResource_DX8.h>
 #include <Platform/DX8/TVertexPoolResource_DX8.h>
 #include <Platform/DX8/TIndexBlockResource_DX8.h>
@@ -222,6 +224,13 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	if ( g_pCSMManager && g_pCSMManager->IsRenderingShadowPass() )
 	{
+		// Static world section geometry is drawn from merged per-section buffers
+		// (one draw per material) instead of one draw per tiny mesh. If this mesh
+		// is batched, record the section's model-view (so the batch reproduces the
+		// exact transform) and skip the per-mesh draw.
+// 		if ( CSMShadowBatch::GetSingleton().CaptureSectionModelView( pMesh, a_pRenderPacket->GetModelViewMatrix() ) )
+// 			return;
+
 		g_pRender->SetShaderPipelineState( m_vecShadowDepthPipelines[ shadercombos::GetShadowDepthComboIndex( shadercombos::ShadowDepth_ALPHATEST ) ] );
 
 		TMatrix44 mShadowMVP;
@@ -358,6 +367,65 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	if ( bIsGlowing )
 	{
 		g_pRender->SetRenderTargetView( pOldRenderTargetView, pOldDepthStencilView );
+	}
+}
+
+void remaster::WorldShaderDX11::RenderShadowBatches()
+{
+	CSMShadowBatch& rBatch = CSMShadowBatch::GetSingleton();
+	if ( !rBatch.HasSections() ) return;
+
+	g_pRender->SetShaderPipelineState( m_vecShadowDepthPipelines[ shadercombos::GetShadowDepthComboIndex( shadercombos::ShadowDepth_ALPHATEST ) ] );
+
+	// MVP = lightProj(cascade) * sectionModelView. The merged vertices are in
+	// section-local space, so we reuse the model-view captured from the section's
+	// per-mesh draw rather than a bare lightProj * lightView.
+	const TMatrix44& rLightProj = g_pCSMManager->GetCurrentLightProjection();
+
+	// DIAGNOSTIC: draw every section unconditionally. If a section's transform was
+	// not captured this pass, fall back to lightProj * lightView so we can tell
+	// "nothing drawn" (build/call problem) apart from "wrong position" (capture
+	// problem).
+	auto& rSections = rBatch.GetSections();
+	for ( auto it = rSections.Begin(); it != rSections.End(); it++ )
+	{
+		CSMShadowBatch::SectionBatch& rSection = it.GetValue()->GetSecond();
+
+		TMatrix44 mShadowMVP;
+		if ( rSection.bModelViewValid )
+			mShadowMVP.Multiply( rLightProj, rSection.matModelView );
+		else
+			mShadowMVP = g_pCSMManager->GetCurrentLightViewProj();
+		g_pRender->VSBufferSetMat4( 0, mShadowMVP );
+
+		for ( TINT i = 0; i < rSection.vecGroups.Size(); i++ )
+		{
+			CSMShadowBatch::MergedGroup& rGroup = rSection.vecGroups[ i ];
+
+			// Bind the material's diffuse texture for the alpha-test clip in the
+			// shadow pixel shader (matches WorldMaterial::PreRender's t0 bind).
+			if ( rGroup.pMaterial )
+			{
+				auto pTexture = TSTATICCAST( TTextureResourceHAL, rGroup.pMaterial->GetTexture( 0 ) );
+				if ( pTexture )
+				{
+					pTexture->Validate();
+					g_pRender->PSSetShaderResource( 0, (ID3D11ShaderResourceView*)pTexture->GetD3DTexture() );
+				}
+			}
+
+			g_pRender->DrawIndexed(
+			    D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+			    rGroup.uiIndexCount,
+			    rGroup.pIndexBuffer,
+			    0,
+			    DXGI_FORMAT_R32_UINT,
+			    rGroup.pVertexBuffer,
+			    sizeof( WorldVertex ),
+			    0,
+			    TNULL
+			);
+		}
 	}
 }
 

@@ -10,13 +10,14 @@ namespace remaster
 {
 
 static constexpr TINT   CSM_CASCADE_COUNT        = 3;
-static constexpr TINT   CSM_RESOLUTION           = 2048;
+static constexpr TINT   CSM_RESOLUTION           = 4096;
 static constexpr TFLOAT CSM_SPLIT_LAMBDA         = 0.5f;
 static constexpr TFLOAT CSM_DEPTH_BIAS_SLOPE     = 2.0f;
 static constexpr TINT   CSM_DEPTH_BIAS_UNITS     = 100;
 static constexpr TFLOAT CSM_RECEIVER_BIAS        = 0.0005f;
 static constexpr TFLOAT CSM_RECEIVER_PLANE_BIAS  = 1.0f;
 static constexpr TFLOAT CSM_PCF_RADIUS           = 1.0f;
+static constexpr TFLOAT CSM_CASCADE_BLEND        = 0.1f;
 static constexpr TFLOAT CSM_MIN_SLOPE_DEPTH_BIAS = 0.25f;
 
 struct ShadowCBufferData
@@ -96,5 +97,6 @@ extern TFLOAT      g_flShadowMinSlopeScaledDepthBias;
 extern TFLOAT      g_flShadowReceiverBias;
 extern TFLOAT      g_flShadowReceiverPlaneBias;
 extern TFLOAT      g_flShadowPCFRadius;
+extern TFLOAT      g_flShadowCascadeBlend;
 
 } // namespace remaster

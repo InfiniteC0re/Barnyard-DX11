@@ -2,6 +2,8 @@
 #include "CSM/CSMManager.h"
 
 #include "RenderDX11.h"
+#include "Shader/WorldShader.h"
+#include "CSM/CSMShadowBatch.h"
 
 #include <HookHelpers.h>
 #include <BYardSDK/ACamera.h>
@@ -39,6 +41,7 @@ TFLOAT      g_flShadowMinSlopeScaledDepthBias = CSM_MIN_SLOPE_DEPTH_BIAS;
 TFLOAT      g_flShadowReceiverBias            = CSM_RECEIVER_BIAS;
 TFLOAT      g_flShadowReceiverPlaneBias       = CSM_RECEIVER_PLANE_BIAS;
 TFLOAT      g_flShadowPCFRadius               = CSM_PCF_RADIUS;
+TFLOAT      g_flShadowCascadeBlend            = CSM_CASCADE_BLEND;
 
 CSMManager::CSMManager()
     : m_pShadowTexture( TNULL )
@@ -228,7 +231,7 @@ void CSMManager::UpdateCascades( TRenderContext* a_pRenderContext )
 	m_oShadowCBufferData.shadowFilterParams[ 0 ] = g_flShadowPCFRadius;
 	m_oShadowCBufferData.shadowFilterParams[ 1 ] = g_flShadowReceiverPlaneBias;
 	m_oShadowCBufferData.shadowFilterParams[ 2 ] = ( g_iCSMDebugCascade >= 0 && !g_bCSMDebugFullRange && g_bCSMDebugMaskBySplit ) ? 1.0f : 0.0f;
-	m_oShadowCBufferData.shadowFilterParams[ 3 ] = 0.0f;
+	m_oShadowCBufferData.shadowFilterParams[ 3 ] = g_flShadowCascadeBlend;
 }
 
 void CSMManager::RenderShadowMaps()
@@ -354,6 +357,11 @@ void CSMManager::RenderSceneCasters( const Toshi::TRenderContext::PROJECTIONPARA
 	auto pRenderContext = g_pRender->GetCurrentContext();
 	if ( !pRenderContext ) return;
 
+	// Invalidate per-section transforms; they are recaptured below as each
+	// section's casters are flushed against this pass's light frustum, which also
+	// gives per-cascade section culling for the merged batches.
+	CSMShadowBatch::GetSingleton().BeginShadowPass();
+
 	const TMatrix44 oOldWorldView     = pRenderContext->GetWorldViewMatrix();
 	const TMatrix44 oOldModelView     = pRenderContext->GetModelViewMatrix();
 	const auto      oOldProjection    = pRenderContext->GetProjectionParams();
@@ -416,6 +424,7 @@ void CSMManager::RenderSceneCasters( const Toshi::TRenderContext::PROJECTIONPARA
 			CALL_THIS( 0x005dd5c0, void*, void, *(void**)0x0078de44 ); // AGateManager::Render
 
 		CALL_THIS( 0x005ea8b0, void*, void, *(void**)0x00796300 ); // ATerrain::Render
+
 		if ( *(void**)0x00796304 )
 			CALL_THIS( 0x005ef3a0, void*, void, *(void**)0x00796304 ); // ATreeManager::Render
 
@@ -429,7 +438,14 @@ void CSMManager::RenderSceneCasters( const Toshi::TRenderContext::PROJECTIONPARA
 	if ( *(void**)0x00783c18 )
 		CALL_THIS( 0x0053a320, void*, void, *(void**)0x00783c18, TBOOL, TFALSE ); // AAnimalPopulationManager::Render
 
+	// Flush per-mesh casters first. For batched world section meshes this captures
+	// each section's model-view and suppresses the per-mesh draw (see
+	// WorldShaderDX11::Render); other casters draw normally.
 	g_pRender->FlushShaders();
+
+	// Then draw the merged static world geometry for this cascade -- one draw per
+	// material instead of thousands of tiny per-mesh draws.
+	// TSTATICCAST( WorldShaderDX11, WorldShaderDX11::GetSingleton() )->RenderShadowBatches();
 
 	rTransformStack.Reset();
 	rTransformStack.PushNull().Identity();

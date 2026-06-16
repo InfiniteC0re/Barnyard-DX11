@@ -3,6 +3,7 @@
 #include "RenderDX11.h"
 #include "Editor.h"
 #include "CSM/CSMManager.h"
+#include "CSM/CSMShadowBatch.h"
 
 #include "UI/FontRenderer.h"
 
@@ -152,6 +153,11 @@ public:
 		ImGui::DragFloat( "Receiver Bias", &remaster::g_flShadowReceiverBias, 0.00005f, 0.0f, 0.01f, "%.5f" );
 		ImGui::SliderFloat( "Receiver Plane Bias", &remaster::g_flShadowReceiverPlaneBias, 0.0f, 2.0f, "%.2f" );
 		ImGui::SliderFloat( "PCF Radius", &remaster::g_flShadowPCFRadius, 1.0f, 3.0f, "%.0f" );
+		ImGui::SliderFloat( "Cascade Blend", &remaster::g_flShadowCascadeBlend, 0.0f, 0.5f, "%.2f" );
+		ImGui::Text( "Shadow batches: %d sections, %d groups, %d captured",
+		    remaster::CSMShadowBatch::GetSingleton().GetSectionCount(),
+		    remaster::CSMShadowBatch::GetSingleton().GetGroupCount(),
+		    remaster::CSMShadowBatch::GetSingleton().GetCapturedCount() );
 
 		ImGui::Separator();
 		ImGui::TextUnformatted( "Screen-Space AO" );

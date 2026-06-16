@@ -8,6 +8,7 @@
 #include "Shader/SysShader.h"
 #include "Ref/AWorld.h"
 #include "Ref/AWorldVIS.h"
+#include "CSM/CSMShadowBatch.h"
 #include "Resource/TextureResource.h"
 #include "Resource/Viewport.h"
 #include "Resource/OrderTable.h"
@@ -223,6 +224,16 @@ HOOK( 0x005e7d10, RenderCellMeshDefault, void, CellMeshSphere* a_pMeshSphere, Re
 	a_pMeshSphere->m_pCellMesh->pMesh->Render();
 
 	if ( bNormalPass ) pContext->ClearLightIDs();
+}
+
+// Build merged per-material shadow buffers for each streamed world section once
+// its meshes are loaded. The original walks the WorldDatabase and fills per-mesh
+// GPU pools; afterwards every CellMesh has a valid pMesh, so we can group them.
+HOOK( 0x00613a40, AModelLoader_LoadWorldMeshTRB_Shadow, void, TModel* a_pModel, TINT a_iLODIndex, TModelLOD* a_pLOD, TTMDWin::TRBLODHeader* a_pLODHeader )
+{
+	CallOriginal( a_pModel, a_iLODIndex, a_pLOD, a_pLODHeader );
+
+	//remaster::CSMShadowBatch::GetSingleton().BuildSection( a_pModel, a_pLOD );
 }
 
 static ID3D11Texture2D*          s_pSkyMaskTexture            = TNULL;
@@ -1406,6 +1417,7 @@ void remaster::SetupRenderHooks()
 	InstallHook<ARenderer_RenderMainScene>();
 	InstallHook<RenderCellMeshWin>();
 	InstallHook<RenderCellMeshDefault>();
+	InstallHook<AModelLoader_LoadWorldMeshTRB_Shadow>();
 	
 	SetupRenderHooks_GrassShader();
 	SetupRenderHooks_SkinShader();

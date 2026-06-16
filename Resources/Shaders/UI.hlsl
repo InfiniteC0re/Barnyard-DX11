@@ -40,7 +40,7 @@ float4 ps_main(PS_IN input) : SV_TARGET
 {
 #if TEXTURED
 
-    float4 texColor = ui_texture.Sample(ui_texture_sampler, input.texcoord);
+    float4 texColor = ui_texture.SampleLevel(ui_texture_sampler, input.texcoord, 0);
 	
 #if ALPHA_REF
     clip(texColor.a - 60.0f / 255.0f);
@@ -50,7 +50,7 @@ float4 ps_main(PS_IN input) : SV_TARGET
 
 #elif FONT // TEXTURED
 
-    float sdf = ui_texture.Sample(ui_texture_sampler, input.texcoord).r;
+    float sdf = ui_texture.SampleLevel(ui_texture_sampler, input.texcoord, 0).r;
     float pxRange = 0.03f;
     float outlineWidth = 0.1f;
 

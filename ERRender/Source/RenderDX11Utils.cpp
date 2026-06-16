@@ -276,7 +276,7 @@ static TUINT GetShaderCompileThreadCount( TUINT a_uiNumPermutations )
 
 	// D3DCompile can allocate a lot of temporary memory per optimized shader.
 	// Keep this conservative because the game/mod runs as a 32-bit process.
-	return TMath::Min<TUINT>( a_uiNumPermutations, 4 );
+	return TMath::Min<TUINT>( a_uiNumPermutations, 3 );
 }
 
 remaster::dx11::ShaderCombo::ShaderCombo()
