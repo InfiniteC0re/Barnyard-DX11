@@ -51,6 +51,7 @@ enum SAMPLERSTATE : TINT
 	SAMPLER_POINT_CLAMPU_WRAPV    = 12, // point,            clamp / wrap  / clamp
 	SAMPLER_LINEAR_CLAMPU_WRAPV   = 13, // linear (aniso),   clamp / wrap  / clamp
 	SAMPLER_BILINEAR_CLAMPU_WRAPV = 14, // linear/mip-point, clamp / wrap  / clamp
+	SAMPLER_BILINEAR_MIRROR       = 15, // linear/mip-point, mirror/ mirror/ mirror
 
 	SAMPLER_COUNT,
 };
@@ -270,6 +271,10 @@ public:
 	    TFLOAT                     minLOD,
 	    TFLOAT                     maxLOD
 	);
+
+	// Returns the highest MSAA sample count <= a_uiDesired that the device supports
+	// for both the colour and depth-stencil formats (falls back to 1 if none).
+	TUINT GetSupportedMSAASampleCount( TUINT a_uiDesired ) const;
 
 public:
 	//-----------------------------------------------------------------------------
@@ -619,6 +624,10 @@ private:
 	ID3D11Texture2D*          m_pGlowRenderTargetTexture = TNULL;
 	ID3D11ShaderResourceView* m_pGlowRenderTargetSRV     = TNULL;
 	DXGI_SWAP_CHAIN_DESC      m_oSwapChainDesc;
+
+	// Actual MSAA sample count in use, clamped to what the device supports
+	// (see GetSupportedMSAASampleCount). May be lower than MSAA_SAMPLE_COUNT.
+	TUINT m_uiMSAASampleCount = 1;
 
 	ID3D11DeviceContext1* m_pDeviceContext1 = TNULL; // D3D11.1 context
 

@@ -72,6 +72,8 @@ void remaster::SkinShaderDX11::Flush()
 	{
 		g_pRender->SetBlendEnabled( TTRUE );
 
+		g_pRender->SetZMode( TTRUE, D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
+
 		g_pRender->SetCullMode( m_bRenderEnvMap ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
 		m_aOrderTables[ 0 ].Render();
 
@@ -102,6 +104,8 @@ void remaster::SkinShaderDX11::StartFlush()
 	g_pRender->SetBlendEnabled( TTRUE );
 	g_pRender->SetCullMode( m_bRenderEnvMap ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
 	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
+
+	g_pRender->SetZMode( TTRUE, D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
 
 	if ( g_bCSMEnabled && g_pCSMManager && g_flShadowIntensity > 0.0f )
 	{

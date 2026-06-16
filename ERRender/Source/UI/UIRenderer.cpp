@@ -258,15 +258,15 @@ void remaster::UIRendererDX11::SetMaterial( Toshi::T2GUIMaterial* a_pMaterial )
 
 		if ( TREINTERPRETCAST( UIMaterial*, a_pMaterial )->m_eTextureAddress == 1 )
 		{
-			g_pRender->PSSetSamplerState( 0, 1 );
+			g_pRender->PSSetSamplerState( 0, SAMPLER_BILINEAR_CLAMP );
 		}
 		else if ( TREINTERPRETCAST( UIMaterial*, a_pMaterial )->m_eTextureAddress == 2 )
 		{
-			g_pRender->PSSetSamplerState( 0, 4 );
+			g_pRender->PSSetSamplerState( 0, SAMPLER_BILINEAR_MIRROR );
 		}
 		else
 		{
-			g_pRender->PSSetSamplerState( 0, 3 );
+			g_pRender->PSSetSamplerState( 0, SAMPLER_BILINEAR_WRAP );
 		}
 	}
 
@@ -441,7 +441,7 @@ void remaster::UIRendererDX11::SetShaderType( SHADER_TYPE a_eShaderType )
 		}
 		case ST_FONT:
 			g_pRender->SetPixelShader( m_vecUIPipelines[ shadercombos::GetUIComboIndex( uiGlobalComboFlags | shadercombos::UI_FONT ) ].GetPixelShader() );
-			g_pRender->PSSetSamplerState( 0, 1 );
+			g_pRender->PSSetSamplerState( 0, SAMPLER_BILINEAR_CLAMP );
 			break;
 		case ST_SOLID:
 			g_pRender->SetPixelShader( m_vecUIPipelines[ shadercombos::GetUIComboIndex( uiGlobalComboFlags ) ].GetPixelShader() );

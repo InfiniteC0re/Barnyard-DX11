@@ -62,7 +62,7 @@ void SDLWindow::Update()
 	{
 		if ( event.type == SDL_EventType::SDL_QUIT )
 		{
-			exit( 0 );
+			TerminateProcess( GetCurrentProcess(), 0 );
 			//TGlobalEmitter<TApplicationExitEvent>::Throw( { TFALSE } );
 		}
 		else if ( event.type == SDL_EventType::SDL_WINDOWEVENT )

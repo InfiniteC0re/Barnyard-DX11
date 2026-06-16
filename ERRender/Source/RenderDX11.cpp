@@ -139,6 +139,19 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		return TFALSE;
 	}
 
+	if ( a_rParams.uiWidth == 0 || a_rParams.uiHeight == 0 )
+	{
+		TINT iDisplayIndex = SDL_GetWindowDisplayIndex( m_Window.GetSDLHandle() );
+
+		SDL_DisplayMode oSDLMode;
+		SDL_GetCurrentDisplayMode( iDisplayIndex, &oSDLMode );
+
+		// Get rid of the const, because we must override the dimensions now
+		DISPLAYPARAMS* pDisplayParams = (DISPLAYPARAMS*)&a_rParams;
+		pDisplayParams->uiWidth       = 800;
+		pDisplayParams->uiHeight      = 600;
+	}
+
 	// Find appropriate device for the display parameters
 	m_pAdapterDevice = TSTATICCAST( RenderAdapterDX11::Mode::Device, FindDevice( a_rParams ) );
 	m_oDisplayParams = a_rParams;
@@ -154,6 +167,10 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		auto pMode          = TSTATICCAST( RenderAdapterDX11::Mode, pDevice->GetMode() );
 		auto pAdapter       = TSTATICCAST( RenderAdapterDX11, pMode->GetAdapter() );
 		auto uiAdapterIndex = pAdapter->GetAdapterIndex();
+
+		// Clamp the desired MSAA sample count to what this device actually supports
+		// for the render-target and depth formats before we create any MSAA resources.
+		m_uiMSAASampleCount = GetSupportedMSAASampleCount( MSAA_SAMPLE_COUNT );
 
 		// Create swapchain
 		IDXGIDevice* dxgiDevice = TNULL;
@@ -197,7 +214,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		backBufferDesc.Width                = m_oSwapChainDesc.BufferDesc.Width;
 		backBufferDesc.MipLevels            = 1;
 		backBufferDesc.MiscFlags            = 0;
-		backBufferDesc.SampleDesc.Count     = MSAA_SAMPLE_COUNT;
+		backBufferDesc.SampleDesc.Count     = m_uiMSAASampleCount;
 		backBufferDesc.SampleDesc.Quality   = 0;
 		backBufferDesc.Usage                = D3D11_USAGE_DEFAULT;
 
@@ -231,7 +248,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		depthBufferDesc.Width                = m_oSwapChainDesc.BufferDesc.Width;
 		depthBufferDesc.MipLevels            = 1;
 		depthBufferDesc.MiscFlags            = 0;
-		depthBufferDesc.SampleDesc.Count     = MSAA_SAMPLE_COUNT;
+		depthBufferDesc.SampleDesc.Count     = m_uiMSAASampleCount;
 		depthBufferDesc.SampleDesc.Quality   = 0;
 		depthBufferDesc.Usage                = D3D11_USAGE_DEFAULT;
 
@@ -397,7 +414,7 @@ TBOOL RenderDX11::BeginScene()
 
 TBOOL RenderDX11::EndScene()
 {
-	if constexpr ( MSAA_SAMPLE_COUNT > 1 )
+	if ( m_uiMSAASampleCount > 1 )
 		m_pDeviceContext->ResolveSubresource( m_pSwapChainBackBuffer, 0, m_pRenderTargetTexture, 0, m_oSwapChainDesc.BufferDesc.Format );
 	else
 		m_pDeviceContext->CopyResource( m_pSwapChainBackBuffer, m_pRenderTargetTexture );
@@ -618,6 +635,7 @@ void RenderDX11::CreateRenderObjects()
 	m_aSamplerStates[ SAMPLER_POINT_CLAMPU_WRAPV ]    = CreateSamplerState( D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE_ADDRESS_WRAP, D3D11_TEXTURE_ADDRESS_CLAMP, 0.0f, 0, 0.0f, D3D11_FLOAT32_MAX, 1 );
 	m_aSamplerStates[ SAMPLER_LINEAR_CLAMPU_WRAPV ]   = CreateSamplerStateAutoAnisotropy( D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE_ADDRESS_WRAP, D3D11_TEXTURE_ADDRESS_CLAMP, 0.0f, 0, 0.0f, D3D11_FLOAT32_MAX );
 	m_aSamplerStates[ SAMPLER_BILINEAR_CLAMPU_WRAPV ] = CreateSamplerState( D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE_ADDRESS_WRAP, D3D11_TEXTURE_ADDRESS_CLAMP, 0.0f, 0, 0.0f, D3D11_FLOAT32_MAX, 1 );
+	m_aSamplerStates[ SAMPLER_BILINEAR_MIRROR ]       = CreateSamplerState( D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT, D3D11_TEXTURE_ADDRESS_MIRROR, D3D11_TEXTURE_ADDRESS_MIRROR, D3D11_TEXTURE_ADDRESS_MIRROR, 0.0f, 0, 0.0f, D3D11_FLOAT32_MAX, 1 );
 
 	// Vertex buffers
 	for ( size_t i = 0; i < NUMBUFFERS; i++ )
@@ -785,6 +803,29 @@ void RenderDX11::CreateRenderObjects()
 	m_pCurrentVertexBuffer = TNULL;
 
 	m_oCSMManager.Create();
+}
+
+TUINT RenderDX11::GetSupportedMSAASampleCount( TUINT a_uiDesired ) const
+{
+	// Walk down from the desired count to the highest the device can do for BOTH the
+	// colour render target and the depth-stencil resource. CheckMultisampleQualityLevels
+	// returns 0 quality levels when a sample count is unsupported for that format.
+	for ( TUINT uiCount = a_uiDesired; uiCount > 1; uiCount >>= 1 )
+	{
+		UINT uiColourQuality = 0;
+		UINT uiDepthQuality  = 0;
+
+		const HRESULT hrColour = m_pDevice->CheckMultisampleQualityLevels( DXGI_FORMAT_R8G8B8A8_UNORM, uiCount, &uiColourQuality );
+		const HRESULT hrDepth  = m_pDevice->CheckMultisampleQualityLevels( DXGI_FORMAT_D32_FLOAT, uiCount, &uiDepthQuality );
+
+		if ( SUCCEEDED( hrColour ) && uiColourQuality > 0 &&
+		     SUCCEEDED( hrDepth ) && uiDepthQuality > 0 )
+		{
+			return uiCount;
+		}
+	}
+
+	return 1;
 }
 
 TINT remaster::GetLinearSamplerForAddressing( Toshi::ADDRESSINGMODE a_eAddressU, Toshi::ADDRESSINGMODE a_eAddressV )
