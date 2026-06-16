@@ -1411,7 +1411,7 @@ MEMBER_HOOK( 0x00608540, AGlowViewport, AGlowViewport_AddGlowObject, AGlowViewpo
 {
 	AGlowViewport::GlowObject* pGlowObject = CallOriginal();
 
-	pGlowObject->m_bIsNightLight = TFALSE;
+	pGlowObject->m_bIsNightLight = TTRUE;
 	return pGlowObject;
 }
 
