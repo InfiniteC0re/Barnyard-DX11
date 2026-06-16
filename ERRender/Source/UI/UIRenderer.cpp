@@ -398,6 +398,27 @@ void remaster::UIRendererDX11::RenderRectangle( const Toshi::TVector2& a, const 
 
 void remaster::UIRendererDX11::RenderTriStrip( Toshi::TVector2* vertices, Toshi::TVector2* UV, uint32_t numverts )
 {
+	TASSERT( numverts <= MAX_VERTICES );
+
+	if ( numverts < 3 )
+		return;
+
+	if ( numverts > MAX_VERTICES )
+		numverts = MAX_VERTICES;
+
+	UpdateTransform();
+
+	TUINT16 aIndices[ MAX_VERTICES ];
+
+	for ( TUINT32 i = 0; i < numverts; i++ )
+	{
+		sm_Vertices[ i ].Position = { vertices[ i ].x, vertices[ i ].y, sm_fZCoordinate };
+		sm_Vertices[ i ].Colour   = m_uiColour;
+		sm_Vertices[ i ].UV       = { UV[ i ].x, UV[ i ].y };
+		aIndices[ i ]             = (TUINT16)i;
+	}
+
+	g_pRender->DrawImmediately( D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP, numverts, aIndices, DXGI_FORMAT_R16_UINT, &sm_Vertices, sizeof( Vertex ), numverts );
 }
 
 void remaster::UIRendererDX11::RenderLine( const Toshi::TVector2& a, const Toshi::TVector2& b )

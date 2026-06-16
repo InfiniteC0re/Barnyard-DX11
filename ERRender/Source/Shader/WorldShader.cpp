@@ -271,7 +271,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		g_bHasGlowObjectsThisFrame = TTRUE;
 		g_pRender->GetRenderTargetView( pOldRenderTargetView, pOldDepthStencilView );
 		g_pRender->SetRenderTargetView( g_pRender->GetD3D11GlowRenderTargetView(), pOldDepthStencilView );
-		g_pRender->SetDepthBias( -50 );
+		g_pRender->SetDepthBias( -10 );
 	}
 
 	const TFLOAT flPacketAlpha = a_pRenderPacket->GetAlpha();
