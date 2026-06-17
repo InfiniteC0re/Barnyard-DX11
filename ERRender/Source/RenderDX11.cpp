@@ -6,6 +6,8 @@
 #include "UI/FontRenderer.h"
 #include "Generated/ShaderCombos.h"
 
+#include <dxgi1_5.h>
+
 #include <BYardSDK/THookedRenderD3DInterface.h>
 #include <BYardSDK/SDKHooks.h>
 
@@ -29,6 +31,16 @@ TDEFINE_CLASS( RenderDX11 );
 RenderDX11* g_pRender = TNULL;
 
 static TMemory::MemBlock* s_pRenderHeap = TNULL;
+
+// Flip-model swapchains require at least 2 buffers. Keeping it low avoids
+// adding presentation latency on top of the game's uncapped framerate.
+static constexpr TUINT SWAPCHAIN_BUFFER_COUNT = 2;
+
+// When enabled (and supported by the GPU/driver), the swapchain presents with
+// tearing, bypassing DWM's vblank synchronization.  When disabled, flip-model
+// presentation is capped to the refresh rate (smooth, no tearing).
+// Only has an effect while presenting with a sync interval of 0 (VSync off).
+#define RENDER_ALLOW_TEARING 1
 
 RenderDX11::RenderDX11()
     : m_DepthState( { 0 }, 0 )
@@ -179,26 +191,46 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		IDXGIAdapter* dxgiAdapter = TNULL;
 		DX11_API_VALIDATE_EXIT( dxgiDevice->GetAdapter( &dxgiAdapter ) );
 
-		IDXGIFactory* dxgiFactory = TNULL;
-		DX11_API_VALIDATE_EXIT( dxgiAdapter->GetParent( __uuidof( IDXGIFactory ), (void**)&dxgiFactory ) );
+		IDXGIFactory2* dxgiFactory = TNULL;
+		DX11_API_VALIDATE_EXIT( dxgiAdapter->GetParent( __uuidof( IDXGIFactory2 ), (void**)&dxgiFactory ) );
 
-		m_oSwapChainDesc.BufferCount                        = 1;
-		m_oSwapChainDesc.BufferDesc.Width                   = a_rParams.uiWidth;
-		m_oSwapChainDesc.BufferDesc.Height                  = a_rParams.uiHeight;
-		m_oSwapChainDesc.BufferDesc.RefreshRate.Numerator   = 0;
-		m_oSwapChainDesc.BufferDesc.RefreshRate.Denominator = 0;
-		m_oSwapChainDesc.BufferDesc.Format                  = DXGI_FORMAT_R8G8B8A8_UNORM;
+#if RENDER_ALLOW_TEARING
+		{
+			IDXGIFactory5* dxgiFactory5 = TNULL;
+			if ( SUCCEEDED( dxgiFactory->QueryInterface( __uuidof( IDXGIFactory5 ), (void**)&dxgiFactory5 ) ) )
+			{
+				BOOL bTearingSupported = FALSE;
+				if ( SUCCEEDED( dxgiFactory5->CheckFeatureSupport( DXGI_FEATURE_PRESENT_ALLOW_TEARING, &bTearingSupported, sizeof( bTearingSupported ) ) ) )
+					m_bAllowTearing = bTearingSupported != FALSE;
 
-		m_oSwapChainDesc.SampleDesc.Count   = 1;
-		m_oSwapChainDesc.SampleDesc.Quality = 0;
+				dxgiFactory5->Release();
+			}
+		}
+#endif
 
-		m_oSwapChainDesc.BufferUsage  = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		m_oSwapChainDesc.OutputWindow = m_Window.GetWin32Handle();
-		m_oSwapChainDesc.Windowed     = pDisplayParams->bWindowed;
-		m_oSwapChainDesc.SwapEffect   = DXGI_SWAP_EFFECT_DISCARD;
-		m_oSwapChainDesc.Flags        = 0;
+		DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
+		swapChainDesc.Width              = a_rParams.uiWidth;
+		swapChainDesc.Height             = a_rParams.uiHeight;
+		swapChainDesc.Format             = DXGI_FORMAT_R8G8B8A8_UNORM;
+		swapChainDesc.Stereo             = FALSE;
+		// Flip-model backbuffers cannot be MSAA; we render to the MSAA
+		// m_pRenderTargetTexture and resolve into the backbuffer in EndScene.
+		swapChainDesc.SampleDesc.Count   = 1;
+		swapChainDesc.SampleDesc.Quality = 0;
+		swapChainDesc.BufferUsage        = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+		swapChainDesc.BufferCount        = SWAPCHAIN_BUFFER_COUNT;
+		swapChainDesc.Scaling            = DXGI_SCALING_STRETCH;
+		swapChainDesc.SwapEffect         = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+		swapChainDesc.AlphaMode          = DXGI_ALPHA_MODE_IGNORE;
+		swapChainDesc.Flags              = m_bAllowTearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
 
-		DX11_API_VALIDATE_EXIT( dxgiFactory->CreateSwapChain( m_pDevice, &m_oSwapChainDesc, &m_pSwapChain ) );
+		// Windowed swapchain (the game forces windowed and manages fullscreen
+		// itself via the SDL window), so no fullscreen descriptor is needed.
+		IDXGISwapChain1* pSwapChain1 = TNULL;
+		DX11_API_VALIDATE_EXIT( dxgiFactory->CreateSwapChainForHwnd( m_pDevice, m_Window.GetWin32Handle(), &swapChainDesc, TNULL, TNULL, &pSwapChain1 ) );
+
+		m_pSwapChain = pSwapChain1;
+		m_pSwapChain->GetDesc( &m_oSwapChainDesc );
 
 		dxgiFactory->Release();
 		dxgiAdapter->Release();
@@ -414,12 +446,16 @@ TBOOL RenderDX11::BeginScene()
 
 TBOOL RenderDX11::EndScene()
 {
+	TPROFILER_SCOPE();
+
 	if ( m_uiMSAASampleCount > 1 )
 		m_pDeviceContext->ResolveSubresource( m_pSwapChainBackBuffer, 0, m_pRenderTargetTexture, 0, m_oSwapChainDesc.BufferDesc.Format );
 	else
 		m_pDeviceContext->CopyResource( m_pSwapChainBackBuffer, m_pRenderTargetTexture );
 
-	m_pSwapChain->Present( 0, 0 );
+	// DXGI_PRESENT_ALLOW_TEARING is only valid with a sync interval of 0 and a
+	// swapchain created with DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING.
+	m_pSwapChain->Present( 0, m_bAllowTearing ? DXGI_PRESENT_ALLOW_TEARING : 0 );
 	m_bInScene = TFALSE;
 
 	return TTRUE;
@@ -438,6 +474,8 @@ TRenderInterface::DISPLAYPARAMS* RenderDX11::GetCurrentDisplayParams()
 void RenderDX11::FlushOrderTables()
 {
 	TASSERT( TTRUE == IsInScene() );
+
+	TPROFILER_SCOPE();
 
 	for ( auto it = m_OrderTables.Begin(); it != m_OrderTables.End(); it++ )
 	{

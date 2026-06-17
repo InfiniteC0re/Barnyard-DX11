@@ -265,6 +265,8 @@ void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderPacket )
 {
+	TPROFILER_SCOPE();
+
 	if ( !a_pRenderPacket || !a_pRenderPacket->GetMesh() ) return;
 
 	TSkeletonInstance*  pSkeletonInstance = a_pRenderPacket->GetSkeletonInstance();

@@ -156,7 +156,7 @@ static ID3DBlob* CompileShaderInternal(
 	    a_pIncludeHandler,
 	    a_pEntrypoint,
 	    a_pTarget,
-	    D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_PACK_MATRIX_ROW_MAJOR | D3DCOMPILE_AVOID_FLOW_CONTROL,
+	    D3DCOMPILE_PACK_MATRIX_ROW_MAJOR,
 	    0,
 	    &pShaderBlob,
 	    &pErrorBlob

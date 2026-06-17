@@ -127,6 +127,8 @@ MEMBER_HOOK( 0x006c58e0, remaster::RenderDX11, TRenderD3DInterface_BeginEndScene
 
 MEMBER_HOOK( 0x006be990, remaster::RenderDX11, TRenderD3DInterface_FlushShaders, void )
 {
+	TPROFILER_SCOPE();
+
 	FlushOrderTables();
 
 	for ( auto it = TShader::sm_oShaderList.GetRootShader(); it != TNULL; it = it->GetNextShader() )
@@ -142,6 +144,8 @@ MEMBER_HOOK( 0x006d68b0, TD3DAdapter, TD3DAdapter_Mode_Device_SupportsVSConstant
 
 HOOK( 0x005e83e0, RenderCellMeshWin, void, CellMeshSphere* a_pMeshSphere, RenderData* a_pRenderData )
 {
+	TPROFILER_SCOPE();
+
 	TVALIDPTR( a_pMeshSphere );
 
 	const TBOOL bNormalPass = !remaster::g_pRender->GetCSMManager().IsRenderingShadowPass();
@@ -196,6 +200,8 @@ HOOK( 0x005e83e0, RenderCellMeshWin, void, CellMeshSphere* a_pMeshSphere, Render
 
 HOOK( 0x005e7d10, RenderCellMeshDefault, void, CellMeshSphere* a_pMeshSphere, RenderData* a_pRenderData )
 {
+	TPROFILER_SCOPE();
+
 	TVALIDPTR( a_pMeshSphere );
 
 	const TBOOL bNormalPass = !remaster::g_pRender->GetCSMManager().IsRenderingShadowPass();
@@ -634,6 +640,8 @@ TBOOL g_bHasGlowObjectsThisFrame = TFALSE;
 
 MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_flDeltaTime )
 {
+	TPROFILER_SCOPE();
+
 	// Reset state
 	g_bHasGlowObjectsThisFrame = TFALSE;
 
@@ -674,6 +682,8 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 	// Resolve MSAA color -> non-MSAA (needed by sky mask shader)
 	{
+		TPROFILER_NAMED( "MSAA Resolve" );
+
 		remaster::g_pRender->GetD3D11DeviceContext()->ResolveSubresource(
 		    s_pResolvedColorTexture, 0, remaster::g_pRender->GetD3D11RenderTargetTexture(), 0, DXGI_FORMAT_R8G8B8A8_UNORM );
 
@@ -683,6 +693,8 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 	// Resolve MSAA depth -> R32_FLOAT via fullscreen pass (full-res viewport)
 	{
+		TPROFILER_NAMED( "MSAA Depth Resolve" );
+
 		remaster::g_pRender->DiscardView( s_pResolvedDepthRTV );
 		remaster::g_pRender->SetRenderTargetView( s_pResolvedDepthRTV, TNULL );
 		remaster::g_pRender->PSSetShaderResource( 0, remaster::g_pRender->GetD3D11DepthStencilSRV() );
@@ -698,6 +710,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	// Render HBAO+ style screen-space ambient occlusion and composite it over the scene
 	if ( remaster::g_bHBAOEnabled )
 	{
+		TPROFILER_NAMED( "HBAO" );
 
 		auto             pContext = TSTATICCAST( remaster::RenderContextD3D11, m_pViewport->GetRenderContext() );
 		const TMatrix44& proj     = pContext->GetProjectionMatrix();
@@ -860,6 +873,8 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	// Volumetric fog pass (half-res, raymarched, CSM-shadowed)
 	if ( remaster::g_bCSMEnabled && remaster::g_bVolumetricFogEnabled )
 	{
+		TPROFILER_NAMED( "Volumetrics" );
+
 		auto             pFogCtx = TSTATICCAST( remaster::RenderContextD3D11, m_pViewport->GetRenderContext() );
 		const TMatrix44& proj    = pFogCtx->GetProjectionMatrix();
 
@@ -1089,6 +1104,8 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	// Overlay glow objects captured during the main pass, then bloom them.
 	if ( g_bHasGlowObjectsThisFrame )
 	{
+		TPROFILER_NAMED( "Glow" );
+
 		remaster::g_pRender->SetCullMode( D3D11_CULL_NONE );
 		remaster::g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_ONE, D3D11_BLEND_ONE );
 		remaster::g_pRender->SetDepthEnabled( TFALSE );
@@ -1219,6 +1236,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 	// Render the sky mask
 	{
+		TPROFILER_NAMED( "Sky mask" );
 
 		remaster::g_pRender->DiscardView( s_pSkyMaskRenderTargetView );
 		remaster::g_pRender->ClearRenderTarget( s_pSkyMaskRenderTargetView, aflSkyMaskClearColor );
@@ -1240,6 +1258,8 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 	// Render the sunshafts
 	{
+		TPROFILER_NAMED( "Sunshafts" );
+
 		remaster::g_pRender->DiscardView( s_pSunshaftsRenderTargetView );
 		remaster::g_pRender->ClearRenderTarget( s_pSunshaftsRenderTargetView, aflSkyMaskClearColor );
 		remaster::g_pRender->SetRenderTargetView(
