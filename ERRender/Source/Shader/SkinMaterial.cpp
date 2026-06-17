@@ -107,9 +107,8 @@ void remaster::SkinMaterial::PreRender()
 				}
 
 				//pD3DDevice->SetTextureStageState( 0, D3DTSS_MIPFILTER, 2 );
-				g_pRender->PSSetSamplerState( 0, 3 );
-				//pRender->SetTextureAddress( 0, pTexture->GetAddressUState(), TEXCOORD_U );
-				//pRender->SetTextureAddress( 0, pTexture->GetAddressVState(), TEXCOORD_V );
+				// Honor the texture's own addressing mode instead of always wrapping
+				g_pRender->PSSetSamplerState( 0, GetLinearSamplerForAddressing( pTexture->GetAddressUState(), pTexture->GetAddressVState() ) );
 			}
 		}
 	}

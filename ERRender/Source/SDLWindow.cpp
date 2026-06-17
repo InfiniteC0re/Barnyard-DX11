@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "SDLWindow.h"
 #include "Toshi/TApplication.h"
+#include "Toshi/TSystem.h"
 
 #include <SDL/SDL_syswm.h>
 
@@ -62,18 +63,22 @@ void SDLWindow::Update()
 	{
 		if ( event.type == SDL_EventType::SDL_QUIT )
 		{
-			exit( 0 );
+			TerminateProcess( GetCurrentProcess(), 0 );
 			//TGlobalEmitter<TApplicationExitEvent>::Throw( { TFALSE } );
 		}
 		else if ( event.type == SDL_EventType::SDL_WINDOWEVENT )
 		{
+			Toshi::TSystemManager* pGameSM = (Toshi::TSystemManager*)0x007ce640;
+
 			if ( event.window.event == SDL_WINDOWEVENT_FOCUS_LOST )
 			{
 				SDL_SetRelativeMouseMode( SDL_FALSE );
+				pGameSM->Pause( TTRUE );
 			}
 			else if ( event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED )
 			{
 				SDL_SetRelativeMouseMode( SDL_TRUE );
+				pGameSM->Pause( TFALSE );
 			}
 		}
 	}

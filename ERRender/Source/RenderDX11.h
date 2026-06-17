@@ -34,6 +34,31 @@ namespace remaster
 
 void SetupRenderHooks();
 
+enum SAMPLERSTATE : TINT
+{
+	SAMPLER_POINT_CLAMP           = 0,  // point,            clamp / clamp / clamp
+	SAMPLER_LINEAR_CLAMP          = 1,  // linear (aniso),   clamp / clamp / clamp
+	SAMPLER_POINT_WRAP            = 2,  // point,            wrap  / wrap  / wrap
+	SAMPLER_LINEAR_WRAP           = 3,  // linear (aniso),   wrap  / wrap  / wrap
+	SAMPLER_LINEAR_MIRROR         = 4,  // linear (aniso),   mirror/ mirror/ mirror
+	SAMPLER_BILINEAR_CLAMP        = 5,  // linear/mip-point, clamp / clamp / clamp
+	SAMPLER_BILINEAR_WRAP         = 6,  // linear/mip-point, wrap  / wrap  / wrap
+	SAMPLER_BILINEAR_WRAP_BIAS    = 7,  // linear/mip-point, wrap  / wrap  / wrap, mip bias -1
+	SAMPLER_ANISO_CLAMP           = 8,  // anisotropic,      clamp / clamp / clamp
+	SAMPLER_POINT_WRAPU_CLAMPV    = 9,  // point,            wrap  / clamp / wrap
+	SAMPLER_LINEAR_WRAPU_CLAMPV   = 10, // linear (aniso),   wrap  / clamp / wrap
+	SAMPLER_BILINEAR_WRAPU_CLAMPV = 11, // linear/mip-point, wrap  / clamp / wrap
+	SAMPLER_POINT_CLAMPU_WRAPV    = 12, // point,            clamp / wrap  / clamp
+	SAMPLER_LINEAR_CLAMPU_WRAPV   = 13, // linear (aniso),   clamp / wrap  / clamp
+	SAMPLER_BILINEAR_CLAMPU_WRAPV = 14, // linear/mip-point, clamp / wrap  / clamp
+	SAMPLER_BILINEAR_MIRROR       = 15, // linear/mip-point, mirror/ mirror/ mirror
+
+	SAMPLER_COUNT,
+};
+
+// Selects the linear (anisotropic) sampler matching a texture's U/V addressing.
+TINT GetLinearSamplerForAddressing( Toshi::ADDRESSINGMODE a_eAddressU, Toshi::ADDRESSINGMODE a_eAddressV );
+
 class RenderDX11 : public Toshi::TRenderInterface
 {
 public:
@@ -246,6 +271,10 @@ public:
 	    TFLOAT                     minLOD,
 	    TFLOAT                     maxLOD
 	);
+
+	// Returns the highest MSAA sample count <= a_uiDesired that the device supports
+	// for both the colour and depth-stencil formats (falls back to 1 if none).
+	TUINT GetSupportedMSAASampleCount( TUINT a_uiDesired ) const;
 
 public:
 	//-----------------------------------------------------------------------------
@@ -596,6 +625,10 @@ private:
 	ID3D11ShaderResourceView* m_pGlowRenderTargetSRV     = TNULL;
 	DXGI_SWAP_CHAIN_DESC      m_oSwapChainDesc;
 
+	// Actual MSAA sample count in use, clamped to what the device supports
+	// (see GetSupportedMSAASampleCount). May be lower than MSAA_SAMPLE_COUNT.
+	TUINT m_uiMSAASampleCount = 1;
+
 	ID3D11DeviceContext1* m_pDeviceContext1 = TNULL; // D3D11.1 context
 
 	// Font rendering
@@ -632,7 +665,7 @@ private:
 
 	// Various states
 	TFLOAT              m_aClearColor[ 4 ];
-	ID3D11SamplerState* m_aSamplerStates[ 12 ];
+	ID3D11SamplerState* m_aSamplerStates[ SAMPLER_COUNT ];
 	CSMManager          m_oCSMManager;
 
 	// Depth states

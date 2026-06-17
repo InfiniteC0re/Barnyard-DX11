@@ -369,9 +369,9 @@ TINT   g_iSunShaftsKawaseLevels  = 1;
 TFLOAT g_flSunShaftsKawaseOffset = 1.0f;
 
 TBOOL  g_bGlowBloomEnabled       = TTRUE;
-TINT   g_iGlowBloomKawaseLevels  = 4;
-TFLOAT g_flGlowBloomKawaseOffset = 2.887f;
-TFLOAT g_flGlowBloomIntensity    = 0.9f;
+TINT   g_iGlowBloomKawaseLevels  = 2;
+TFLOAT g_flGlowBloomKawaseOffset = 1.7f;
+TFLOAT g_flGlowBloomIntensity    = 0.715f;
 
 TBOOL  g_bHBAOEnabled       = TTRUE;
 TBOOL  g_bHBAODebug         = TFALSE;
@@ -1407,6 +1407,24 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	}
 }
 
+MEMBER_HOOK( 0x00608540, AGlowViewport, AGlowViewport_AddGlowObject, AGlowViewport::GlowObject* )
+{
+	AGlowViewport::GlowObject* pGlowObject = CallOriginal();
+
+	pGlowObject->m_bIsNightLight = TTRUE;
+	return pGlowObject;
+}
+
+HOOK(0x006119d0, AModelLoader_CreateMaterial, TMaterial*, TINT a_iOffset, const TCHAR* a_szMaterialName)
+{
+	TMaterial* pMaterial = CallOriginal( a_iOffset, a_szMaterialName );
+
+// 	if ( TStringManager::String8Compare( a_szMaterialName, "starsquad" ) == 0 )
+// 		pMaterial->SetFlags( TMaterial::FLAGS_GLOW, TTRUE );
+
+	return pMaterial;
+}
+
 void remaster::SetupRenderHooks()
 {
 	InstallHook<TRenderD3DInterface_Create>();
@@ -1418,6 +1436,8 @@ void remaster::SetupRenderHooks()
 	InstallHook<RenderCellMeshWin>();
 	InstallHook<RenderCellMeshDefault>();
 	InstallHook<AModelLoader_LoadWorldMeshTRB_Shadow>();
+	InstallHook<AGlowViewport_AddGlowObject>();
+	InstallHook<AModelLoader_CreateMaterial>();
 	
 	SetupRenderHooks_GrassShader();
 	SetupRenderHooks_SkinShader();

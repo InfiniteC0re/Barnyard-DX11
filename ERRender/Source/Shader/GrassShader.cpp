@@ -127,7 +127,7 @@ void remaster::GrassShaderDX11::EndFlush()
 
 TBOOL remaster::GrassShaderDX11::Create()
 {
-	m_oOrderTable.Create( this, 6999 );
+	m_oOrderTable.Create( this, -2000 );
 	AGrassShader::Create();
 
 	return Validate();
