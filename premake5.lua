@@ -15,6 +15,9 @@ workspace "Barnyard Remastered"
 
 	disablewarnings { "4996" }
 	
+	-- Enables fast builds
+	multiprocessorcompile "on"
+	
 	debugdir ("%{wks.location}/bin/" .. outputdir .. "/%{prj.name}")
 	targetdir ("%{wks.location}/bin/" .. outputdir .. "/%{prj.name}")
 	objdir ("%{wks.location}/bin-int/" .. outputdir .. "/%{prj.name}")

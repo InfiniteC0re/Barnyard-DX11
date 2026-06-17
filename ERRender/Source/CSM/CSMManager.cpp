@@ -169,6 +169,8 @@ void CSMManager::Destroy()
 
 void CSMManager::UpdateCascades( TRenderContext* a_pRenderContext )
 {
+	TPROFILER_SCOPE();
+
 	if ( !a_pRenderContext ) return;
 
 	BuildLightView( a_pRenderContext );
@@ -236,6 +238,8 @@ void CSMManager::UpdateCascades( TRenderContext* a_pRenderContext )
 
 void CSMManager::RenderShadowMaps()
 {
+	TPROFILER_SCOPE();
+
 	if ( !m_pShadowTexture ) return;
 
 	ID3D11DeviceContext* pDeviceContext = g_pRender->GetD3D11DeviceContext();
@@ -290,6 +294,8 @@ void CSMManager::RenderCustomShadowMap(
     TINT                                           a_iResolution
 )
 {
+	TPROFILER_SCOPE();
+
 	if ( !a_pDepthStencilView )
 		return;
 
@@ -354,6 +360,8 @@ void CSMManager::RenderCustomShadowMap(
 
 void CSMManager::RenderSceneCasters( const Toshi::TRenderContext::PROJECTIONPARAMS* a_pProjectionParams, Toshi::TRenderContext::CameraMode a_eCameraMode )
 {
+	TPROFILER_SCOPE();
+
 	auto pRenderContext = g_pRender->GetCurrentContext();
 	if ( !pRenderContext ) return;
 
@@ -414,29 +422,55 @@ void CSMManager::RenderSceneCasters( const Toshi::TRenderContext::PROJECTIONPARA
 
 	if ( *(void**)0x007b45fc )
 	{
+		TPROFILER_NAMED( "AModelRepos::Render" );
+
 		CALL_THIS( 0x006125d0, void*, void, *(void**)0x007b45fc, TINT, 2 ); // AModelRepos::RenderModelsOfType
 		CALL_THIS( 0x006125d0, void*, void, *(void**)0x007b45fc, TINT, 1 ); // AModelRepos::RenderModelsOfType
 	}
 
 	if ( *(TINT*)0x00796300 )
 	{
-		if ( *(TINT*)0x0078de44 )
-			CALL_THIS( 0x005dd5c0, void*, void, *(void**)0x0078de44 ); // AGateManager::Render
+		{
+			TPROFILER_NAMED( "AGateManager::Render" );
 
-		CALL_THIS( 0x005ea8b0, void*, void, *(void**)0x00796300 ); // ATerrain::Render
+			if ( *(TINT*)0x0078de44 )
+				CALL_THIS( 0x005dd5c0, void*, void, *(void**)0x0078de44 ); // AGateManager::Render
+		}
 
-		if ( *(void**)0x00796304 )
-			CALL_THIS( 0x005ef3a0, void*, void, *(void**)0x00796304 ); // ATreeManager::Render
+		{
+			TPROFILER_NAMED( "ATerrain::Render" );
 
-		if ( *(void**)0x0078deb0 )
-			CALL_THIS( 0x005e17a0, void*, void, *(void**)0x0078deb0 ); // AInstanceManager::Render
+			CALL_THIS( 0x005ea8b0, void*, void, *(void**)0x00796300 ); // ATerrain::Render
+		}
 
-		if ( *(void**)0x007922e0 )
-			CALL_THIS( 0x005e3990, void*, void, *(void**)0x007922e0 ); // ARegrowthManager::Render
+		{
+			TPROFILER_NAMED( "ATreeManager::Render" );
+
+			if ( *(void**)0x00796304 )
+				CALL_THIS( 0x005ef3a0, void*, void, *(void**)0x00796304 ); // ATreeManager::Render
+		}
+
+		{
+			TPROFILER_NAMED( "AInstanceManager::Render" );
+
+			if ( *(void**)0x0078deb0 )
+				CALL_THIS( 0x005e17a0, void*, void, *(void**)0x0078deb0 ); // AInstanceManager::Render
+		}
+
+		{
+			TPROFILER_NAMED( "ARegrowthManager::Render" );
+
+			if ( *(void**)0x007922e0 )
+				CALL_THIS( 0x005e3990, void*, void, *(void**)0x007922e0 ); // ARegrowthManager::Render
+		}
 	}
 
-	if ( *(void**)0x00783c18 )
-		CALL_THIS( 0x0053a320, void*, void, *(void**)0x00783c18, TBOOL, TFALSE ); // AAnimalPopulationManager::Render
+	{
+		TPROFILER_NAMED( "AAnimalPopulationManager::Render" );
+
+		if ( *(void**)0x00783c18 )
+			CALL_THIS( 0x0053a320, void*, void, *(void**)0x00783c18, TBOOL, TFALSE ); // AAnimalPopulationManager::Render
+	}
 
 	// Flush per-mesh casters first. For batched world section meshes this captures
 	// each section's model-view and suppresses the per-mesh draw (see
@@ -466,6 +500,8 @@ void CSMManager::RenderSceneCasters( const Toshi::TRenderContext::PROJECTIONPARA
 
 void CSMManager::BuildLightView( TRenderContext* a_pRenderContext )
 {
+	TPROFILER_SCOPE();
+
 	TVector3 lightDir;
 	TVector3 right;
 
@@ -515,6 +551,8 @@ void CSMManager::BuildLightView( TRenderContext* a_pRenderContext )
 
 void CSMManager::BuildCascade( TRenderContext* a_pRenderContext, TINT a_iCascade, TFLOAT a_fNearZ, TFLOAT a_fFarZ )
 {
+	TPROFILER_SCOPE();
+
 	const auto& rProjectionParams = a_pRenderContext->GetProjectionParams();
 	const auto& rViewportParams   = a_pRenderContext->GetViewportParameters();
 	TMatrix44 oViewWorld = a_pRenderContext->GetViewWorldMatrix();
@@ -592,6 +630,8 @@ void CSMManager::BuildCascade( TRenderContext* a_pRenderContext, TINT a_iCascade
 
 void CSMManager::BuildOrthoMatrix( TMatrix44& a_rOutMatrix, TFLOAT a_fMinX, TFLOAT a_fMaxX, TFLOAT a_fMinY, TFLOAT a_fMaxY, TFLOAT a_fMinZ, TFLOAT a_fMaxZ )
 {
+	TPROFILER_SCOPE();
+
 	a_rOutMatrix.Identity();
 	a_rOutMatrix.m_f11 = 2.0f / ( a_fMaxX - a_fMinX );
 	a_rOutMatrix.m_f22 = 2.0f / ( a_fMinY - a_fMaxY );

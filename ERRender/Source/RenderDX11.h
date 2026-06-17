@@ -625,6 +625,10 @@ private:
 	ID3D11ShaderResourceView* m_pGlowRenderTargetSRV     = TNULL;
 	DXGI_SWAP_CHAIN_DESC      m_oSwapChainDesc;
 
+	// TRUE when the swapchain was created with tearing support and Present
+	// should pass DXGI_PRESENT_ALLOW_TEARING (see RENDER_ALLOW_TEARING).
+	TBOOL m_bAllowTearing = TFALSE;
+
 	// Actual MSAA sample count in use, clamped to what the device supports
 	// (see GetSupportedMSAASampleCount). May be lower than MSAA_SAMPLE_COUNT.
 	TUINT m_uiMSAASampleCount = 1;
