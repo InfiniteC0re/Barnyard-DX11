@@ -232,6 +232,8 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		m_pSwapChain = pSwapChain1;
 		m_pSwapChain->GetDesc( &m_oSwapChainDesc );
 
+		dxgiFactory->MakeWindowAssociation( m_Window.GetWin32Handle(), DXGI_MWA_NO_ALT_ENTER | DXGI_MWA_NO_WINDOW_CHANGES );
+
 		dxgiFactory->Release();
 		dxgiAdapter->Release();
 		dxgiDevice->Release();
