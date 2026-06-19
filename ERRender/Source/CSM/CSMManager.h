@@ -10,10 +10,17 @@ namespace remaster
 {
 
 static constexpr TINT   CSM_CASCADE_COUNT        = 3;
+// Physical size of the shadow atlas slice. Each cascade is rendered into the
+// top-left CSM_CASCADE_RESOLUTION[i] sub-rect of its slice; far cascades use a
+// lower resolution to cut shadow-map fill (the dominant CSM cost).
 static constexpr TINT   CSM_RESOLUTION           = 4096;
+static constexpr TINT   CSM_CASCADE_RESOLUTION[ CSM_CASCADE_COUNT ] = { 4096, 2048, 1024 };
 static constexpr TFLOAT CSM_SPLIT_LAMBDA         = 0.5f;
 static constexpr TFLOAT CSM_DEPTH_BIAS_SLOPE     = 2.0f;
-static constexpr TINT   CSM_DEPTH_BIAS_UNITS     = 100;
+// In D16_UNORM units (one unit ~= 1/65535). Was 100 for D32_FLOAT, where a unit
+// was ~128x smaller; kept tiny so the slope-scaled + receiver bias still do the
+// real work. Raise if D16's lower precision shows acne.
+static constexpr TINT   CSM_DEPTH_BIAS_UNITS     = 1;
 static constexpr TFLOAT CSM_RECEIVER_BIAS        = 0.0005f;
 static constexpr TFLOAT CSM_RECEIVER_PLANE_BIAS  = 1.0f;
 static constexpr TFLOAT CSM_PCF_RADIUS           = 1.0f;
@@ -26,6 +33,7 @@ struct ShadowCBufferData
 	TFLOAT           cascadeSplits[ 4 ];
 	TFLOAT           shadowParams[ 4 ];
 	TFLOAT           shadowFilterParams[ 4 ];
+	TFLOAT           cascadeScales[ 4 ]; // x,y,z = per-cascade UV scale (renderRes / CSM_RESOLUTION)
 };
 
 class CSMManager
@@ -78,6 +86,16 @@ private:
 	Toshi::TCameraObject m_oLightCamera;
 	TINT                 m_iCurrentCascade;
 	TBOOL                m_bRenderingShadowPass;
+
+	// Staggered cascade updates: cascade 0 every frame, cascade 1 every 4 frames,
+	// cascade 2 every 8 frames. Skipped cascades keep their previous depth and
+	// light matrices (the world is mostly static, so re-rendering them every frame
+	// is wasted fill). UpdateCascades computes the per-frame render mask; both it
+	// and RenderShadowMaps honour it so the stored depth always matches matLightVP.
+	TUINT m_uiFrameCounter;
+	TUINT m_uiCascadeRenderMask; // bit i set => cascade i is (re)built/rendered this frame
+	TBOOL m_bForceAllCascades;   // forces a full update (first frame, leaving debug view)
+	TINT  m_iLastDebugCascade;   // detects debug-cascade changes to trigger a full update
 };
 
 extern CSMManager* g_pCSMManager;

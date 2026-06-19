@@ -79,12 +79,16 @@ float SampleShadow( float3 worldPos, float viewDepth )
     float4 shadowPos = mul( float4( worldPos, 1.0f ), cb_matLightVP[ cascade ] );
     shadowPos.xyz /= shadowPos.w;
 
-    float2 shadowUV = shadowPos.xy * float2( 0.5f, -0.5f ) + 0.5f;
-    float  shadowZ  = shadowPos.z - cb_ShadowBias.x;
+    float2 cascadeUV = shadowPos.xy * float2( 0.5f, -0.5f ) + 0.5f;
+    float  shadowZ   = shadowPos.z - cb_ShadowBias.x;
 
-    if ( any( shadowUV < 0.0f ) || any( shadowUV > 1.0f ) ||
+    if ( any( cascadeUV < 0.0f ) || any( cascadeUV > 1.0f ) ||
          shadowPos.z < 0.0f || shadowPos.z > 1.0f )
         return 1.0f;
+
+    // Per-cascade atlas UV scale packed into cb_ShadowBias.yzw (cascade 0/1/2).
+    float scale = ( cascade == 0 ) ? cb_ShadowBias.y : ( ( cascade == 1 ) ? cb_ShadowBias.z : cb_ShadowBias.w );
+    float2 shadowUV = cascadeUV * scale;
 
     return shadowMaps.SampleCmpLevelZero( shadowSampler, float3( shadowUV, (float)cascade ), shadowZ );
 }

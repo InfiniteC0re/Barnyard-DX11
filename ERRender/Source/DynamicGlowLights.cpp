@@ -322,7 +322,7 @@ TBOOL CreateDynamicGlowShadowResources()
 	textureDesc.Height               = DYNAMIC_GLOW_SHADOW_RESOLUTION;
 	textureDesc.MipLevels            = 1;
 	textureDesc.ArraySize            = DYNAMIC_GLOW_LIGHT_COUNT;
-	textureDesc.Format               = DXGI_FORMAT_R32_TYPELESS;
+	textureDesc.Format               = DXGI_FORMAT_R16_TYPELESS;
 	textureDesc.SampleDesc.Count     = 1;
 	textureDesc.SampleDesc.Quality   = 0;
 	textureDesc.Usage                = D3D11_USAGE_DEFAULT;
@@ -333,7 +333,7 @@ TBOOL CreateDynamicGlowShadowResources()
 	for ( TINT i = 0; i < DYNAMIC_GLOW_LIGHT_COUNT; i++ )
 	{
 		D3D11_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
-		dsvDesc.Format                         = DXGI_FORMAT_D32_FLOAT;
+		dsvDesc.Format                         = DXGI_FORMAT_D16_UNORM;
 		dsvDesc.ViewDimension                  = D3D11_DSV_DIMENSION_TEXTURE2DARRAY;
 		dsvDesc.Texture2DArray.MipSlice        = 0;
 		dsvDesc.Texture2DArray.FirstArraySlice = i;
@@ -343,7 +343,7 @@ TBOOL CreateDynamicGlowShadowResources()
 	}
 
 	D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Format                          = DXGI_FORMAT_R32_FLOAT;
+	srvDesc.Format                          = DXGI_FORMAT_R16_FLOAT;
 	srvDesc.ViewDimension                   = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
 	srvDesc.Texture2DArray.MostDetailedMip  = 0;
 	srvDesc.Texture2DArray.MipLevels        = 1;

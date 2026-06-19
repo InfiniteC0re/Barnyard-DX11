@@ -12,6 +12,7 @@ cbuffer ShadowBuffer : register(b1)
     float4   cb_CascadeSplits;
     float4   cb_ShadowParams;
     float4   cb_ShadowFilterParams;
+    float4   cb_CascadeScales; // x,y,z = per-cascade atlas UV scale (renderRes / atlasRes)
 };
 
 Texture2DArray         shadowMaps    : register(SHADOW_TEXTURE_REGISTER);
@@ -58,10 +59,13 @@ ShadowSetup ComputeShadowSetup(float3 worldPos, int cascade)
     float4 shadowPos = mul(float4(worldPos, 1.0f), cb_matLightVP[cascade]);
     shadowPos.xyz /= shadowPos.w;
 
+    // [0,1] coords within the cascade frustum; scale into the cascade's atlas sub-rect.
+    float2 cascadeUV = shadowPos.xy * float2(0.5f, -0.5f) + 0.5f;
+
     ShadowSetup setup;
-    setup.shadowUV = shadowPos.xy * float2(0.5f, -0.5f) + 0.5f;
+    setup.shadowUV = cascadeUV * cb_CascadeScales[cascade];
     setup.shadowZ = shadowPos.z - cb_ShadowParams.x;
-    setup.outside = any(setup.shadowUV < 0.0f) || any(setup.shadowUV > 1.0f) || shadowPos.z < 0.0f || shadowPos.z > 1.0f;
+    setup.outside = any(cascadeUV < 0.0f) || any(cascadeUV > 1.0f) || shadowPos.z < 0.0f || shadowPos.z > 1.0f;
 
     float texelSize = cb_ShadowParams.y;
     float receiverPlaneBiasScale = cb_ShadowFilterParams.y;

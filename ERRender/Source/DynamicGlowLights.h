@@ -39,8 +39,8 @@ inline void UnpackRenderPacketLights( void* a_pPacked, Toshi::TLightID a_aOut[ T
 namespace remaster
 {
 
-static constexpr TINT DYNAMIC_GLOW_LIGHT_COUNT    = 4;
-static constexpr TINT DYNAMIC_GLOW_SHADOW_RESOLUTION = 1024;
+static constexpr TINT DYNAMIC_GLOW_LIGHT_COUNT       = 4;
+static constexpr TINT DYNAMIC_GLOW_SHADOW_RESOLUTION = 512;
 
 // Maximum number of glow light ID slots that can have per-light settings.
 // Must be >= the maximum TLightID value assigned by AGlowViewport.

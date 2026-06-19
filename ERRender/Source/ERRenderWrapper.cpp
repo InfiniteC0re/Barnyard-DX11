@@ -918,9 +918,9 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		cbFog.cascadeSplits[ 2 ] = shadowData.cascadeSplits[ 2 ];
 		cbFog.cascadeSplits[ 3 ] = shadowData.cascadeSplits[ 3 ];
 		cbFog.shadowBias[ 0 ]    = shadowData.shadowParams[ 0 ];
-		cbFog.shadowBias[ 1 ]    = shadowData.shadowParams[ 1 ];
-		cbFog.shadowBias[ 2 ]    = 0.0f;
-		cbFog.shadowBias[ 3 ]    = 0.0f;
+		cbFog.shadowBias[ 1 ]    = shadowData.cascadeScales[ 0 ];
+		cbFog.shadowBias[ 2 ]    = shadowData.cascadeScales[ 1 ];
+		cbFog.shadowBias[ 3 ]    = shadowData.cascadeScales[ 2 ];
 		cbFog.matViewWorld       = matViewWorld;
 		cbFog.projection[ 0 ]    = proj.m_f11;
 		cbFog.projection[ 1 ]    = proj.m_f22;

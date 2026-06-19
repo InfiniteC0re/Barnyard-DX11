@@ -50,6 +50,10 @@ CSMManager::CSMManager()
     , m_pShadowSampler( TNULL )
     , m_iCurrentCascade( 0 )
     , m_bRenderingShadowPass( TFALSE )
+    , m_uiFrameCounter( 0 )
+    , m_uiCascadeRenderMask( 0 )
+    , m_bForceAllCascades( TTRUE )
+    , m_iLastDebugCascade( -1 )
 {
 	TUtil::MemClear( m_pCascadeDSV, sizeof( m_pCascadeDSV ) );
 	TUtil::MemClear( &m_oShadowCBufferData, sizeof( m_oShadowCBufferData ) );
@@ -77,7 +81,7 @@ TBOOL CSMManager::Create()
 	textureDesc.Height               = CSM_RESOLUTION;
 	textureDesc.MipLevels            = 1;
 	textureDesc.ArraySize            = CSM_CASCADE_COUNT;
-	textureDesc.Format               = DXGI_FORMAT_R32_TYPELESS;
+	textureDesc.Format               = DXGI_FORMAT_R16_TYPELESS;
 	textureDesc.SampleDesc.Count     = 1;
 	textureDesc.SampleDesc.Quality   = 0;
 	textureDesc.Usage                = D3D11_USAGE_DEFAULT;
@@ -88,7 +92,7 @@ TBOOL CSMManager::Create()
 	for ( TINT i = 0; i < CSM_CASCADE_COUNT; i++ )
 	{
 		D3D11_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
-		dsvDesc.Format                         = DXGI_FORMAT_D32_FLOAT;
+		dsvDesc.Format                         = DXGI_FORMAT_D16_UNORM;
 		dsvDesc.ViewDimension                  = D3D11_DSV_DIMENSION_TEXTURE2DARRAY;
 		dsvDesc.Texture2DArray.MipSlice        = 0;
 		dsvDesc.Texture2DArray.FirstArraySlice = i;
@@ -98,7 +102,7 @@ TBOOL CSMManager::Create()
 	}
 
 	D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Format                          = DXGI_FORMAT_R32_FLOAT;
+	srvDesc.Format                          = DXGI_FORMAT_R16_UNORM;
 	srvDesc.ViewDimension                   = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
 	srvDesc.Texture2DArray.MostDetailedMip  = 0;
 	srvDesc.Texture2DArray.MipLevels        = 1;
@@ -123,6 +127,13 @@ TBOOL CSMManager::Create()
 	samplerDesc.MinLOD             = 0.0f;
 	samplerDesc.MaxLOD             = D3D11_FLOAT32_MAX;
 	DX11_API_VALIDATE_EXIT( pDevice->CreateSamplerState( &samplerDesc, &m_pShadowSampler ) );
+
+	// Force a full (all-cascade) update on the first frame so every slice has valid
+	// depth before it is sampled.
+	m_uiFrameCounter      = 0;
+	m_uiCascadeRenderMask = 0;
+	m_bForceAllCascades   = TTRUE;
+	m_iLastDebugCascade   = -1;
 
 	g_pCSMManager = this;
 	return TTRUE;
@@ -173,6 +184,8 @@ void CSMManager::UpdateCascades( TRenderContext* a_pRenderContext )
 
 	if ( !a_pRenderContext ) return;
 
+	m_uiFrameCounter++;
+
 	BuildLightView( a_pRenderContext );
 
 	const auto& rProjectionParams = a_pRenderContext->GetProjectionParams();
@@ -188,6 +201,26 @@ void CSMManager::UpdateCascades( TRenderContext* a_pRenderContext )
 		const TFLOAT fUniformSplit = fNearZ + fRange * fProgress;
 		m_CascadeSplits[ i ]       = CSM_SPLIT_LAMBDA * ( fLogSplit - fUniformSplit ) + fUniformSplit;
 	}
+
+	// Decide which cascades to (re)build this frame. A change to the debug cascade
+	// (including entering/leaving the debug view) forces a full update so stale
+	// slices are refreshed for the new configuration.
+	if ( m_iLastDebugCascade != g_iCSMDebugCascade )
+		m_bForceAllCascades = TTRUE;
+	m_iLastDebugCascade = g_iCSMDebugCascade;
+
+	if ( g_iCSMDebugCascade >= 0 )
+	{
+		// Debug view: only the inspected cascade is rendered, every frame.
+		m_uiCascadeRenderMask = 1u << TMath::Max( 0, TMath::Min( g_iCSMDebugCascade, CSM_CASCADE_COUNT - 1 ) );
+	}
+	else
+	{
+		m_uiCascadeRenderMask = 1u << 0; // cascade 0: every frame
+		if ( m_bForceAllCascades || ( m_uiFrameCounter % 4 ) == 0 ) m_uiCascadeRenderMask |= 1u << 1; // cascade 1: every 4 frames
+		if ( m_bForceAllCascades || ( m_uiFrameCounter % 8 ) == 2 ) m_uiCascadeRenderMask |= 1u << 2; // cascade 2: every 8 frames (offset to avoid colliding with cascade 1)
+	}
+	m_bForceAllCascades = TFALSE;
 
 	if ( g_iCSMDebugCascade >= 0 )
 	{
@@ -212,8 +245,13 @@ void CSMManager::UpdateCascades( TRenderContext* a_pRenderContext )
 	}
 	else
 	{
+		// Only rebuild the cascades due this frame; the rest keep their previous
+		// light matrices so they stay consistent with their retained depth slice.
 		for ( TINT i = 0; i < CSM_CASCADE_COUNT; i++ )
 		{
+			if ( !( m_uiCascadeRenderMask & ( 1u << i ) ) )
+				continue;
+
 			const TFLOAT fCascadeNear = ( i == 0 ) ? fNearZ : m_CascadeSplits[ i - 1 ];
 			BuildCascade( a_pRenderContext, i, fCascadeNear, m_CascadeSplits[ i ] );
 		}
@@ -225,11 +263,14 @@ void CSMManager::UpdateCascades( TRenderContext* a_pRenderContext )
 		m_oShadowCBufferData.cascadeSplits[ i ] = m_CascadeSplits[ i ];
 	}
 
-	m_oShadowCBufferData.cascadeSplits[ 3 ] = 0.0f;
-	m_oShadowCBufferData.shadowParams[ 0 ]  = g_flShadowReceiverBias;
-	m_oShadowCBufferData.shadowParams[ 1 ]  = 1.0f / TFLOAT( CSM_RESOLUTION );
-	m_oShadowCBufferData.shadowParams[ 2 ]  = g_iCSMDebugCascade >= 0 ? TFLOAT( TMath::Max( 0, TMath::Min( g_iCSMDebugCascade, CSM_CASCADE_COUNT - 1 ) ) + 1 ) : 0.0f;
-	m_oShadowCBufferData.shadowParams[ 3 ]  = g_flShadowIntensity;
+	for ( TINT i = 0; i < CSM_CASCADE_COUNT; i++ )
+		m_oShadowCBufferData.cascadeScales[ i ] = TFLOAT( CSM_CASCADE_RESOLUTION[ i ] ) / TFLOAT( CSM_RESOLUTION );
+
+	m_oShadowCBufferData.cascadeSplits[ 3 ]      = 0.0f;
+	m_oShadowCBufferData.shadowParams[ 0 ]       = g_flShadowReceiverBias;
+	m_oShadowCBufferData.shadowParams[ 1 ]       = 1.0f / TFLOAT( CSM_RESOLUTION );
+	m_oShadowCBufferData.shadowParams[ 2 ]       = g_iCSMDebugCascade >= 0 ? TFLOAT( TMath::Max( 0, TMath::Min( g_iCSMDebugCascade, CSM_CASCADE_COUNT - 1 ) ) + 1 ) : 0.0f;
+	m_oShadowCBufferData.shadowParams[ 3 ]       = g_flShadowIntensity;
 	m_oShadowCBufferData.shadowFilterParams[ 0 ] = g_flShadowPCFRadius;
 	m_oShadowCBufferData.shadowFilterParams[ 1 ] = g_flShadowReceiverPlaneBias;
 	m_oShadowCBufferData.shadowFilterParams[ 2 ] = ( g_iCSMDebugCascade >= 0 && !g_bCSMDebugFullRange && g_bCSMDebugMaskBySplit ) ? 1.0f : 0.0f;
@@ -250,17 +291,24 @@ void CSMManager::RenderShadowMaps()
 	g_pRender->SetAlphaUpdate( TFALSE );
 
 	D3D11_VIEWPORT viewport = {};
-	viewport.Width          = TFLOAT( CSM_RESOLUTION );
-	viewport.Height         = TFLOAT( CSM_RESOLUTION );
 	viewport.MinDepth       = 0.0f;
 	viewport.MaxDepth       = 1.0f;
-	pDeviceContext->RSSetViewports( 1, &viewport );
 
 	const TINT iFirstCascade = g_iCSMDebugCascade >= 0 ? TMath::Max( 0, TMath::Min( g_iCSMDebugCascade, CSM_CASCADE_COUNT - 1 ) ) : 0;
 	const TINT iCascadeCount = g_iCSMDebugCascade >= 0 ? iFirstCascade + 1 : CSM_CASCADE_COUNT;
 	for ( TINT i = iFirstCascade; i < iCascadeCount; i++ )
 	{
+		// Skip cascades not scheduled for an update this frame; their depth slice
+		// (and matching light matrix) is retained from when it was last rendered.
+		if ( !( m_uiCascadeRenderMask & ( 1u << i ) ) )
+			continue;
+
 		m_iCurrentCascade = i;
+
+		// Render this cascade into the top-left sub-rect matching its resolution.
+		viewport.Width  = TFLOAT( CSM_CASCADE_RESOLUTION[ i ] );
+		viewport.Height = TFLOAT( CSM_CASCADE_RESOLUTION[ i ] );
+		pDeviceContext->RSSetViewports( 1, &viewport );
 
 		g_pRender->SetRenderTargetView( TNULL, m_pCascadeDSV[ i ] );
 		pDeviceContext->ClearDepthStencilView( m_pCascadeDSV[ i ], D3D11_CLEAR_DEPTH, 1.0f, 0 );
@@ -615,12 +663,14 @@ void CSMManager::BuildCascade( TRenderContext* a_pRenderContext, TINT a_iCascade
 	TFLOAT fMaxX = oLightCenter.x + fRadius;
 	TFLOAT fMaxY = oLightCenter.y + fRadius;
 
-	const TFLOAT fTexelSize = ( fMaxX - fMinX ) / TFLOAT( CSM_RESOLUTION );
+	// Snap to this cascade's actual render resolution so the texel grid is stable.
+	const TFLOAT fCascadeRes = TFLOAT( CSM_CASCADE_RESOLUTION[ a_iCascade ] );
+	const TFLOAT fTexelSize  = ( fMaxX - fMinX ) / fCascadeRes;
 
 	fMinX = std::floor( fMinX / fTexelSize ) * fTexelSize;
 	fMinY = std::floor( fMinY / fTexelSize ) * fTexelSize;
-	fMaxX = fMinX + TFLOAT( CSM_RESOLUTION ) * fTexelSize;
-	fMaxY = fMinY + TFLOAT( CSM_RESOLUTION ) * fTexelSize;
+	fMaxX = fMinX + fCascadeRes * fTexelSize;
+	fMaxY = fMinY + fCascadeRes * fTexelSize;
 
 	fMinZ -= fRadius * 2.0f + g_flShadowCasterPadding;
 
