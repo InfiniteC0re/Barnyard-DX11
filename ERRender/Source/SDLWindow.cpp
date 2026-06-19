@@ -59,29 +59,36 @@ void SDLWindow::Update()
 {
 	SDL_Event event;
 
-	while ( SDL_PollEvent( &event ) )
+	// NOTE: required to replicate some bugs happening on alt+tabs
+	// We must replicate original behavior here, even though it's a mess
+	TUINT32 uiFlags  = SDL_GetWindowFlags( m_pWindow );
+	TBOOL   bFocused = uiFlags & SDL_WINDOW_INPUT_FOCUS;
+	do 
 	{
-		if ( event.type == SDL_EventType::SDL_QUIT )
+		while ( SDL_PollEvent( &event ) )
 		{
-			TerminateProcess( GetCurrentProcess(), 0 );
-			//TGlobalEmitter<TApplicationExitEvent>::Throw( { TFALSE } );
-		}
-		else if ( event.type == SDL_EventType::SDL_WINDOWEVENT )
-		{
-			Toshi::TSystemManager* pGameSM = (Toshi::TSystemManager*)0x007ce640;
+			if ( event.type == SDL_EventType::SDL_QUIT )
+			{
+				TerminateProcess( GetCurrentProcess(), 0 );
+				//TGlobalEmitter<TApplicationExitEvent>::Throw( { TFALSE } );
+			}
+			else if ( event.type == SDL_EventType::SDL_WINDOWEVENT )
+			{
+				Toshi::TSystemManager* pGameSM = (Toshi::TSystemManager*)0x007ce640;
 
-			if ( event.window.event == SDL_WINDOWEVENT_FOCUS_LOST )
-			{
-				SDL_SetRelativeMouseMode( SDL_FALSE );
-				pGameSM->Pause( TTRUE );
-			}
-			else if ( event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED )
-			{
-				SDL_SetRelativeMouseMode( SDL_TRUE );
-				pGameSM->Pause( TFALSE );
+				if ( event.window.event == SDL_WINDOWEVENT_FOCUS_LOST || event.window.event == SDL_WINDOWEVENT_HIDDEN )
+				{
+					SDL_SetRelativeMouseMode( SDL_FALSE );
+					bFocused = TFALSE;
+				}
+				else if ( event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED || event.window.event == SDL_WINDOWEVENT_SHOWN )
+				{
+					SDL_SetRelativeMouseMode( SDL_TRUE );
+					bFocused = TTRUE;
+				}
 			}
 		}
-	}
+	} while ( !bFocused );
 }
 
 void SDLWindow::SetFullscreen( TBOOL a_bFullScreen )
