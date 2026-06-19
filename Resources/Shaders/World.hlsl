@@ -34,6 +34,15 @@ cbuffer ConstantBuffer : register(b0)
 	float    cb_FogEnd;
 	float4   cb_FogColor;
     float4x4 cb_matModel;
+    float4   cb_Reflectivity; // x = SSR reflectivity, y = fresnel power, z = specular intensity, w = specular power (slot 13)
+    float4   cb_SunDirection; // xyz = direction toward the sun (world), w = SSR roughness (slot 14)
+    float4   cb_CameraPos;    // xyz = camera world position (slot 15)
+};
+
+struct PS_OUT
+{
+    float4 Color   : SV_Target0;
+    float4 GBuffer : SV_Target1; // rgb = world-space normal, a = reflectivity
 };
 
 #if !NO_CSM
@@ -45,6 +54,7 @@ cbuffer ConstantBuffer : register(b0)
 #endif
 
 #include "Tonemap.hlsli"
+#include "GBuffer.hlsli"
 
 PS_IN vs_main(VS_IN In)
 {
@@ -88,7 +98,7 @@ float CalculateExponentialSquaredFog(float distance, float fogStart, float densi
 Texture2D texture0 : register(t0);
 SamplerState sampler0 : register(s0);
 
-float4 ps_main(PS_IN In) : SV_TARGET
+PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 {
     float4 texColor = texture0.Sample(sampler0, In.UV0) * In.Color * cb_TexCoordOffsetAndAlpha.z;
 	
@@ -110,18 +120,38 @@ float4 ps_main(PS_IN In) : SV_TARGET
     float shadowScale = 1.0f;
 #endif
 
+    // Per-material Blinn-Phong sun specular: only on lit, sun-facing surfaces.
+    float3 specular = 0.0f;
+    if (cb_Reflectivity.z > 0.0f)
+    {
+        float3 N = normalize(In.WorldNormal);
+        float3 V = normalize(cb_CameraPos.xyz - In.WorldPos); // toward the camera
+        if (dot(N, V) < 0.0f) N = -N;
+        float3 L = cb_SunDirection.xyz;                       // toward the sun
+        float3 H = normalize(L + V);
+        float  specTerm = pow(saturate(dot(N, H)), cb_Reflectivity.w);
+        specular = specTerm * cb_Reflectivity.z * shadowScale * saturate(dot(N, L));
+    }
+
 #if !NO_FOG
 	float fogFactor = CalculateExponentialSquaredFog(In.ProjPos.w, cb_FogStart, cb_FogColor.w);
 	fogFactor = saturate(fogFactor);
     // Apply fog by blending between fog color and original color
-    float3 finalColor = lerp(cb_FogColor.xyz, texColor.xyz * shadowScale, fogFactor);
+    float3 finalColor = lerp(cb_FogColor.xyz, texColor.xyz * shadowScale + specular, fogFactor);
 #else
-    float3 finalColor = texColor.xyz * shadowScale;
+    float3 finalColor = texColor.xyz * shadowScale + specular;
 #endif
 
 #if GLOW
     finalColor *= float3(255, 252, 204) / 255.0f;
 #endif
-    
-    return float4(finalColor, texColor.a);
+
+    PS_OUT Out;
+    Out.Color = float4(finalColor, texColor.a);
+    // G-buffer: rg = octahedral normal, b = reflectivity, a = pack(fresnelPower, roughness).
+    Out.GBuffer = float4(
+        OctEncodeNormal(normalize(In.WorldNormal)),
+        cb_Reflectivity.x,
+        PackFresnelRoughness(cb_Reflectivity.y, cb_SunDirection.w));
+    return Out;
 }

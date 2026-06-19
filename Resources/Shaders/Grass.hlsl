@@ -75,7 +75,13 @@ float CalculateExponentialSquaredFog(float distance, float fogStart, float densi
 Texture2D texture0 : register(t0);
 SamplerState sampler0 : register(s0);
 
-float4 ps_main(PS_IN In) : SV_TARGET
+struct PS_OUT
+{
+    float4 Color   : SV_Target0;
+    float4 GBuffer : SV_Target1;
+};
+
+PS_OUT ps_main(PS_IN In)
 {
     float4 texColor = texture0.Sample(sampler0, In.UV0) * In.Color;
     if (texColor.a < 0.5f) discard;
@@ -105,5 +111,8 @@ float4 ps_main(PS_IN In) : SV_TARGET
     float3 finalColor = texColor.xyz * shadowScale;
 #endif
 
-    return float4(finalColor, texColor.a);
+    PS_OUT Out;
+    Out.Color   = float4(finalColor, texColor.a);
+    Out.GBuffer = float4(0.0f, 0.0f, 0.0f, 0.0f);
+    return Out;
 }

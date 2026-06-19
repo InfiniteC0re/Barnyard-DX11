@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "RenderDX11.h"
+#include "MaterialParams.h"
 #include "Editor.h"
 #include "CSM/CSMManager.h"
 #include "CSM/CSMShadowBatch.h"
@@ -62,6 +63,16 @@ extern TFLOAT g_flXeGTAORadiusMultiplier;
 extern TFLOAT g_flXeGTAOFalloffRange;
 extern TFLOAT g_flXeGTAOSampleDistributionPower;
 extern TFLOAT g_flXeGTAOThinOccluderCompensation;
+extern TBOOL  g_bSSREnabled;
+extern TBOOL  g_bSSRDebug;
+extern TBOOL  g_bSSRDebugNormals;
+extern TFLOAT g_flSSRIntensity;
+extern TFLOAT g_flSSRMaxDistance;
+extern TFLOAT g_flSSRThickness;
+extern TFLOAT g_flSSRStepSize;
+extern TINT   g_iSSRMaxSteps;
+extern TFLOAT g_flSSRFresnelPower;
+extern TFLOAT g_flSSREdgeFade;
 extern TBOOL  g_bVolumetricFogEnabled;
 extern TINT   g_iVolumetricFogCompositeMode;
 extern TFLOAT g_flVolumetricFogDensity;
@@ -110,6 +121,9 @@ public:
 	void OnImGuiRender( AImGUI* a_pImGui ) OVERRIDE
 	{
 		ImGui::Checkbox( "Enabled Font Atlas Debugging", &m_bDebugFontAtlas );
+
+		if ( ImGui::Button( "Reload Materials" ) )
+			remaster::ReloadMaterialParams();
 
 		ImGui::Separator();
 		ImGui::TextUnformatted( "CSM Debugging" );
@@ -190,8 +204,24 @@ public:
 			}
 		}
 
-		ImGui::Separator();
-		ImGui::TextUnformatted( "Sun Shafts" );
+			ImGui::Separator();
+			ImGui::TextUnformatted( "Screen-Space Reflections (experimental)" );
+			ImGui::Checkbox( "Enable SSR", &remaster::g_bSSREnabled );
+			if ( remaster::g_bSSREnabled )
+			{
+				ImGui::Checkbox( "Debug SSR (show reflection)", &remaster::g_bSSRDebug );
+				ImGui::Checkbox( "Debug SSR Normals (G-buffer)", &remaster::g_bSSRDebugNormals );
+				ImGui::SliderFloat( "SSR Intensity", &remaster::g_flSSRIntensity, 0.0f, 2.0f, "%.2f" );
+				ImGui::DragFloat( "SSR Max Distance", &remaster::g_flSSRMaxDistance, 0.5f, 1.0f, 200.0f, "%.1f" );
+				ImGui::SliderInt( "SSR Max Steps", &remaster::g_iSSRMaxSteps, 8, 256 );
+				ImGui::DragFloat( "SSR Step Size", &remaster::g_flSSRStepSize, 0.01f, 0.02f, 4.0f, "%.3f" );
+				ImGui::DragFloat( "SSR Thickness", &remaster::g_flSSRThickness, 0.01f, 0.02f, 5.0f, "%.3f" );
+				ImGui::SliderFloat( "SSR Fresnel Power", &remaster::g_flSSRFresnelPower, 0.0f, 8.0f, "%.2f" );
+				ImGui::SliderFloat( "SSR Edge Fade", &remaster::g_flSSREdgeFade, 0.5f, 8.0f, "%.2f" );
+			}
+
+			ImGui::Separator();
+			ImGui::TextUnformatted( "Sun Shafts" );
 		ImGui::Checkbox( "Enable Sun Shafts", &remaster::g_bSunShaftsEnabled );
 		if ( remaster::g_bSunShaftsEnabled )
 		{

@@ -411,12 +411,38 @@ public:
 
 	void SetRenderTargetView( ID3D11RenderTargetView* a_pRenderTargetView, ID3D11DepthStencilView* a_pDepthStencilView )
 	{
-		if ( m_pCurrentRenderTargetView != a_pRenderTargetView || m_pCurrentDepthStencilView != a_pDepthStencilView )
+		if ( m_pCurrentRenderTargetView != a_pRenderTargetView || m_pCurrentDepthStencilView != a_pDepthStencilView || m_bRenderTargetsDirty )
 		{
 			m_pCurrentRenderTargetView = a_pRenderTargetView;
 			m_pCurrentDepthStencilView = a_pDepthStencilView;
-			m_pDeviceContext->OMSetRenderTargets( 1, &a_pRenderTargetView, a_pDepthStencilView );
+			m_bRenderTargetsDirty      = TFALSE;
+
+			// When a secondary (G-buffer) RTV is active it stays bound on slot 1
+			// across colour-target swaps (e.g. the glow path) for the whole main pass.
+			if ( m_pSecondaryRenderTargetView )
+			{
+				ID3D11RenderTargetView* apRTVs[ 2 ] = { a_pRenderTargetView, m_pSecondaryRenderTargetView };
+				m_pDeviceContext->OMSetRenderTargets( 2, apRTVs, a_pDepthStencilView );
+			}
+			else
+			{
+				m_pDeviceContext->OMSetRenderTargets( 1, &a_pRenderTargetView, a_pDepthStencilView );
+			}
 		}
+	}
+
+	// Persistent slot-1 render target for the main-pass G-buffer. Pass TNULL to
+	// detach. Rebinds immediately so the slot is (un)bound now.
+	void SetSecondaryRenderTargetView( ID3D11RenderTargetView* a_pRenderTargetView )
+	{
+		if ( m_pSecondaryRenderTargetView == a_pRenderTargetView )
+			return;
+
+		// Don't rebind here: m_pCurrent* may be an invalidated sentinel (ClearStateCache
+		// sets them to ~ptr). The caller issues a SetRenderTargetView with valid targets
+		// right after; m_bRenderTargetsDirty forces it to apply the new slot-1 binding.
+		m_pSecondaryRenderTargetView = a_pRenderTargetView;
+		m_bRenderTargetsDirty        = TTRUE;
 	}
 
 	void VSSetSamplerState( TUINT a_uiStartSlot, TINT a_iSamplerId )
@@ -565,6 +591,8 @@ public:
 	ID3D11RenderTargetView*              GetD3D11GlowRenderTargetView() const { return m_pGlowRenderTargetView; }
 	ID3D11ShaderResourceView*            GetD3D11GlowRenderTargetSRV() const { return m_pGlowRenderTargetSRV; }
 	ID3D11Texture2D*                     GetD3D11GlowRenderTargetTexture() const { return m_pGlowRenderTargetTexture; }
+	ID3D11RenderTargetView*              GetD3D11GBufferRTV() const { return m_pGBufferRTV; }
+	ID3D11Texture2D*                     GetD3D11GBufferTexture() const { return m_pGBufferTexture; }
 	ID3D11DepthStencilView*              GetD3D11DepthStencilView() const { return m_pDepthStencilView; }
 	ID3D11ShaderResourceView*            GetD3D11DepthStencilSRV() const { return m_pDepthStencilSRV; }
 	ID3D11Buffer*                        GetShadowConstantBuffer() const { return m_pShadowConstantBuffer; }
@@ -623,6 +651,10 @@ private:
 	ID3D11RenderTargetView*   m_pGlowRenderTargetView    = TNULL;
 	ID3D11Texture2D*          m_pGlowRenderTargetTexture = TNULL;
 	ID3D11ShaderResourceView* m_pGlowRenderTargetSRV     = TNULL;
+	// Main-pass G-buffer (MSAA): rgb = world-space normal, a = reflectivity.
+	// Bound on slot 1 during the scene pass, then resolved and sampled by SSR.
+	ID3D11Texture2D*          m_pGBufferTexture          = TNULL;
+	ID3D11RenderTargetView*   m_pGBufferRTV              = TNULL;
 	DXGI_SWAP_CHAIN_DESC      m_oSwapChainDesc;
 
 	// TRUE when the swapchain was created with tearing support and Present
@@ -707,6 +739,8 @@ private:
 
 	ID3D11RenderTargetView* m_pCurrentRenderTargetView;
 	ID3D11DepthStencilView* m_pCurrentDepthStencilView;
+	ID3D11RenderTargetView* m_pSecondaryRenderTargetView = TNULL; // persistent slot-1 G-buffer RTV
+	TBOOL                   m_bRenderTargetsDirty         = TFALSE;
 
 	ID3D11VertexShader*         m_pCurrentVertexShader;
 	ID3D11PixelShader*          m_pCurrentPixelShader;

@@ -255,6 +255,12 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		DX11_API_VALIDATE_EXIT( m_pDevice->CreateRenderTargetView( m_pRenderTargetTexture, TNULL, &m_pRenderTargetView ) );
 		DX11_API_VALIDATE_EXIT( m_pDevice->CreateRenderTargetView( m_pGlowRenderTargetTexture, TNULL, &m_pGlowRenderTargetView ) );
 
+		// Main-pass G-buffer
+		D3D11_TEXTURE2D_DESC gbufferDesc = backBufferDesc;
+		gbufferDesc.Format               = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		DX11_API_VALIDATE_EXIT( m_pDevice->CreateTexture2D( &gbufferDesc, TNULL, &m_pGBufferTexture ) );
+		DX11_API_VALIDATE_EXIT( m_pDevice->CreateRenderTargetView( m_pGBufferTexture, TNULL, &m_pGBufferRTV ) );
+
 		{
 			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 			srvDesc.Format                    = backBufferDesc.Format;

@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "WorldShader.h"
+#include "MaterialParams.h"
 #include "WorldMaterial.h"
 #include "WorldMesh.h"
 #include "Generated/WorldShaderCombos.h"
@@ -336,6 +337,20 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	g_pRender->VSBufferSetVec4( 7, vMiscSettings );
 	g_pRender->VSBufferSetVec4( 8, vFogColor );
+
+	const remaster::MaterialParams* pSSRParams = remaster::GetMaterialParams( pMaterial );
+	const TFLOAT flReflectivity  = pSSRParams ? pSSRParams->fReflectivity : 0.0f;
+	const TFLOAT flFresnelPower  = pSSRParams ? TMath::Max( pSSRParams->fFresnelPower, 0.1f ) : 0.0f;
+	const TFLOAT flSpecIntensity = pSSRParams ? pSSRParams->fSpecularIntensity : 0.05f;
+	const TFLOAT flSpecPower     = pSSRParams ? TMath::Max( pSSRParams->fSpecularPower, 1.0f ) : 26.0f;
+	g_pRender->VSBufferSetVec4( 13, TVector4( flReflectivity, flFresnelPower, flSpecIntensity, flSpecPower ) );
+
+	const TFLOAT   flRoughness = pSSRParams ? pSSRParams->fRoughness : 0.0f;
+	const TVector3 sunDir      = g_pCSMManager ? g_pCSMManager->GetLightDirection() : TVector3( 0.0f, -1.0f, 0.0f );
+	g_pRender->VSBufferSetVec4( 14, TVector4( -sunDir.x, sunDir.y, -sunDir.z, flRoughness ) );
+	const TVector3 camPos = pCurrentContext->GetViewWorldMatrix().GetTranslation3();
+	g_pRender->VSBufferSetVec4( 15, TVector4( camPos.x, camPos.y, camPos.z, 0.0f ) );
+
 	if ( bHasDynLight ) UploadDynamicGlowLights( a_pRenderPacket );
 
 	// Set vertices

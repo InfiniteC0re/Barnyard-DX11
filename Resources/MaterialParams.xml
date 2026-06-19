@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<materials>
+	<!--  -->
+	<material name="mudpuddleyard" reflectivity="0.4" roughness="0.3" fresnelPower="4.0" specularIntensity="0.1" specularPower="16" />
+	<material name="pigpenmud" reflectivity="0.8" roughness="0.3" fresnelPower="4.0" specularIntensity="0.1" specularPower="14.5" />
+	<material name="ute_bod" reflectivity="0.4" roughness="0.05" fresnelPower="4.0" specularIntensity="0.2" specularPower="1" />
+	<material name="ute_bod_matte" reflectivity="0.4" roughness="0.05" fresnelPower="4.0" specularIntensity="0.2" specularPower="1" />
+	<material name="utebod_matte" reflectivity="0.4" roughness="0.05" fresnelPower="4.0" specularIntensity="0.2" specularPower="1" />
+
+	<!--  -->
+	<material name="water_env" reflectivity="0" roughness="0.05" fresnelPower="0" specularIntensity="1" specularPower="26" />
+
+	<material name="water_tank" reflectivity="0.5" roughness="0.85" fresnelPower="0" specularIntensity="0.8" specularPower="26" />
+	<material name="Trough_Bath_01" reflectivity="0.8" roughness="0.5" fresnelPower="0" specularIntensity="1" specularPower="26" />
+	<material name="sprinkler" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="0.4" specularPower="26" />
+	
+	<!--  -->
+	<material name="pipemets" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.3" specularPower="26" />
+	<material name="pipemetmat" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.3" specularPower="26" />
+	<material name="pipmtopmat" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.3" specularPower="26" />
+	<material name="pipesidemat" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.3" specularPower="26" />
+	<material name="piperusty" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.3" specularPower="26" />
+	<material name="pipmbigmat" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.3" specularPower="26" />
+
+	<!--  -->
+	<material name="tractor2body" reflectivity="0.15" roughness="0.75" fresnelPower="0" specularIntensity="0.2" specularPower="20" />
+
+	<!--  -->
+	<material name="bucket" reflectivity="0.8" roughness="0.1" fresnelPower="0.5" specularIntensity="1" specularPower="16" />
+
+	<material name="mail_box_01" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.2" specularPower="12"  />
+	<material name="telegraph_pole2" reflectivity="0.5" roughness="0.5" fresnelPower="0" specularIntensity="0.2" specularPower="10" />
+	<material name="Material_#9420" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
+	<material name="forest_gate" reflectivity="0.5" roughness="0.5" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
+	<material name="barrier" reflectivity="1" roughness="0.05" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
+	<material name="gridconc" reflectivity="0.2" roughness="0.4" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
+	<material name="garden_light" reflectivity="0.2" roughness="0.5" fresnelPower="0" specularIntensity="0.8" specularPower="10" />
+	<material name="tee_sphere" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="1" specularPower="8" />
+	<material name="tee_sign" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
+	<material name="tee_ball_cleaner" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
+	<material name="lawnmower" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
+	<material name="golf_cart" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
+
+	<!--  -->
+	<material name="lamp" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
+	<!--  -->
+	<material name="barnroof" reflectivity="0.4" roughness="0.8" fresnelPower="4" specularIntensity="0.14" specularPower="26" />
+	<material name="silosim" reflectivity="0.4" roughness="0.8" fresnelPower="0" specularIntensity="0.35" specularPower="26" />
+	<material name="fence_post" reflectivity="1" roughness="0.05" fresnelPower="0" specularIntensity="10" specularPower="26" />
+	<material name="corrugiron" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="10" specularPower="26" />
+	<material name="schoolbus" reflectivity="0.5" roughness="0.9" fresnelPower="0" specularIntensity="10" specularPower="26" />
+	<material name="jfireplace" reflectivity="0.5" roughness="0.9" fresnelPower="0" specularIntensity="10" specularPower="26" />
+	<material name="crane" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="10" specularPower="26" />
+	<material name="barbedwire" reflectivity="0.5" roughness="0.9" fresnelPower="0" specularIntensity="10" specularPower="26" />
+	<material name="BeadyCar" reflectivity="0.5" roughness="0.9" fresnelPower="0" specularIntensity="10" specularPower="26" />
+	<material name="fencemesh" reflectivity="0.5" roughness="0.9" fresnelPower="0" specularIntensity="10" specularPower="26" />
+</materials>

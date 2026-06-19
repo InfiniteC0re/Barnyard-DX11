@@ -16,6 +16,7 @@
 #include "GlowBloomCompositeShaderCombos.h"
 #include "HBAOPlusShaderCombos.h"
 #include "XeGTAOShaderCombos.h"
+#include "SSRShaderCombos.h"
 #include "HBAOBlurShaderCombos.h"
 #include "HBAOCompositeShaderCombos.h"
 #include "VolumetricFogShaderCombos.h"
@@ -59,6 +60,8 @@ TINLINE TBOOL CompileAllShaderCombos()
 	if ( !CompileHBAOPlusShaderCombos() )
 		return TFALSE;
 	if ( !CompileXeGTAOShaderCombos() )
+		return TFALSE;
+	if ( !CompileSSRShaderCombos() )
 		return TFALSE;
 	if ( !CompileHBAOBlurShaderCombos() )
 		return TFALSE;

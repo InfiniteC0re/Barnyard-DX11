@@ -36,7 +36,13 @@ PS_IN vs_main(VS_IN In)
 Texture2D texture0 : register(t0);
 SamplerState sampler0 : register(s0);
 
-float4 ps_main(PS_IN In) : SV_TARGET
+struct PS_OUT
+{
+    float4 Color   : SV_Target0;
+    float4 GBuffer : SV_Target1; // system/2D geometry: no normal, not reflective
+};
+
+PS_OUT ps_main(PS_IN In)
 {
 #if TEXTURED
 	float4 color = texture0.Sample(sampler0, In.UV0);
@@ -46,6 +52,9 @@ float4 ps_main(PS_IN In) : SV_TARGET
 #else // TEXTURED
 	float4 color = In.Color;
 #endif // !TEXTURED
-    
-    return color;
+
+    PS_OUT Out;
+    Out.Color   = color;
+    Out.GBuffer = float4(0.0f, 0.0f, 0.0f, 0.0f);
+    return Out;
 }

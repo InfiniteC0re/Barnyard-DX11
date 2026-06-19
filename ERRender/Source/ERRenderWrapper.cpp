@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "RenderDX11.h"
+#include "MaterialParams.h"
 #include "Shader/GrassShader.h"
 #include "Shader/SkinShader.h"
 #include "Shader/SkinMesh.h"
@@ -27,6 +28,7 @@
 #include "Generated/GlowBloomCompositeShaderCombos.h"
 #include "Generated/HBAOPlusShaderCombos.h"
 #include "Generated/XeGTAOShaderCombos.h"
+#include "Generated/SSRShaderCombos.h"
 #include "Generated/HBAOBlurShaderCombos.h"
 #include "Generated/HBAOCompositeShaderCombos.h"
 #include "Generated/VolumetricFogShaderCombos.h"
@@ -252,6 +254,10 @@ static ID3D11ShaderResourceView* s_pSunshaftsShaderResourceView = TNULL;
 
 static ID3D11Texture2D*          s_pResolvedColorTexture = TNULL;
 static ID3D11ShaderResourceView* s_pResolvedColorSRV     = TNULL;
+
+// Resolved (non-MSAA) main-pass G-buffer: rgb = world normal, a = reflectivity.
+static ID3D11Texture2D*          s_pResolvedGBufferTexture = TNULL;
+static ID3D11ShaderResourceView* s_pResolvedGBufferSRV     = TNULL;
 static ID3D11Texture2D*          s_pResolvedGlowTexture  = TNULL;
 static ID3D11ShaderResourceView* s_pResolvedGlowSRV      = TNULL;
 
@@ -265,6 +271,14 @@ static ID3D11ShaderResourceView* s_pHBAOSRV        = TNULL;
 static ID3D11Texture2D*          s_pHBAOBlurTexture = TNULL;
 static ID3D11RenderTargetView*   s_pHBAOBlurRTV     = TNULL;
 static ID3D11ShaderResourceView* s_pHBAOBlurSRV     = TNULL;
+
+// Screen-space reflections (prototype) -- half-res RGBA16F: rgb = reflected colour, a = confidence.
+static ID3D11Texture2D*          s_pSSRTexture     = TNULL;
+static ID3D11RenderTargetView*   s_pSSRRTV         = TNULL;
+static ID3D11ShaderResourceView* s_pSSRSRV         = TNULL;
+static ID3D11Texture2D*          s_pSSRBlurTexture = TNULL;
+static ID3D11RenderTargetView*   s_pSSRBlurRTV     = TNULL;
+static ID3D11ShaderResourceView* s_pSSRBlurSRV     = TNULL;
 
 // AO is computed and blurred at half-width x half-height (quarter the pixels),
 // then upsampled with a linear sampler during the composite pass.
@@ -326,6 +340,20 @@ struct HBAOBlurCBuffer
 	TFLOAT depthParams[ 4 ];
 };
 
+struct SSRCBuffer
+{
+	TFLOAT projection[ 4 ];
+	TFLOAT depthParams[ 4 ];
+	TFLOAT params[ 4 ];      // intensity, maxDistance, thickness, fresnelPower
+	TFLOAT bufferSize[ 4 ];
+	TFLOAT marchParams[ 4 ]; // maxSteps, stepSize, edgeFadePower, unused
+	TFLOAT blurParams[ 4 ];  // invWidth, invHeight, dirX, dirY
+	TFLOAT blurDepth[ 4 ];   // near, far, sharpness, unused
+	TMatrix44 worldToView;   // rotates G-buffer world normals into view space
+};
+
+static ID3D11Buffer* s_pSSRConstantBuffer = TNULL;
+
 static ID3D11Buffer* s_pHBAOConstantBuffer          = TNULL;
 static ID3D11Buffer* s_pXeGTAOConstantBuffer        = TNULL;
 static ID3D11Buffer* s_pHBAOBlurConstantBuffer      = TNULL;
@@ -379,18 +407,29 @@ TINT   g_iGlowBloomKawaseLevels  = 2;
 TFLOAT g_flGlowBloomKawaseOffset = 1.7f;
 TFLOAT g_flGlowBloomIntensity    = 0.715f;
 
-TBOOL  g_bHBAOEnabled       = TTRUE;
-TBOOL  g_bHBAODebug         = TFALSE;
-TINT   g_iAOAlgorithm       = 0;
-TFLOAT g_flHBAORadius       = 0.7f;
-TFLOAT g_flHBAOSceneScale   = 1.0f;
-TFLOAT g_flHBAOBias         = 0.10f;
-TFLOAT g_flHBAOIntensity    = 1.0f;
-TFLOAT g_flHBAOPower        = 1.0f;
-TFLOAT g_flHBAOBlurSharpness = 4.0f;
-TFLOAT g_flXeGTAORadiusMultiplier = 1.457f;
-TFLOAT g_flXeGTAOFalloffRange = 0.9f;
-TFLOAT g_flXeGTAOSampleDistributionPower = 2.8f;
+TBOOL g_bHBAOEnabled = TTRUE;
+TBOOL g_bHBAODebug   = TFALSE;
+
+TBOOL  g_bSSREnabled                      = TTRUE;
+TBOOL  g_bSSRDebug                        = TFALSE;
+TBOOL  g_bSSRDebugNormals                 = TFALSE; // visualise G-buffer world normals
+TFLOAT g_flSSRIntensity                   = 1.0f;
+TFLOAT g_flSSRMaxDistance                 = 30.0f;
+TFLOAT g_flSSRThickness                   = 0.4f;
+TFLOAT g_flSSRStepSize                    = 0.15f;
+TINT   g_iSSRMaxSteps                     = 80;
+TFLOAT g_flSSRFresnelPower                = 4.0f;
+TFLOAT g_flSSREdgeFade                    = 3.0f;
+TINT   g_iAOAlgorithm                     = 0;
+TFLOAT g_flHBAORadius                     = 0.7f;
+TFLOAT g_flHBAOSceneScale                 = 1.0f;
+TFLOAT g_flHBAOBias                       = 0.10f;
+TFLOAT g_flHBAOIntensity                  = 1.0f;
+TFLOAT g_flHBAOPower                      = 1.0f;
+TFLOAT g_flHBAOBlurSharpness              = 4.0f;
+TFLOAT g_flXeGTAORadiusMultiplier         = 1.457f;
+TFLOAT g_flXeGTAOFalloffRange             = 0.9f;
+TFLOAT g_flXeGTAOSampleDistributionPower  = 2.8f;
 TFLOAT g_flXeGTAOThinOccluderCompensation = 0.5f;
 
 TBOOL  g_bVolumetricFogEnabled       = TTRUE;
@@ -465,6 +504,12 @@ void remaster::RenderDX11::CreateRenderTargets()
 		DX11_API_VALIDATE( GetD3D11Device()->CreateShaderResourceView( s_pResolvedColorTexture, TNULL, &s_pResolvedColorSRV ) );
 		DX11_API_VALIDATE( GetD3D11Device()->CreateTexture2D( &desc, TNULL, &s_pResolvedGlowTexture ) );
 		DX11_API_VALIDATE( GetD3D11Device()->CreateShaderResourceView( s_pResolvedGlowTexture, TNULL, &s_pResolvedGlowSRV ) );
+
+		// Resolved G-buffer (matches the MSAA RGBA16F G-buffer target)
+		D3D11_TEXTURE2D_DESC gbDesc = desc;
+		gbDesc.Format               = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		DX11_API_VALIDATE( GetD3D11Device()->CreateTexture2D( &gbDesc, TNULL, &s_pResolvedGBufferTexture ) );
+		DX11_API_VALIDATE( GetD3D11Device()->CreateShaderResourceView( s_pResolvedGBufferTexture, TNULL, &s_pResolvedGBufferSRV ) );
 	}
 
 	// Resolved depth: R32_FLOAT render target written by the ResolveDepth shader
@@ -528,6 +573,33 @@ void remaster::RenderDX11::CreateRenderTargets()
 		hbaoBlurCBDesc.BindFlags         = D3D11_BIND_CONSTANT_BUFFER;
 		hbaoBlurCBDesc.CPUAccessFlags    = D3D11_CPU_ACCESS_WRITE;
 		DX11_API_VALIDATE( GetD3D11Device()->CreateBuffer( &hbaoBlurCBDesc, TNULL, &s_pHBAOBlurConstantBuffer ) );
+
+		// SSR buffers (share the AO half-resolution; RGBA16F to hold colour bounce)
+		D3D11_TEXTURE2D_DESC ssrDesc = {};
+		ssrDesc.Width              = s_uiHBAOWidth;
+		ssrDesc.Height             = s_uiHBAOHeight;
+		ssrDesc.MipLevels          = 1;
+		ssrDesc.ArraySize          = 1;
+		ssrDesc.Format             = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		ssrDesc.SampleDesc.Count   = 1;
+		ssrDesc.SampleDesc.Quality = 0;
+		ssrDesc.Usage              = D3D11_USAGE_DEFAULT;
+		ssrDesc.BindFlags          = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+
+		DX11_API_VALIDATE( GetD3D11Device()->CreateTexture2D( &ssrDesc, TNULL, &s_pSSRTexture ) );
+		DX11_API_VALIDATE( GetD3D11Device()->CreateRenderTargetView( s_pSSRTexture, TNULL, &s_pSSRRTV ) );
+		DX11_API_VALIDATE( GetD3D11Device()->CreateShaderResourceView( s_pSSRTexture, TNULL, &s_pSSRSRV ) );
+
+		DX11_API_VALIDATE( GetD3D11Device()->CreateTexture2D( &ssrDesc, TNULL, &s_pSSRBlurTexture ) );
+		DX11_API_VALIDATE( GetD3D11Device()->CreateRenderTargetView( s_pSSRBlurTexture, TNULL, &s_pSSRBlurRTV ) );
+		DX11_API_VALIDATE( GetD3D11Device()->CreateShaderResourceView( s_pSSRBlurTexture, TNULL, &s_pSSRBlurSRV ) );
+
+		D3D11_BUFFER_DESC ssrCBDesc = {};
+		ssrCBDesc.ByteWidth      = sizeof( SSRCBuffer );
+		ssrCBDesc.Usage          = D3D11_USAGE_DYNAMIC;
+		ssrCBDesc.BindFlags      = D3D11_BIND_CONSTANT_BUFFER;
+		ssrCBDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		DX11_API_VALIDATE( GetD3D11Device()->CreateBuffer( &ssrCBDesc, TNULL, &s_pSSRConstantBuffer ) );
 	}
 
 	// Dual Kawase blur mip chain (each level halves the previous resolution)
@@ -666,6 +738,15 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 	static constexpr TFLOAT aflSkyMaskClearColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
 
+	// Bind the G-buffer on slot 1 for the whole scene pass (only when SSR needs it).
+	// It persists across the glow path's colour-target swaps via the secondary RTV.
+	const TBOOL bGBufferActive = remaster::g_bSSREnabled;
+	if ( bGBufferActive )
+	{
+		remaster::g_pRender->ClearRenderTarget( remaster::g_pRender->GetD3D11GBufferRTV(), aflSkyMaskClearColor );
+		remaster::g_pRender->SetSecondaryRenderTargetView( remaster::g_pRender->GetD3D11GBufferRTV() );
+	}
+
 	remaster::g_pRender->SetRenderTargetView(
 	    remaster::g_pRender->GetD3D11RenderTargetView(),
 	    remaster::g_pRender->GetD3D11DepthStencilView()
@@ -679,6 +760,20 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	remaster::g_bAllowClearingDepth = TFALSE;
 	CallOriginal( a_flDeltaTime );
 	remaster::g_bAllowClearingDepth = TTRUE;
+
+	// Detach the G-buffer and resolve it (MSAA -> non-MSAA) for SSR.
+	if ( bGBufferActive )
+	{
+		// Drop slot 1 by rebinding the colour target alone (valid pointers, dirty flag
+		// forces the rebind) so the G-buffer isn't bound as an RTV while we resolve it.
+		remaster::g_pRender->SetSecondaryRenderTargetView( TNULL );
+		remaster::g_pRender->SetRenderTargetView(
+		    remaster::g_pRender->GetD3D11RenderTargetView(),
+		    remaster::g_pRender->GetD3D11DepthStencilView()
+		);
+		remaster::g_pRender->GetD3D11DeviceContext()->ResolveSubresource(
+		    s_pResolvedGBufferTexture, 0, remaster::g_pRender->GetD3D11GBufferTexture(), 0, DXGI_FORMAT_R16G16B16A16_FLOAT );
+	}
 
 	// Resolve MSAA color -> non-MSAA (needed by sky mask shader)
 	{
@@ -867,6 +962,147 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		}
 
 		remaster::g_pRender->PSSetShaderResource( 0, TNULL );
+		remaster::g_pRender->PSSetConstantBuffer( 1, TNULL );
+	}
+
+	if ( remaster::g_bSSREnabled )
+	{
+		TPROFILER_NAMED( "SSR" );
+
+		auto             pCtx = TSTATICCAST( remaster::RenderContextD3D11, m_pViewport->GetRenderContext() );
+		const TMatrix44& proj = pCtx->GetProjectionMatrix();
+		const TFLOAT     fNearClip = pCtx->GetProjectionParams().m_fNearClip;
+		const TFLOAT     fFarClip  = pCtx->GetProjectionParams().m_fFarClip;
+
+		SSRCBuffer cbData      = {};
+		cbData.projection[ 0 ]  = proj.m_f11;
+		cbData.projection[ 1 ]  = proj.m_f22;
+		cbData.projection[ 2 ]  = proj.m_f31;
+		cbData.projection[ 3 ]  = proj.m_f32;
+		cbData.depthParams[ 0 ] = proj.m_f33;
+		cbData.depthParams[ 1 ] = proj.m_f43;
+		cbData.depthParams[ 2 ] = fNearClip;
+		cbData.depthParams[ 3 ] = fFarClip;
+		cbData.params[ 0 ]      = remaster::g_flSSRIntensity;
+		cbData.params[ 1 ]      = remaster::g_flSSRMaxDistance;
+		cbData.params[ 2 ]      = remaster::g_flSSRThickness;
+		cbData.params[ 3 ]      = remaster::g_flSSRFresnelPower;
+		cbData.bufferSize[ 0 ]  = TFLOAT( s_uiHBAOWidth );
+		cbData.bufferSize[ 1 ]  = TFLOAT( s_uiHBAOHeight );
+		cbData.bufferSize[ 2 ]  = 1.0f / cbData.bufferSize[ 0 ];
+		cbData.bufferSize[ 3 ]  = 1.0f / cbData.bufferSize[ 1 ];
+		cbData.marchParams[ 0 ] = TFLOAT( remaster::g_iSSRMaxSteps );
+		cbData.marchParams[ 1 ] = remaster::g_flSSRStepSize;
+		cbData.marchParams[ 2 ] = remaster::g_flSSREdgeFade;
+		cbData.marchParams[ 3 ] = 0.0f;
+		cbData.blurDepth[ 0 ]   = fNearClip;
+		cbData.blurDepth[ 1 ]   = fFarClip;
+		cbData.blurDepth[ 2 ]   = remaster::g_flHBAOBlurSharpness;
+		cbData.blurDepth[ 3 ]   = 0.0f;
+
+		// World-space G-buffer normals -> view space (matches the geometry's world space).
+		cbData.worldToView.InvertOrthogonal( pCtx->GetViewWorldMatrix() );
+
+		auto fnUploadSSRCB = [ & ]()
+		{
+			D3D11_MAPPED_SUBRESOURCE mapped;
+			remaster::g_pRender->GetD3D11DeviceContext()->Map( s_pSSRConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped );
+			TUtil::MemCopy( mapped.pData, &cbData, sizeof( cbData ) );
+			remaster::g_pRender->GetD3D11DeviceContext()->Unmap( s_pSSRConstantBuffer, 0 );
+		};
+
+		// Half-res viewport for the gather + blur.
+		D3D11_VIEWPORT oOldVP;
+		TUINT          uiNumVP = 1;
+		remaster::g_pRender->GetD3D11DeviceContext()->RSGetViewports( &uiNumVP, &oOldVP );
+		D3D11_VIEWPORT oHalfVP = oOldVP;
+		oHalfVP.Width  = TFLOAT( s_uiHBAOWidth );
+		oHalfVP.Height = TFLOAT( s_uiHBAOHeight );
+		remaster::g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &oHalfVP );
+
+		remaster::g_pRender->SetCullMode( D3D11_CULL_NONE );
+		remaster::g_pRender->SetDepthEnabled( TFALSE );
+		remaster::g_pRender->SetBlendEnabled( TFALSE );
+		remaster::g_pRender->PSSetSamplerState( 0, s_pPointClampSampler );
+		remaster::g_pRender->PSSetSamplerState( 1, s_pLinearClampSampler );
+		remaster::g_pRender->PSSetConstantBuffer( 1, s_pSSRConstantBuffer );
+
+		// Gather: depth (t0) + resolved scene colour (t1) -> reflection buffer.
+		fnUploadSSRCB();
+		remaster::g_pRender->DiscardView( s_pSSRRTV );
+		remaster::g_pRender->SetRenderTargetView( s_pSSRRTV, TNULL );
+		remaster::g_pRender->PSSetShaderResource( 0, s_pResolvedDepthSRV );
+		remaster::g_pRender->PSSetShaderResource( 1, s_pResolvedColorSRV );
+		remaster::g_pRender->PSSetShaderResource( 3, s_pResolvedGBufferSRV );
+		remaster::g_pRender->DrawScreenRectangle(
+		    remaster::shadercombos::GetSSRPixelShaderCombo_ps_gather().GetPixelShader( remaster::shadercombos::SSR_NoCombos )
+		);
+		remaster::g_pRender->PSSetShaderResource( 1, TNULL );
+		remaster::g_pRender->PSSetShaderResource( 3, TNULL );
+
+		// Separable depth-aware bilateral blur: horizontal then vertical.
+		auto fnBlurSSR = [ & ]( ID3D11RenderTargetView* a_pRTV, ID3D11ShaderResourceView* a_pInput, TFLOAT a_fDirX, TFLOAT a_fDirY )
+		{
+			cbData.blurParams[ 0 ] = 1.0f / TFLOAT( s_uiHBAOWidth );
+			cbData.blurParams[ 1 ] = 1.0f / TFLOAT( s_uiHBAOHeight );
+			cbData.blurParams[ 2 ] = a_fDirX;
+			cbData.blurParams[ 3 ] = a_fDirY;
+			fnUploadSSRCB();
+
+			remaster::g_pRender->DiscardView( a_pRTV );
+			remaster::g_pRender->SetRenderTargetView( a_pRTV, TNULL );
+			remaster::g_pRender->PSSetShaderResource( 0, s_pResolvedDepthSRV );
+			remaster::g_pRender->PSSetShaderResource( 2, a_pInput );
+			remaster::g_pRender->PSSetShaderResource( 3, s_pResolvedGBufferSRV ); // roughness for blur width
+			remaster::g_pRender->DrawScreenRectangle(
+			    remaster::shadercombos::GetSSRPixelShaderCombo_ps_blur().GetPixelShader( remaster::shadercombos::SSR_NoCombos )
+			);
+			remaster::g_pRender->PSSetShaderResource( 2, TNULL );
+			remaster::g_pRender->PSSetShaderResource( 3, TNULL );
+		};
+
+		fnBlurSSR( s_pSSRBlurRTV, s_pSSRSRV, 1.0f, 0.0f );
+		fnBlurSSR( s_pSSRRTV, s_pSSRBlurSRV, 0.0f, 1.0f );
+
+		// Restore full-res and composite over the scene.
+		remaster::g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &oOldVP );
+		remaster::g_pRender->SetRenderTargetView(
+		    remaster::g_pRender->GetD3D11RenderTargetView(),
+		    remaster::g_pRender->GetD3D11DepthStencilView()
+		);
+		remaster::g_pRender->SetCullMode( D3D11_CULL_NONE );
+		remaster::g_pRender->SetDepthEnabled( TFALSE );
+		remaster::g_pRender->PSSetShaderResource( 2, s_pSSRSRV );
+
+		if ( remaster::g_bSSRDebugNormals )
+		{
+			// Full-screen view of the G-buffer world normals (diagnose world vs view space).
+			remaster::g_pRender->PSSetShaderResource( 3, s_pResolvedGBufferSRV );
+			remaster::g_pRender->SetBlendEnabled( TFALSE );
+			remaster::g_pRender->DrawScreenRectangle(
+			    remaster::shadercombos::GetSSRPixelShaderCombo_ps_debug_normal().GetPixelShader( remaster::shadercombos::SSR_NoCombos )
+			);
+			remaster::g_pRender->PSSetShaderResource( 3, TNULL );
+		}
+		else if ( remaster::g_bSSRDebug )
+		{
+			remaster::g_pRender->SetBlendEnabled( TFALSE );
+			remaster::g_pRender->DrawScreenRectangle(
+			    remaster::shadercombos::GetSSRPixelShaderCombo_ps_debug().GetPixelShader( remaster::shadercombos::SSR_NoCombos )
+			);
+		}
+		else
+		{
+			// Alpha-lerp the reflection over the scene by its confidence (.a).
+			remaster::g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
+			remaster::g_pRender->SetBlendEnabled( TTRUE );
+			remaster::g_pRender->DrawScreenRectangle(
+			    remaster::shadercombos::GetSSRPixelShaderCombo_ps_composite().GetPixelShader( remaster::shadercombos::SSR_NoCombos )
+			);
+			remaster::g_pRender->SetBlendEnabled( TFALSE );
+		}
+
+		remaster::g_pRender->PSSetShaderResource( 2, TNULL );
 		remaster::g_pRender->PSSetConstantBuffer( 1, TNULL );
 	}
 
@@ -1442,7 +1678,18 @@ HOOK(0x006119d0, AModelLoader_CreateMaterial, TMaterial*, TINT a_iOffset, const 
 // 	if ( TStringManager::String8Compare( a_szMaterialName, "starsquad" ) == 0 )
 // 		pMaterial->SetFlags( TMaterial::FLAGS_GLOW, TTRUE );
 
+	// Attach remaster material params authored in Data/MaterialParams.xml
+	remaster::AttachMaterialParams( pMaterial, a_szMaterialName );
+
 	return pMaterial;
+}
+
+HOOK(0x00611f50, AModelLoader_DestroyMaterial, void, TMaterial* a_pMaterial)
+{
+	// Destroy the custom params
+	remaster::DetachMaterialParams( a_pMaterial );
+
+	CallOriginal( a_pMaterial );
 }
 
 void remaster::SetupRenderHooks()
@@ -1458,6 +1705,10 @@ void remaster::SetupRenderHooks()
 	InstallHook<AModelLoader_LoadWorldMeshTRB_Shadow>();
 	InstallHook<AGlowViewport_AddGlowObject>();
 	InstallHook<AModelLoader_CreateMaterial>();
+	InstallHook<AModelLoader_DestroyMaterial>();
+
+	// Load per-material params (SSR reflectivity, etc.) before any material is created.
+	remaster::LoadMaterialParamsDB( remaster::MATERIAL_PARAMS_PATH );
 	
 	SetupRenderHooks_GrassShader();
 	SetupRenderHooks_SkinShader();

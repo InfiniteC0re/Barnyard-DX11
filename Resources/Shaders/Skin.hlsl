@@ -44,8 +44,11 @@ cbuffer ConstantBuffer : register(b0)
 	float4	 cb_lightingLerp;
 	float    cb_FogStart;
 	float    cb_FogEnd;
+	float    cb_SpecPower;      // 9.z: specular shininess exponent
+	float    cb_SpecIntensity;  // 9.w: specular strength
 	float4   cb_FogColor;
     float4x4 cb_matModel;
+    float4   cb_CameraPos;      // 15: xyz = camera world position
 };
 
 #ifdef ANIMATED
@@ -200,7 +203,13 @@ Texture2D lighting4 : register(t4);
 SamplerState samplerLighting : register(s1);
 #endif // BAKED_LIGHTING
 
-float4 ps_main(PS_IN In) : SV_TARGET
+struct PS_OUT
+{
+    float4 Color   : SV_Target0;
+    float4 GBuffer : SV_Target1; // rgb = world-space normal, a = reflectivity (0; skin is non-reflective)
+};
+
+PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 {
     float4 texColor = texture0.Sample(sampler0, In.UV0);
 	clip(texColor.a - In.AlphaRef);
@@ -232,17 +241,36 @@ float4 ps_main(PS_IN In) : SV_TARGET
 	shadowScale = lerp(shadowScale, 1.0f, saturate(max(glow.r, max(glow.g, glow.b))));
 	#endif
 	texColor.rgb *= shadowScale;
+	float specShadow = shadowScale;
+#else
+	float specShadow = 1.0f;
 #endif
+
+	// Per-material Blinn-Phong sun specular (lit, sun-facing; killed in shadow).
+	float3 specular = 0.0f;
+	if (cb_SpecIntensity > 0.0f)
+	{
+		float3 N = normalize(In.WorldNormal);
+		float3 V = normalize(cb_CameraPos.xyz - In.WorldPos); // toward the camera
+		if (dot(N, V) < 0.0f) N = -N;                         // orient to the visible side
+		float3 L = -cb_lightDirection.xyz;                    // toward the sun (same light as diffuse)
+		float3 H = normalize(L + V);
+		float  specTerm = pow(saturate(dot(N, H)), max(cb_SpecPower, 1.0f));
+		specular = specTerm * cb_SpecIntensity * specShadow * saturate(dot(N, L));
+	}
 
 #if !NO_FOG
 	float fogFactor = CalculateExponentialSquaredFog(In.ProjPos.w, cb_FogStart, cb_FogColor.w);
 	fogFactor = saturate(fogFactor);
 
 	// Apply fog by blending between fog color and original color
-    float3 finalColor = lerp(cb_FogColor.xyz, texColor.xyz, fogFactor);
+    float3 finalColor = lerp(cb_FogColor.xyz, texColor.xyz + specular, fogFactor);
 #else
-    float3 finalColor = texColor.xyz;
+    float3 finalColor = texColor.xyz + specular;
 #endif
 
-    return float4(finalColor, texColor.a);
+    PS_OUT Out;
+    Out.Color   = float4(finalColor, texColor.a);
+    Out.GBuffer = float4(0.0f, 0.0f, 0.0f, 0.0f);
+    return Out;
 }

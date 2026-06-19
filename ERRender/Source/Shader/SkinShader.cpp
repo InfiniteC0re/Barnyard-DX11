@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "SkinShader.h"
+#include "MaterialParams.h"
 #include "SkinMaterial.h"
 #include "SkinMesh.h"
 #include "WorldShader.h"
@@ -406,10 +407,13 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	else
 		g_pRender->SetBlendEnabled( TFALSE );
 
-	// Fog settings
+	// Fog + per-material specular settings (slot 9.zw)
+	const remaster::MaterialParams* pSpecParams = remaster::GetMaterialParams( pMaterial );
 	TVector4 vMiscSettings;
 	vMiscSettings.x = pCurrentContext->m_fFogDistanceStart;
 	vMiscSettings.y = pCurrentContext->m_fFogDistanceEnd;
+	vMiscSettings.z = pSpecParams ? TMath::Max( pSpecParams->fSpecularPower, 1.0f ) : 1.0f;
+	vMiscSettings.w = pSpecParams ? pSpecParams->fSpecularIntensity : 0.0f;
 
 	TVector4 vFogColor = pCurrentContext->m_FogColor;
 	vFogColor.w        = s_flFogDensity;
@@ -424,6 +428,10 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	g_pRender->VSBufferSetVec4( 9, vMiscSettings );
 	g_pRender->VSBufferSetVec4( 10, vFogColor );
 	g_pRender->VSBufferSetMat4( 11, matModel );
+
+	// Camera world position for specular
+	const TVector3 camPos = pCurrentContext->GetViewWorldMatrix().GetTranslation3();
+	g_pRender->VSBufferSetVec4( 15, TVector4( camPos.x, camPos.y, camPos.z, 0.0f ) );
 
 	if ( bHasDynLight ) UploadDynamicGlowLights( a_pRenderPacket );
 

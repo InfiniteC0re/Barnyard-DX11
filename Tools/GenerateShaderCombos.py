@@ -24,6 +24,7 @@ DEFAULT_SHADERS = [
     ROOT / "Resources" / "Shaders" / "GlowBloomComposite.hlsl",
     ROOT / "Resources" / "Shaders" / "HBAOPlus.hlsl",
     ROOT / "Resources" / "Shaders" / "XeGTAO.hlsl",
+    ROOT / "Resources" / "Shaders" / "SSR.hlsl",
     ROOT / "Resources" / "Shaders" / "HBAOBlur.hlsl",
     ROOT / "Resources" / "Shaders" / "HBAOComposite.hlsl",
     ROOT / "Resources" / "Shaders" / "VolumetricFog.hlsl",
