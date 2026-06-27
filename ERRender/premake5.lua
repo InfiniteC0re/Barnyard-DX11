@@ -42,6 +42,9 @@ project "ERRender"
 		"%{IncludeDir.byardsdk}",
 		"%{IncludeDir.modcore}",
 		"%{IncludeDir.sdl2}",
+		-- Always on the search path so TracyD3D11.hpp resolves even in non-profiled
+		-- builds (its own TRACY_ENABLE guard then compiles the GPU zones to no-ops).
+		"%{IncludeDir.tracy}",
 	}
 	
 	-- Modloader specific

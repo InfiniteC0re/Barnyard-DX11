@@ -42,7 +42,7 @@ cbuffer ConstantBuffer : register(b0)
     float4   cb_Reflectivity; // x = SSR reflectivity, y = fresnel power, z = specular intensity, w = specular power (slot 13)
     float4   cb_SunDirection; // xyz = direction toward the sun (world), w = SSR roughness (slot 14)
     float4   cb_CameraPos;    // xyz = camera world position, w = map flags (slot 15)
-    float4   cb_MapParams;    // x = normal-map strength, y = roughness-map strength (slot 16)
+    float4   cb_MapParams;    // x = normal-map strength, y = roughness-map strength, z = parallax scale, w = emissive intensity (slot 16)
 };
 
 struct PS_OUT
@@ -109,6 +109,17 @@ Texture2D roughnessMap  : register(t3); // per-material roughness (R channel)
 Texture2D heightMap     : register(t4); // per-material height map (white = raised) for parallax
 // Normal/roughness/height maps share the albedo's sampler (sampler0 @ s0), set per-material
 // by WorldMaterial::PreRender, so they inherit the same wrap/clamp addressing as the diffuse.
+
+// Surface (albedo/normal/roughness) sampling. Only the parallax path shifts the UV per-pixel,
+// so only it needs explicit-gradient SampleGrad to keep mip selection stable across the POM
+// march. Without parallax the UV is just the interpolated In.UV0, so a plain Sample is
+// bit-identical but keeps the hardware's implicit-gradient fast path. Expands to use the
+// local dUVdx/dUVdy, which only exist (and are only needed) in the PARALLAX combo.
+#if PARALLAX
+#define SAMPLE_SURFACE(tex, texcoord) tex.SampleGrad(sampler0, (texcoord), dUVdx, dUVdy)
+#else
+#define SAMPLE_SURFACE(tex, texcoord) tex.Sample(sampler0, (texcoord))
+#endif
 
 // Parallax occlusion mapping: march the height field along the tangent-space view dir and
 // return the offset UV so the surface appears to have depth. a_viewTS points toward the
@@ -213,25 +224,33 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
     float3 B    = cross(Ngeo, T) * In.WorldTangent.w;
     float3 V    = normalize(cb_CameraPos.xyz - In.WorldPos);
 
-    // Screen-space derivatives of the *un-parallaxed* UV. All parallaxed samples use these
-    // (SampleGrad) so mip selection stays stable across the POM march -- the offset UV is
-    // discontinuous per pixel, and letting the GPU derive mips from it is what makes it boil.
-    float2 dUVdx = ddx(In.UV0);
-    float2 dUVdy = ddy(In.UV0);
+    // Shared distance fade for the per-pixel detail terms (POM depth, self-shadow, and
+    // the normal-map bump highlight further down). They all rely on stable mip selection
+    // and small per-pixel UV variation, both of which break down past this range and
+    // start to shimmer.
+    float  detailFade     = 1.0f - smoothstep(15.0f, 30.0f, In.ViewDepth);
 
     // Parallax occlusion mapping: shift the UV so the height map reads as apparent depth.
     // Gated by parallaxScale (cb_MapParams.z > 0); every later sample uses this offset uv.
     float2 uv             = In.UV0;
     float  parallaxShadow = 1.0f;
 #if PARALLAX
-    if (cb_MapParams.z > 0.0f)
+    // Screen-space derivatives of the *un-parallaxed* UV. The parallaxed samples use these
+    // (SampleGrad) so mip selection stays stable across the POM march -- the offset UV is
+    // discontinuous per pixel, and letting the GPU derive mips from it is what makes it boil.
+    // Only the parallax combo needs them; the non-parallax combo uses plain Sample.
+    float2 dUVdx = ddx(In.UV0);
+    float2 dUVdy = ddy(In.UV0);
+
+    // Past ~30 m detailFade hits 0, which drives the parallax scale to 0 and makes both the
+    // POM and self-shadow marches a no-op -- skip the ~30 height-map fetches entirely there
+    // rather than marching to no visible effect.
+    if (cb_MapParams.z > 0.0f && detailFade > 0.0f)
     {
         float3 viewTS = float3(dot(V, T), dot(V, B), dot(V, Ngeo));
-        // Fade off at grazing angles and at distance so the heightmap doesn't shimmer when
-        // it minifies or run sideways across the texture under a low view angle.
+        // Grazing-angle ease-off so a low view doesn't smear the march across the surface.
         float  grazeFade = smoothstep(0.05f, 0.35f, viewTS.z);
-        float  distFade  = 1.0f - smoothstep(15.0f, 30.0f, In.ViewDepth);
-        float  scale     = cb_MapParams.z * grazeFade * distFade;
+        float  scale     = cb_MapParams.z * grazeFade * detailFade;
         uv = ParallaxOcclusionUV(uv, viewTS, scale, dUVdx, dUVdy);
 
         // Self-shadow march toward the sun. The 0.4 keeps the contribution subtle.
@@ -243,12 +262,12 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
                                      dot(cb_SunDirection.xyz, Ngeo));
             float  hitDepth = 1.0f - heightMap.SampleGrad(sampler0, uv, dUVdx, dUVdy).r;
             float  rawSelf  = ParallaxSelfShadow(uv, hitDepth, lightTS, scale, dUVdx, dUVdy);
-            parallaxShadow  = lerp(1.0f, rawSelf, distFade * 0.4f);
+            parallaxShadow  = lerp(1.0f, rawSelf, detailFade * 0.4f);
         }
     }
 #endif
 
-    float4 texColor = texture0.SampleGrad(sampler0, uv, dUVdx, dUVdy) * In.Color * cb_TexCoordOffsetAndAlpha.z;
+    float4 texColor = SAMPLE_SURFACE(texture0, uv) * In.Color * cb_TexCoordOffsetAndAlpha.z;
 
 #if ALPHAREF
 	// The only alpharef value used by the game is 128 (0.5f)
@@ -262,13 +281,13 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 #if MATERIAL_MAPS
     if (cb_CameraPos.w == 1.0f || cb_CameraPos.w == 3.0f)
     {
-        float3 nt = normalMap.SampleGrad(sampler0, uv, dUVdx, dUVdy).xyz * 2.0f - 1.0f;
+        float3 nt = SAMPLE_SURFACE(normalMap, uv).xyz * 2.0f - 1.0f;
         nt.xy    *= cb_MapParams.x; // normal-map strength (scales the tangent-space tilt)
         worldN    = normalize(T * nt.x + B * nt.y + Ngeo * nt.z);
     }
     if (cb_CameraPos.w >= 2.0f)
     {
-        surfRoughness = saturate(roughnessMap.SampleGrad(sampler0, uv, dUVdx, dUVdy).r * cb_MapParams.y);
+        surfRoughness = saturate(SAMPLE_SURFACE(roughnessMap, uv).r * cb_MapParams.y);
     }
 #endif
 
@@ -309,10 +328,11 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 
     // Normal-map detail shading: add only the *delta* in sun lambert caused by the bump,
     // so it sculpts the surface without double-counting the game's baked vertex lighting.
-    // Zero when there's no normal map (worldN == Ngeo); gated by shadow (it's sun-driven).
+    // Zero when there's no normal map (worldN == Ngeo); gated by shadow (it's sun-driven)
+    // and by detailFade so distant micro-bumps don't shimmer once their mips can't keep up.
     {
         float bumpDelta = saturate(dot(worldN, cb_SunDirection.xyz)) - saturate(dot(Ngeo, cb_SunDirection.xyz));
-        texColor.rgb *= clamp(1.0f + bumpDelta * 1.5f * shadowScale * parallaxShadow, 0.0f, 2.0f);
+        texColor.rgb *= clamp(1.0f + bumpDelta * 1.5f * shadowScale * parallaxShadow * detailFade, 0.0f, 2.0f);
     }
 
     // Crevice darkening from the parallax self-shadow. 0.75 = floor brightness.
@@ -329,13 +349,17 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
         specular += specTerm * specInt * specShadow * saturate(dot(N, L)) * parallaxShadow;
     }
 
+    // Emissive intensity scales the texture only (specular keeps its lit magnitude).
+    // Applied pre-fog so distant emissives still get fog-dimmed.
+    float3 surfaceColor = texColor.xyz * cb_MapParams.w * shadowScale + specular;
+
 #if !NO_FOG
 	float fogFactor = CalculateExponentialSquaredFog(In.ProjPos.w, cb_FogStart, cb_FogColor.w);
 	fogFactor = saturate(fogFactor);
     // Apply fog by blending between fog color and original color
-    float3 finalColor = lerp(cb_FogColor.xyz, texColor.xyz * shadowScale + specular, fogFactor);
+    float3 finalColor = lerp(cb_FogColor.xyz, surfaceColor, fogFactor);
 #else
-    float3 finalColor = texColor.xyz * shadowScale + specular;
+    float3 finalColor = surfaceColor;
 #endif
 
 #if GLOW

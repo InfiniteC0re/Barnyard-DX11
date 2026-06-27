@@ -218,7 +218,7 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		TMatrix44 mShadowMVP;
 		mShadowMVP.Multiply( g_pCSMManager->GetCurrentLightProjection(), a_pRenderPacket->GetModelViewMatrix() );
 		g_pRender->VSBufferSetMat4( 0, mShadowMVP );
-		g_pRender->VSBufferSetVec4( 4, TVector4( g_pCSMManager->GetCurrentCascade(), 0.0f, 0.0f ) );
+		g_pRender->VSBufferSetVec4( 4, TVector4( TINT( g_pCSMManager->GetCurrentCascade() ), 0.0f, 0.0f ) );
 
 		TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
 		TIndexPoolResource*  pIndexPool  = TSTATICCAST( TIndexPoolResource, pMesh->GetSubMesh( 0 )->pIndexPool );

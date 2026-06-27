@@ -228,6 +228,7 @@ TBOOL remaster::WorldShaderDX11::TryValidate()
 }
 
 extern TBOOL g_bHasGlowObjectsThisFrame;
+extern TBOOL g_bEnableWaterReflections;
 
 namespace remaster { extern TBOOL g_bDebugTangents; }
 
@@ -348,6 +349,8 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	{
 		vMiscSettings.x = 1.0f; // isWater
 		vMiscSettings.y = 0.0f; // isLit
+
+		if ( g_bEnableWaterReflections ) g_pRender->SetBlendEnabled( TFALSE );
 	}
 
 	// Fog settings
@@ -391,11 +394,12 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	g_pRender->VSBufferSetVec4( 15, TVector4( camPos.x, camPos.y, camPos.z, flMapFlags ) );
 
 	// Per-material map strengths (slot 16): x = normal strength, y = roughness multiplier,
-	// z = parallax scale (0 unless a height map is present).
+	// z = parallax scale (0 unless a height map is present), w = emissive intensity (1 = neutral).
 	const TFLOAT flNormalStrength    = pSSRParams ? pSSRParams->fNormalStrength    : 1.0f;
 	const TFLOAT flRoughnessStrength = pSSRParams ? pSSRParams->fRoughnessStrength : 1.0f;
 	const TFLOAT flParallaxScale     = ( pSSRParams && pSSRParams->pHeightMap ) ? pSSRParams->fParallaxScale : 0.0f;
-	g_pRender->VSBufferSetVec4( 16, TVector4( flNormalStrength, flRoughnessStrength, flParallaxScale, 0.0f ) );
+	const TFLOAT flEmissiveIntensity = pSSRParams ? pSSRParams->fEmissiveIntensity : 1.0f;
+	g_pRender->VSBufferSetVec4( 16, TVector4( flNormalStrength, flRoughnessStrength, flParallaxScale, flEmissiveIntensity ) );
 
 	if ( bHasDynLight ) UploadDynamicGlowLights( a_pRenderPacket );
 

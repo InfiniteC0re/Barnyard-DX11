@@ -21,6 +21,7 @@ struct MaterialParams
 	TFLOAT fNormalStrength;    // normal-map perturbation scale (1 = as authored, 0 = flat)
 	TFLOAT fRoughnessStrength; // roughness-map multiplier (1 = as authored)
 	TFLOAT fParallaxScale;     // parallax occlusion depth (0 = off, ~0.02-0.08 typical)
+	TFLOAT fEmissiveIntensity; // final-color multiplier; >1 pushes into HDR range for bloom (1 = neutral)
 	TCHAR  szNormalMap[ 64 ];  // normal-map file under Data\Textures (empty = none)
 	TCHAR  szRoughnessMap[ 64 ];
 	TCHAR  szHeightMap[ 64 ];  // height map (white = raised) for parallax
@@ -114,6 +115,7 @@ inline void LoadMaterialParamsDB( const TCHAR* a_szPath )
 		oParams.fNormalStrength    = pElem->FloatAttribute( "normalStrength", 1.0f );
 		oParams.fRoughnessStrength = pElem->FloatAttribute( "roughnessStrength", 1.0f );
 		oParams.fParallaxScale     = pElem->FloatAttribute( "parallaxScale", 0.0f );
+		oParams.fEmissiveIntensity = pElem->FloatAttribute( "emissiveIntensity", 1.0f );
 
 		// Optional normal/roughness/height map file names (resolved against Data\Textures).
 		if ( const TCHAR* szNormal = pElem->Attribute( "normalMap" ) )

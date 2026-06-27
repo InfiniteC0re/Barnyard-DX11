@@ -53,7 +53,7 @@ cbuffer ConstantBuffer : register(b0)
     float4x4 cb_matModel;
     float4   cb_CameraPos;      // 15: xyz = camera world position
     float4   cb_MapParams;      // 16: x = normal strength, y = roughness strength, z = roughness, w = map flags (1=normal,2=rough,3=both)
-    float4   cb_SSRParams;      // 17: x = SSR reflectivity, y = fresnel power
+    float4   cb_SSRParams;      // 17: x = SSR reflectivity, y = fresnel power, z = emissive intensity (1 = neutral)
 };
 
 #ifdef ANIMATED
@@ -127,8 +127,10 @@ PS_IN vs_main(VS_IN In)
 	Out.WorldNormal = normalize(mul(normal, (float3x3)cb_matModel));
     Out.UV0 = In.UV;
 
-	// Lighting UV
-	float NdotL = dot(normal, -cb_lightDirection.xyz);
+	// cb_lightDirection is pre-multiplied by the inverse model on the CPU. Bring it back to
+	// world space here so rotating models don't lock the sun to a body-relative direction.
+	float3 worldLightDirVS = mul(cb_lightDirection.xyz, (float3x3)cb_matModel);
+	float  NdotL           = dot(Out.WorldNormal, -worldLightDirVS);
 
 #if BAKED_LIGHTING
 
@@ -300,20 +302,25 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 	{
 		float3 N = worldN;
 		if (dot(N, V) < 0.0f) N = -N;                         // orient to the visible side
-		float3 L = -cb_lightDirection.xyz;                    // toward the sun (same light as diffuse)
+		// Bring cb_lightDirection back to world space (see VS comment).
+		float3 L = -mul(cb_lightDirection.xyz, (float3x3)cb_matModel);
 		float3 H = normalize(L + V);
 		float  specTerm = pow(saturate(dot(N, H)), specPow);
 		specular += specTerm * specInt * specShadow * saturate(dot(N, L));
 	}
+
+    // Emissive intensity scales the texture only (specular keeps its lit magnitude).
+    // Applied pre-fog so distant emissives still get fog-dimmed.
+    float3 surfaceColor = texColor.xyz * cb_SSRParams.z + specular;
 
 #if !NO_FOG
 	float fogFactor = CalculateExponentialSquaredFog(In.ProjPos.w, cb_FogStart, cb_FogColor.w);
 	fogFactor = saturate(fogFactor);
 
 	// Apply fog by blending between fog color and original color
-    float3 finalColor = lerp(cb_FogColor.xyz, texColor.xyz + specular, fogFactor);
+    float3 finalColor = lerp(cb_FogColor.xyz, surfaceColor, fogFactor);
 #else
-    float3 finalColor = texColor.xyz + specular;
+    float3 finalColor = surfaceColor;
 #endif
 
     PS_OUT Out;

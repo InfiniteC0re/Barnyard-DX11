@@ -25,6 +25,7 @@
 #include "Generated/DualKawaseDownShaderCombos.h"
 #include "Generated/DualKawaseUpShaderCombos.h"
 #include "Generated/GlowBloomCompositeShaderCombos.h"
+#include "Generated/HDRBloomThresholdShaderCombos.h"
 #include "Generated/HBAOPlusShaderCombos.h"
 #include "Generated/XeGTAOShaderCombos.h"
 #include "Generated/SSRShaderCombos.h"
@@ -78,6 +79,12 @@ TINT   g_iGlowBloomKawaseLevels  = 2;
 TFLOAT g_flGlowBloomKawaseOffset = 1.7f;
 TFLOAT g_flGlowBloomIntensity    = 0.715f;
 
+TBOOL  g_bHDRBloomEnabled       = TTRUE;
+TINT   g_iHDRBloomKawaseLevels  = 2;
+TFLOAT g_flHDRBloomKawaseOffset = 1.7f;
+TFLOAT g_flHDRBloomThreshold    = 1.05f;
+TFLOAT g_flHDRBloomIntensity    = 4.0f;
+
 TBOOL g_bHBAOEnabled = TTRUE;
 TBOOL g_bHBAODebug   = TFALSE;
 
@@ -85,12 +92,13 @@ TBOOL  g_bSSREnabled                      = TTRUE;
 TBOOL  g_bSSRDebug                        = TFALSE;
 TBOOL  g_bSSRDebugNormals                 = TFALSE; // visualise G-buffer world normals
 TFLOAT g_flSSRIntensity                   = 1.0f;
-TFLOAT g_flSSRMaxDistance                 = 30.0f;
-TFLOAT g_flSSRThickness                   = 0.4f;
-TFLOAT g_flSSRStepSize                    = 0.15f;
+TFLOAT g_flSSRMaxDistance                 = 70.0f;
+TFLOAT g_flSSRThickness                   = 1.0f;
+TFLOAT g_flSSRStepSize                    = 0.7f;
 TINT   g_iSSRMaxSteps                     = 80;
 TFLOAT g_flSSRFresnelPower                = 4.0f;
 TFLOAT g_flSSREdgeFade                    = 3.0f;
+TFLOAT g_flSSRSkyFallbackIntensity        = 1.0f;
 TBOOL  g_bDebugTangents                   = TFALSE; // visualise precomputed world-mesh tangents
 TINT   g_iAOAlgorithm                     = 0;
 TFLOAT g_flHBAORadius                     = 0.7f;
@@ -109,7 +117,7 @@ TINT   g_iVolumetricFogCompositeMode = 0;
 TFLOAT g_flVolumetricFogDensity      = 0.019f;
 TFLOAT g_flVolumetricFogG            = 0.0f;
 TFLOAT g_flVolumetricFogMaxDist      = 44.0f;
-TFLOAT g_flVolumetricFogIntensity    = 0.16f;
+TFLOAT g_flVolumetricFogIntensity    = 0.20f;
 TFLOAT g_flVolumetricFogColor[ 3 ]   = { 0.937f, 0.8f, 0.5254f };
 
 // --- Normal/roughness map loading -------------------------------------------
@@ -647,6 +655,8 @@ struct SSRCBuffer
 	TFLOAT blurParams[ 4 ];  // invWidth, invHeight, dirX, dirY
 	TFLOAT blurDepth[ 4 ];   // near, far, sharpness, unused
 	TMatrix44 worldToView;   // rotates G-buffer world normals into view space
+	TFLOAT skyHorizon[ 4 ];  // rgb = horizon colour avg(FORWARD,TRANSLATION), a = fallback intensity (0 = off)
+	TFLOAT skyZenith[ 4 ];   // rgb = zenith colour avg(RIGHT,UP)
 };
 
 static ID3D11Buffer* s_pSSRConstantBuffer = TNULL;
@@ -749,14 +759,20 @@ void remaster::RenderDX11::CreateRenderTargets()
 		desc.SampleDesc.Quality    = 0;
 		desc.Usage                 = D3D11_USAGE_DEFAULT;
 		desc.BindFlags             = D3D11_BIND_SHADER_RESOURCE;
-		DX11_API_VALIDATE( GetD3D11Device()->CreateTexture2D( &desc, TNULL, &s_pResolvedColorTexture ) );
+
+		// Resolved main color matches the HDR main RT format (R11G11B10).
+		D3D11_TEXTURE2D_DESC colorDesc = desc;
+		colorDesc.Format               = DXGI_FORMAT_R11G11B10_FLOAT;
+		DX11_API_VALIDATE( GetD3D11Device()->CreateTexture2D( &colorDesc, TNULL, &s_pResolvedColorTexture ) );
 		DX11_API_VALIDATE( GetD3D11Device()->CreateShaderResourceView( s_pResolvedColorTexture, TNULL, &s_pResolvedColorSRV ) );
+
+		// Resolved glow stays LDR to match the glow RT.
 		DX11_API_VALIDATE( GetD3D11Device()->CreateTexture2D( &desc, TNULL, &s_pResolvedGlowTexture ) );
 		DX11_API_VALIDATE( GetD3D11Device()->CreateShaderResourceView( s_pResolvedGlowTexture, TNULL, &s_pResolvedGlowSRV ) );
 
-		// Resolved G-buffer (matches the MSAA RGBA16F G-buffer target)
+		// Resolved G-buffer (matches the MSAA RGBA8 G-buffer target)
 		D3D11_TEXTURE2D_DESC gbDesc = desc;
-		gbDesc.Format               = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		gbDesc.Format               = DXGI_FORMAT_R8G8B8A8_UNORM;
 		DX11_API_VALIDATE( GetD3D11Device()->CreateTexture2D( &gbDesc, TNULL, &s_pResolvedGBufferTexture ) );
 		DX11_API_VALIDATE( GetD3D11Device()->CreateShaderResourceView( s_pResolvedGBufferTexture, TNULL, &s_pResolvedGBufferSRV ) );
 	}
@@ -1071,6 +1087,7 @@ void remaster::RenderDX11::ReleaseRenderTargets()
 }
 
 TBOOL g_bHasGlowObjectsThisFrame = TFALSE;
+TBOOL g_bEnableWaterReflections  = TFALSE;
 
 MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_flDeltaTime )
 {
@@ -1185,15 +1202,16 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		    remaster::g_pRender->GetD3D11DepthStencilView()
 		);
 		remaster::g_pRender->GetD3D11DeviceContext()->ResolveSubresource(
-		    s_pResolvedGBufferTexture, 0, remaster::g_pRender->GetD3D11GBufferTexture(), 0, DXGI_FORMAT_R16G16B16A16_FLOAT );
+		    s_pResolvedGBufferTexture, 0, remaster::g_pRender->GetD3D11GBufferTexture(), 0, DXGI_FORMAT_R8G8B8A8_UNORM );
 	}
 
 	// Resolve MSAA color -> non-MSAA (needed by sky mask shader)
 	{
 		TPROFILER_NAMED( "MSAA Resolve" );
+		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "MSAA Resolve" );
 
 		remaster::g_pRender->GetD3D11DeviceContext()->ResolveSubresource(
-		    s_pResolvedColorTexture, 0, remaster::g_pRender->GetD3D11RenderTargetTexture(), 0, DXGI_FORMAT_R8G8B8A8_UNORM );
+		    s_pResolvedColorTexture, 0, remaster::g_pRender->GetD3D11RenderTargetTexture(), 0, DXGI_FORMAT_R11G11B10_FLOAT );
 
 		remaster::g_pRender->GetD3D11DeviceContext()->ResolveSubresource(
 		    s_pResolvedGlowTexture, 0, remaster::g_pRender->GetD3D11GlowRenderTargetTexture(), 0, DXGI_FORMAT_R8G8B8A8_UNORM );
@@ -1202,6 +1220,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	// Resolve MSAA depth -> R32_FLOAT via fullscreen pass (full-res viewport)
 	{
 		TPROFILER_NAMED( "MSAA Depth Resolve" );
+		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "MSAA Depth Resolve" );
 
 		remaster::g_pRender->DiscardView( s_pResolvedDepthRTV );
 		remaster::g_pRender->SetRenderTargetView( s_pResolvedDepthRTV, TNULL );
@@ -1219,6 +1238,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	if ( remaster::g_bHBAOEnabled )
 	{
 		TPROFILER_NAMED( "HBAO" );
+		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "HBAO" );
 
 		auto             pContext = TSTATICCAST( remaster::RenderContextD3D11, m_pViewport->GetRenderContext() );
 		const TMatrix44& proj     = pContext->GetProjectionMatrix();
@@ -1381,6 +1401,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	if ( remaster::g_bSSREnabled )
 	{
 		TPROFILER_NAMED( "SSR" );
+		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "SSR" );
 
 		auto             pCtx = TSTATICCAST( remaster::RenderContextD3D11, m_pViewport->GetRenderContext() );
 		const TMatrix44& proj = pCtx->GetProjectionMatrix();
@@ -1415,6 +1436,26 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 		// World-space G-buffer normals -> view space (matches the geometry's world space).
 		cbData.worldToView.InvertOrthogonal( pCtx->GetViewWorldMatrix() );
+
+		// Reconstruct DrawFancyDome's gradient endpoints from the current sky palette:
+		// horizon = avg(FORWARD,TRANSLATION), zenith = avg(RIGHT,UP).
+		TVector4 vHorizon( 0.0f, 0.0f, 0.0f, 0.0f );
+		TVector4 vZenith ( 0.0f, 0.0f, 0.0f, 0.0f );
+		if ( ASkyDome* pSky = ARenderer::GetSingleton()->m_pSkyDome )
+		{
+			const TMatrix44& mColors = pSky->m_oColorMatrix;
+			vHorizon.Lerp4( mColors.AsBasisVector4( BASISVECTOR_FORWARD ), mColors.AsBasisVector4( BASISVECTOR_TRANSLATION ), 0.5f );
+			vZenith .Lerp4( mColors.AsBasisVector4( BASISVECTOR_RIGHT ),   mColors.AsBasisVector4( BASISVECTOR_UP ),          0.5f );
+		}
+
+		cbData.skyHorizon[ 0 ] = vHorizon.x;
+		cbData.skyHorizon[ 1 ] = vHorizon.y;
+		cbData.skyHorizon[ 2 ] = vHorizon.z;
+		cbData.skyHorizon[ 3 ] = remaster::g_flSSRSkyFallbackIntensity;
+		cbData.skyZenith [ 0 ] = vZenith.x;
+		cbData.skyZenith [ 1 ] = vZenith.y;
+		cbData.skyZenith [ 2 ] = vZenith.z;
+		cbData.skyZenith [ 3 ] = 0.0f;
 
 		auto fnUploadSSRCB = [ & ]()
 		{
@@ -1523,6 +1564,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	if ( remaster::g_bCSMEnabled && remaster::g_bVolumetricFogEnabled )
 	{
 		TPROFILER_NAMED( "Volumetrics" );
+		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "Volumetrics" );
 
 		auto             pFogCtx = TSTATICCAST( remaster::RenderContextD3D11, m_pViewport->GetRenderContext() );
 		const TMatrix44& proj    = pFogCtx->GetProjectionMatrix();
@@ -1538,10 +1580,13 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		TMatrix44 matWorldView;
 		matWorldView.InvertOrthogonal( matViewWorld );
 
-		// Light direction toward sun in view space
+		// Light direction toward sun in view space. Match the sun-shafts convention exactly
+		// (-x, +y, -z): Y must NOT be negated. Negating it flips the phase vertically, so with
+		// forward scattering (g > 0) the fog brightens when looking *under* the sun instead of
+		// toward it. The bug was invisible while g = 0 (isotropic phase ignores direction).
 		TVector3 fogLightDir = csmManager.GetLightDirection();
 		fogLightDir.Normalize();
-		TVector4 fogLightDirWorld( -fogLightDir.x, -fogLightDir.y, -fogLightDir.z, 0.0f );
+		TVector4 fogLightDirWorld( -fogLightDir.x, fogLightDir.y, -fogLightDir.z, 0.0f );
 		TVector4 fogLightDirView;
 		TMatrix44::RotateVector( fogLightDirView, matWorldView, fogLightDirWorld );
 
@@ -1675,7 +1720,10 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		cbFogComposite.depthParams[ 1 ]     = 0.0f;
 		cbFogComposite.depthParams[ 2 ]     = pFogCtx->GetProjectionParams().m_fNearClip;
 		cbFogComposite.depthParams[ 3 ]     = pFogCtx->GetProjectionParams().m_fFarClip;
-		cbFogComposite.compositeParams[ 0 ] = ( remaster::g_iVolumetricFogCompositeMode == 1 ) ? 1.0f : 0.12f;
+		// Temporal blend weight for the current frame. 1.0 = pure current (accumulation off):
+		// the history-heavy blend (0.12) denoised well but lagged the camera without
+		// reprojection. Disabled until reprojection lands; lower to ~0.12 to re-enable.
+		cbFogComposite.compositeParams[ 0 ] = 1.0f;
 		cbFogComposite.compositeParams[ 1 ] = s_bVolumetricFogHistoryValid ? 1.0f : 0.0f;
 		cbFogComposite.compositeParams[ 2 ] = 24.0f;
 		cbFogComposite.compositeParams[ 3 ] = 0.0f;
@@ -1713,7 +1761,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		// the HBAO composite drew scene*ao to the MSAA RT after the first resolve,
 		// so s_pResolvedColorSRV would otherwise still hold the pre-AO color.
 		remaster::g_pRender->GetD3D11DeviceContext()->ResolveSubresource(
-		    s_pResolvedColorTexture, 0, remaster::g_pRender->GetD3D11RenderTargetTexture(), 0, DXGI_FORMAT_R8G8B8A8_UNORM );
+		    s_pResolvedColorTexture, 0, remaster::g_pRender->GetD3D11RenderTargetTexture(), 0, DXGI_FORMAT_R11G11B10_FLOAT );
 
 		// Ping-pong: swap temporal <-> history pointers so next frame's temporal
 		// pass reads from what we just wrote, without any GPU copy.
@@ -1764,10 +1812,111 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	    remaster::g_pRender->GetD3D11DepthStencilView()
 	);
 
+	// HDR bloom runs before the glow composite so the bright-pass doesn't re-bloom glow.
+	if ( remaster::g_bHDRBloomEnabled )
+	{
+		TPROFILER_NAMED( "HDR Bloom" );
+		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "HDR Bloom" );
+
+		// Re-resolve so the bright-pass sees the latest post-fog scene.
+		remaster::g_pRender->GetD3D11DeviceContext()->ResolveSubresource(
+		    s_pResolvedColorTexture, 0, remaster::g_pRender->GetD3D11RenderTargetTexture(), 0, DXGI_FORMAT_R11G11B10_FLOAT );
+
+		D3D11_VIEWPORT oHDRBloomOldViewport;
+		TUINT          uiHDRBloomNumViewports = 1;
+		remaster::g_pRender->GetD3D11DeviceContext()->RSGetViewports( &uiHDRBloomNumViewports, &oHDRBloomOldViewport );
+
+		remaster::g_pRender->SetCullMode( D3D11_CULL_NONE );
+		remaster::g_pRender->SetDepthEnabled( TFALSE );
+		remaster::g_pRender->SetBlendEnabled( TFALSE );
+
+		for ( TINT k = 0; k < KAWASE_MAX_LEVELS; k++ )
+		{
+			remaster::g_pRender->DiscardView( s_pKawaseRTVs[ k ] );
+			remaster::g_pRender->ClearRenderTarget( s_pKawaseRTVs[ k ], aflSkyMaskClearColor );
+		}
+
+		auto fnUploadKawaseCB = [&]( TUINT uiSrcW, TUINT uiSrcH, TFLOAT flOffsetOrIntensity, TFLOAT flThresholdOrIntensity )
+		{
+			KawaseCBuffer cbData;
+			cbData.texelSizeX = 1.0f / (TFLOAT)uiSrcW;
+			cbData.texelSizeY = 1.0f / (TFLOAT)uiSrcH;
+			cbData.offset     = flOffsetOrIntensity;
+			cbData.PADDING    = flThresholdOrIntensity;
+
+			D3D11_MAPPED_SUBRESOURCE mapped;
+			remaster::g_pRender->GetD3D11DeviceContext()->Map( s_pKawaseCBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped );
+			TUtil::MemCopy( mapped.pData, &cbData, sizeof( cbData ) );
+			remaster::g_pRender->GetD3D11DeviceContext()->Unmap( s_pKawaseCBuffer, 0 );
+		};
+
+		auto fnSetVP = [&]( TUINT uiW, TUINT uiH )
+		{
+			D3D11_VIEWPORT vp = oHDRBloomOldViewport;
+			vp.Width          = (TFLOAT)uiW;
+			vp.Height         = (TFLOAT)uiH;
+			remaster::g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &vp );
+		};
+
+		TINT iNumLevels = remaster::g_iHDRBloomKawaseLevels;
+		TMath::Clip( iNumLevels, 1, KAWASE_MAX_LEVELS );
+
+		using namespace remaster::shadercombos;
+
+		// k=0: thresholded downsample from full-res HDR scene into Kawase[0].
+		fnUploadKawaseCB( pSwapChainDesc->BufferDesc.Width, pSwapChainDesc->BufferDesc.Height,
+		                  remaster::g_flHDRBloomKawaseOffset, remaster::g_flHDRBloomThreshold );
+		fnSetVP( s_uiKawaseWidths[ 0 ], s_uiKawaseHeights[ 0 ] );
+		remaster::g_pRender->SetRenderTargetView( s_pKawaseRTVs[ 0 ], TNULL );
+		remaster::g_pRender->PSSetShaderResource( 0, s_pResolvedColorSRV );
+		remaster::g_pRender->PSSetSamplerState( 0, s_pLinearClampSampler );
+		remaster::g_pRender->PSSetConstantBuffer( 1, s_pKawaseCBuffer );
+		remaster::g_pRender->DrawScreenRectangle( GetHDRBloomThresholdPixelShaderCombo_ps_main().GetPixelShader( HDRBloomThreshold_NoCombos ) );
+		remaster::g_pRender->PSSetShaderResource( 0, TNULL );
+
+		// k=1..N-1: standard dual-Kawase downsample chain.
+		for ( TINT k = 1; k < iNumLevels; k++ )
+		{
+			fnUploadKawaseCB( s_uiKawaseWidths[ k - 1 ], s_uiKawaseHeights[ k - 1 ], remaster::g_flHDRBloomKawaseOffset, 0.0f );
+			fnSetVP( s_uiKawaseWidths[ k ], s_uiKawaseHeights[ k ] );
+			remaster::g_pRender->SetRenderTargetView( s_pKawaseRTVs[ k ], TNULL );
+			remaster::g_pRender->PSSetShaderResource( 0, s_pKawaseSRVs[ k - 1 ] );
+			remaster::g_pRender->DrawScreenRectangle( GetDualKawaseDownPixelShaderCombo_ps_main().GetPixelShader( DualKawaseDown_NoCombos ) );
+			remaster::g_pRender->PSSetShaderResource( 0, TNULL );
+		}
+
+		// Upsample chain N-1 -> 0 (no blending; overwrite each level).
+		for ( TINT k = iNumLevels - 1; k > 0; k-- )
+		{
+			fnUploadKawaseCB( s_uiKawaseWidths[ k ], s_uiKawaseHeights[ k ], remaster::g_flHDRBloomKawaseOffset, 0.0f );
+			fnSetVP( s_uiKawaseWidths[ k - 1 ], s_uiKawaseHeights[ k - 1 ] );
+			remaster::g_pRender->SetRenderTargetView( s_pKawaseRTVs[ k - 1 ], TNULL );
+			remaster::g_pRender->PSSetShaderResource( 0, s_pKawaseSRVs[ k ] );
+			remaster::g_pRender->DrawScreenRectangle( GetDualKawaseUpPixelShaderCombo_ps_main().GetPixelShader( DualKawaseUp_NoCombos ) );
+			remaster::g_pRender->PSSetShaderResource( 0, TNULL );
+		}
+
+		// Final composite: additive blend Kawase[0] onto the HDR main RT with intensity.
+		remaster::g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &oHDRBloomOldViewport );
+		remaster::g_pRender->SetRenderTargetView(
+		    remaster::g_pRender->GetD3D11RenderTargetView(),
+		    remaster::g_pRender->GetD3D11DepthStencilView()
+		);
+		remaster::g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_ONE, D3D11_BLEND_ONE );
+		fnUploadKawaseCB( s_uiKawaseWidths[ 0 ], s_uiKawaseHeights[ 0 ], remaster::g_flHDRBloomKawaseOffset, remaster::g_flHDRBloomIntensity );
+		remaster::g_pRender->PSSetShaderResource( 0, s_pKawaseSRVs[ 0 ] );
+		remaster::g_pRender->DrawScreenRectangle( GetGlowBloomCompositePixelShaderCombo_ps_main().GetPixelShader( GlowBloomComposite_NoCombos ) );
+		remaster::g_pRender->PSSetShaderResource( 0, TNULL );
+		remaster::g_pRender->PSSetConstantBuffer( 1, TNULL );
+
+		remaster::g_pRender->ClearStateCache();
+	}
+
 	// Overlay glow objects captured during the main pass, then bloom them.
 	if ( g_bHasGlowObjectsThisFrame )
 	{
 		TPROFILER_NAMED( "Glow" );
+		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "Glow" );
 
 		remaster::g_pRender->SetCullMode( D3D11_CULL_NONE );
 		remaster::g_pRender->SetBlendMode( TTRUE, D3D11_BLEND_OP_ADD, D3D11_BLEND_ONE, D3D11_BLEND_ONE );
@@ -1900,6 +2049,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	// Render the sky mask
 	{
 		TPROFILER_NAMED( "Sky mask" );
+		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "Sky mask" );
 
 		remaster::g_pRender->DiscardView( s_pSkyMaskRenderTargetView );
 		remaster::g_pRender->ClearRenderTarget( s_pSkyMaskRenderTargetView, aflSkyMaskClearColor );
@@ -1922,6 +2072,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	// Render the sunshafts
 	{
 		TPROFILER_NAMED( "Sunshafts" );
+		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "Sunshafts" );
 
 		remaster::g_pRender->DiscardView( s_pSunshaftsRenderTargetView );
 		remaster::g_pRender->ClearRenderTarget( s_pSunshaftsRenderTargetView, aflSkyMaskClearColor );
@@ -2101,9 +2252,6 @@ MEMBER_HOOK( 0x00608540, AGlowViewport, AGlowViewport_AddGlowObject, AGlowViewpo
 HOOK(0x006119d0, AModelLoader_CreateMaterial, TMaterial*, TINT a_iOffset, const TCHAR* a_szMaterialName)
 {
 	TMaterial* pMaterial = CallOriginal( a_iOffset, a_szMaterialName );
-
-// 	if ( TStringManager::String8Compare( a_szMaterialName, "starsquad" ) == 0 )
-// 		pMaterial->SetFlags( TMaterial::FLAGS_GLOW, TTRUE );
 
 	// Attach remaster material params authored in Data/MaterialParams.xml
 	remaster::AttachMaterialParams( pMaterial, a_szMaterialName );

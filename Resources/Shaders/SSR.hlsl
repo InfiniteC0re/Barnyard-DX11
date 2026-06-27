@@ -19,7 +19,18 @@ cbuffer SSRCBuffer : register( b1 )
     float4   cb_BlurParams;  // invWidth, invHeight, dirX, dirY
     float4   cb_BlurDepth;   // near, far, sharpness, unused
     float4x4 cb_WorldToView; // rotates G-buffer world normals into view space
+    float4   cb_SkyHorizon;  // rgb = horizon colour avg(FORWARD,TRANSLATION), a = intensity (0 = off)
+    float4   cb_SkyZenith;   // rgb = zenith colour avg(RIGHT,UP)
 };
+
+// Reconstructs ASkyDome::DrawFancyDome's vertical gradient: horizon at the outer ring,
+// zenith at the apex. The sky transform maps the dome apex to world -Y, so a reflection
+// pointing up has worldReflectDir.y < 0 and should pick the zenith colour.
+float3 SampleSkyFallback( float3 worldReflectDir )
+{
+    float t = saturate( -worldReflectDir.y * 0.5f + 0.5f );
+    return lerp( cb_SkyHorizon.rgb, cb_SkyZenith.rgb, t ) * cb_SkyHorizon.a;
+}
 
 float LinearizeDepthNF( float hardwareDepth, float nearZ, float farZ )
 {
@@ -109,6 +120,9 @@ float4 ps_gather( PS_IN i ) : SV_TARGET
     float3 viewDir = normalize( pos );            // camera (origin) -> surface
     float3 rayDir  = reflect( viewDir, normal );  // reflection direction (view space)
 
+    // cb_WorldToView is orthonormal, so its inverse is its transpose.
+    float3 worldRayDir = mul( rayDir, transpose( (float3x3)cb_WorldToView ) );
+
     float nearZ     = cb_DepthParams.z;
     float farZ      = cb_DepthParams.w;
     int   maxSteps  = (int)cb_MarchParams.x;
@@ -171,24 +185,26 @@ float4 ps_gather( PS_IN i ) : SV_TARGET
         lastDiff = diff;
     }
 
-    if ( hit < 0.5f )
-        return float4( 0.0f, 0.0f, 0.0f, 0.0f );
-
     // Fresnel: grazing angles reflect more.
     float fresnel = pow( 1.0f - saturate( dot( -viewDir, normal ) ), fresnelPower );
 
-    // Fade as the hit approaches the screen edge to hide the screen-space cutoff.
+    // Rough surfaces scatter their reflection.
+    float roughFade = 1.0f - saturate( roughness );
+
+    float  confidence = saturate( fresnel * cb_Params.x * reflectivity * roughFade );
+    float3 skyColor   = SampleSkyFallback( worldRayDir );
+
+    if ( hit < 0.5f )
+        return float4( skyColor, confidence );
+
+    // Fade SSR toward sky near the screen edge so there's no hard boundary.
     float2 edge     = abs( hitUV * 2.0f - 1.0f );
     float  edgeFade = saturate( 1.0f - pow( max( edge.x, edge.y ), max( cb_MarchParams.z, 0.0001f ) ) );
 
-    float3 reflColor = colorTexture.SampleLevel( linearSampler, hitUV, 0 ).rgb;
+    float3 reflColor  = colorTexture.SampleLevel( linearSampler, hitUV, 0 ).rgb;
+    float3 finalColor = lerp( skyColor, reflColor, edgeFade );
 
-    // Rough surfaces scatter their reflection, so fade the sharp screen-space hit as
-    // roughness rises (the blur pass also widens it). Smooth (0) keeps full strength.
-    float  roughFade  = 1.0f - saturate( roughness );
-    float  confidence = saturate( fresnel * edgeFade * cb_Params.x * reflectivity * roughFade );
-
-    return float4( reflColor, confidence );
+    return float4( finalColor, confidence );
 }
 
 // Depth-aware separable bilateral blur of the reflection buffer. The blur radius

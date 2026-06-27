@@ -407,16 +407,37 @@ TBOOL RenderDX11::EndScene()
 {
 	TPROFILER_SCOPE();
 
-	if ( m_uiMSAASampleCount > 1 )
-		m_pDeviceContext->ResolveSubresource( m_pSwapChainBackBuffer, 0, m_pRenderTargetTexture, 0, m_oSwapChainDesc.BufferDesc.Format );
-	else
-		m_pDeviceContext->CopyResource( m_pSwapChainBackBuffer, m_pRenderTargetTexture );
+	{
+		TracyD3D11Zone( m_pTracyD3D11Ctx, "Resolve + Postprocess" );
+
+		// Resolve/copy HDR main into a non-MSAA pad, then saturate to the LDR back buffer.
+		if ( m_uiMSAASampleCount > 1 )
+			m_pDeviceContext->ResolveSubresource( m_pPresentResolveTexture, 0, m_pRenderTargetTexture, 0, DXGI_FORMAT_R11G11B10_FLOAT );
+		else
+			m_pDeviceContext->CopyResource( m_pPresentResolveTexture, m_pRenderTargetTexture );
+
+		SetRenderTargetView( m_pSwapChainBackBufferRTV, TNULL );
+		SetCullMode( D3D11_CULL_NONE );
+		SetDepthEnabled( TFALSE );
+		SetBlendEnabled( TFALSE );
+		PSSetShaderResource( 0, m_pPresentResolveSRV );
+		PSSetSamplerState( 0, SAMPLER_POINT_CLAMP );
+		DrawScreenRectangle(
+		    remaster::shadercombos::GetPostprocessPixelShaderCombo_ps_main().GetPixelShader( remaster::shadercombos::Postprocess_NoCombos )
+		);
+		PSSetShaderResource( 0, TNULL );
+		ClearStateCache();
+	}
 
 	// DXGI_PRESENT_ALLOW_TEARING is only valid with a sync interval of 0 and a
 	// swapchain created with DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING.
 	const TBOOL bTearing = ( m_uiSyncInterval == 0 ) && m_bAllowTearing;
 	m_pSwapChain->Present( m_uiSyncInterval, bTearing ? DXGI_PRESENT_ALLOW_TEARING : 0 );
 	m_bInScene = TFALSE;
+
+	// One disjoint-query span per frame: read back the timestamps queued this frame.
+	// Must be called exactly once per frame on the immediate-context thread.
+	TracyD3D11Collect( m_pTracyD3D11Ctx );
 
 	return TTRUE;
 }
@@ -436,6 +457,7 @@ void RenderDX11::FlushOrderTables()
 	TASSERT( TTRUE == IsInScene() );
 
 	TPROFILER_SCOPE();
+	TracyD3D11Zone( m_pTracyD3D11Ctx, "Order Tables" );
 
 	for ( auto it = m_OrderTables.Begin(); it != m_OrderTables.End(); it++ )
 	{
@@ -792,6 +814,11 @@ TBOOL RenderDX11::Create( const TCHAR* a_pchWindowTitle )
 			m_pDeviceContext1 = TNULL;
 		}
 
+		// GPU timestamp profiling on the immediate context (no-op unless --profiler=perf).
+		// Must run after the device + immediate context exist; calibrates CPU<->GPU clocks.
+		m_pTracyD3D11Ctx = TracyD3D11Context( m_pDevice, m_pDeviceContext );
+		TracyD3D11ContextName( m_pTracyD3D11Ctx, "DX11 Immediate", sizeof( "DX11 Immediate" ) - 1 );
+
 		return m_pDevice && m_pDeviceContext && m_Window.Create( this, TString8::VarArgs( "%s - DirectX11", a_pchWindowTitle ) );
 	}
 
@@ -800,42 +827,66 @@ TBOOL RenderDX11::Create( const TCHAR* a_pchWindowTitle )
 
 void RenderDX11::CreateSwapchainSizedResources()
 {
-	// Create render target
-	D3D11_TEXTURE2D_DESC backBufferDesc = {};
-	backBufferDesc.ArraySize            = 1;
-	backBufferDesc.BindFlags            = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-	backBufferDesc.CPUAccessFlags       = 0;
-	backBufferDesc.Format               = DXGI_FORMAT_R8G8B8A8_UNORM;
-	backBufferDesc.Height               = m_oSwapChainDesc.BufferDesc.Height;
-	backBufferDesc.Width                = m_oSwapChainDesc.BufferDesc.Width;
-	backBufferDesc.MipLevels            = 1;
-	backBufferDesc.MiscFlags            = 0;
-	backBufferDesc.SampleDesc.Count     = m_uiMSAASampleCount;
-	backBufferDesc.SampleDesc.Quality   = 0;
-	backBufferDesc.Usage                = D3D11_USAGE_DEFAULT;
+	// Main render target: HDR float so lighting can go >1.0 for bloom; saturated at present.
+	D3D11_TEXTURE2D_DESC mainRTDesc = {};
+	mainRTDesc.ArraySize            = 1;
+	mainRTDesc.BindFlags            = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+	mainRTDesc.CPUAccessFlags       = 0;
+	// HDR scene buffer. R11G11B10 packs HDR into 32bpp (half of RGBA16F) -- it has no alpha,
+	// which is fine here: alpha-to-coverage and SRC_ALPHA blending consume the PS-output alpha
+	// at the OM stage, and no pass reads the scene buffer's stored alpha. The reduced mantissa
+	// (6/6/5 bits) can band in smooth sky/fog gradients; the final present pass dithers to hide it.
+	mainRTDesc.Format               = DXGI_FORMAT_R11G11B10_FLOAT;
+	mainRTDesc.Height               = m_oSwapChainDesc.BufferDesc.Height;
+	mainRTDesc.Width                = m_oSwapChainDesc.BufferDesc.Width;
+	mainRTDesc.MipLevels            = 1;
+	mainRTDesc.MiscFlags            = 0;
+	mainRTDesc.SampleDesc.Count     = m_uiMSAASampleCount;
+	mainRTDesc.SampleDesc.Quality   = 0;
+	mainRTDesc.Usage                = D3D11_USAGE_DEFAULT;
 
-	DX11_API_VALIDATE( m_pDevice->CreateTexture2D( &backBufferDesc, TNULL, &m_pRenderTargetTexture ) );
-	DX11_API_VALIDATE( m_pDevice->CreateTexture2D( &backBufferDesc, TNULL, &m_pGlowRenderTargetTexture ) );
+	// Glow render target stays LDR to preserve the existing additive-blend look.
+	D3D11_TEXTURE2D_DESC glowRTDesc = mainRTDesc;
+	glowRTDesc.Format               = DXGI_FORMAT_R8G8B8A8_UNORM;
+
+	DX11_API_VALIDATE( m_pDevice->CreateTexture2D( &mainRTDesc, TNULL, &m_pRenderTargetTexture ) );
+	DX11_API_VALIDATE( m_pDevice->CreateTexture2D( &glowRTDesc, TNULL, &m_pGlowRenderTargetTexture ) );
 	DX11_API_VALIDATE( m_pDevice->CreateRenderTargetView( m_pRenderTargetTexture, TNULL, &m_pRenderTargetView ) );
 	DX11_API_VALIDATE( m_pDevice->CreateRenderTargetView( m_pGlowRenderTargetTexture, TNULL, &m_pGlowRenderTargetView ) );
 
-	// Main-pass G-buffer
-	D3D11_TEXTURE2D_DESC gbufferDesc = backBufferDesc;
-	gbufferDesc.Format               = DXGI_FORMAT_R16G16B16A16_FLOAT;
+	// Main-pass G-buffer. RGBA8: rg = octahedral normal (8-bit oct is fine for SSR),
+	// b = reflectivity, a = packed roughness/fresnel. Quarter the size and resolve cost
+	// of the old RGBA16F target.
+	D3D11_TEXTURE2D_DESC gbufferDesc = mainRTDesc;
+	gbufferDesc.Format               = DXGI_FORMAT_R8G8B8A8_UNORM;
 	DX11_API_VALIDATE( m_pDevice->CreateTexture2D( &gbufferDesc, TNULL, &m_pGBufferTexture ) );
 	DX11_API_VALIDATE( m_pDevice->CreateRenderTargetView( m_pGBufferTexture, TNULL, &m_pGBufferRTV ) );
 
 	{
 		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-		srvDesc.Format                    = backBufferDesc.Format;
-		srvDesc.ViewDimension             = backBufferDesc.SampleDesc.Count > 1 ? D3D11_SRV_DIMENSION_TEXTURE2DMS : D3D11_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.ViewDimension             = mainRTDesc.SampleDesc.Count > 1 ? D3D11_SRV_DIMENSION_TEXTURE2DMS : D3D11_SRV_DIMENSION_TEXTURE2D;
 		srvDesc.Texture2D.MipLevels       = 1;
 		srvDesc.Texture2D.MostDetailedMip = 0;
+
+		srvDesc.Format = mainRTDesc.Format;
 		DX11_API_VALIDATE( m_pDevice->CreateShaderResourceView( m_pRenderTargetTexture, &srvDesc, &m_pRenderTargetSRV ) );
+
+		srvDesc.Format = glowRTDesc.Format;
 		DX11_API_VALIDATE( m_pDevice->CreateShaderResourceView( m_pGlowRenderTargetTexture, &srvDesc, &m_pGlowRenderTargetSRV ) );
 	}
 
 	DX11_API_VALIDATE( m_pSwapChain->GetBuffer( 0, __uuidof( ID3D11Texture2D ), (LPVOID*)&m_pSwapChainBackBuffer ) );
+	DX11_API_VALIDATE( m_pDevice->CreateRenderTargetView( m_pSwapChainBackBuffer, TNULL, &m_pSwapChainBackBufferRTV ) );
+
+	// Non-MSAA HDR landing pad for the MSAA resolve in the postprocess pass.
+	{
+		D3D11_TEXTURE2D_DESC presentResolveDesc = mainRTDesc;
+		presentResolveDesc.SampleDesc.Count     = 1;
+		presentResolveDesc.SampleDesc.Quality   = 0;
+		presentResolveDesc.BindFlags            = D3D11_BIND_SHADER_RESOURCE;
+		DX11_API_VALIDATE( m_pDevice->CreateTexture2D( &presentResolveDesc, TNULL, &m_pPresentResolveTexture ) );
+		DX11_API_VALIDATE( m_pDevice->CreateShaderResourceView( m_pPresentResolveTexture, TNULL, &m_pPresentResolveSRV ) );
+	}
 
 	// Create depth stencil view
 	D3D11_TEXTURE2D_DESC depthBufferDesc = {};
@@ -896,6 +947,9 @@ void RenderDX11::ReleaseSwapchainSizedResources()
 	fnRelease( m_pDepthStencilSRV );
 	fnRelease( m_pDepthStencilView );
 	fnRelease( m_pDepthStencilTexture );
+	fnRelease( m_pPresentResolveSRV );
+	fnRelease( m_pPresentResolveTexture );
+	fnRelease( m_pSwapChainBackBufferRTV );
 	fnRelease( m_pSwapChainBackBuffer );
 }
 

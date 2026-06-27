@@ -18,9 +18,11 @@ DEFAULT_SHADERS = [
     ROOT / "Resources" / "Shaders" / "SkyMask.hlsl",
     ROOT / "Resources" / "Shaders" / "SunShafts.hlsl",
     ROOT / "Resources" / "Shaders" / "CopyTexture.hlsl",
+    ROOT / "Resources" / "Shaders" / "Postprocess.hlsl",
     ROOT / "Resources" / "Shaders" / "ResolveDepth.hlsl",
     ROOT / "Resources" / "Shaders" / "DualKawaseDown.hlsl",
     ROOT / "Resources" / "Shaders" / "DualKawaseUp.hlsl",
+    ROOT / "Resources" / "Shaders" / "HDRBloomThreshold.hlsl",
     ROOT / "Resources" / "Shaders" / "GlowBloomComposite.hlsl",
     ROOT / "Resources" / "Shaders" / "HBAOPlus.hlsl",
     ROOT / "Resources" / "Shaders" / "XeGTAO.hlsl",
@@ -29,6 +31,7 @@ DEFAULT_SHADERS = [
     ROOT / "Resources" / "Shaders" / "HBAOComposite.hlsl",
     ROOT / "Resources" / "Shaders" / "VolumetricFog.hlsl",
     ROOT / "Resources" / "Shaders" / "VolumetricFogComposite.hlsl",
+    ROOT / "Resources" / "Shaders" / "CloudShadow.hlsl",
 ]
 
 AGGREGATE_HEADER_NAME = "ShaderCombos.h"

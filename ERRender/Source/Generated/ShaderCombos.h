@@ -10,9 +10,11 @@
 #include "SkyMaskShaderCombos.h"
 #include "SunShaftsShaderCombos.h"
 #include "CopyTextureShaderCombos.h"
+#include "PostprocessShaderCombos.h"
 #include "ResolveDepthShaderCombos.h"
 #include "DualKawaseDownShaderCombos.h"
 #include "DualKawaseUpShaderCombos.h"
+#include "HDRBloomThresholdShaderCombos.h"
 #include "GlowBloomCompositeShaderCombos.h"
 #include "HBAOPlusShaderCombos.h"
 #include "XeGTAOShaderCombos.h"
@@ -50,11 +52,15 @@ TINLINE TBOOL CompileAllShaderCombos()
 		return TFALSE;
 	if ( !CompileCopyTextureShaderCombos() )
 		return TFALSE;
+	if ( !CompilePostprocessShaderCombos() )
+		return TFALSE;
 	if ( !CompileResolveDepthShaderCombos() )
 		return TFALSE;
 	if ( !CompileDualKawaseDownShaderCombos() )
 		return TFALSE;
 	if ( !CompileDualKawaseUpShaderCombos() )
+		return TFALSE;
+	if ( !CompileHDRBloomThresholdShaderCombos() )
 		return TFALSE;
 	if ( !CompileGlowBloomCompositeShaderCombos() )
 		return TFALSE;

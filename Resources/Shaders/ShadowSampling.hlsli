@@ -125,30 +125,40 @@ ShadowSetup ComputeShadowSetup(float3 worldPos, float3 worldNormal, int cascade)
     return setup;
 }
 
-// Compile-time PCF kernel half-size. MUST be a constant: a runtime radius forces the
-// compiler to unroll the full 7x7 with a per-tap branch (~49 conditional texture
-// samples per call, emitted again for the cascade-blend and debug paths -> a ~1800
-// instruction shader). A constant collapses it to a tight (2R+1)^2 unconditional loop.
-// 1 = 3x3 (9 taps). Raise to 2 for softer 5x5 (25 taps) shadows at a fixed cost.
+// Per-cascade compile-time PCF kernel half-size. These MUST be compile-time constants: a
+// runtime radius forces the compiler to unroll the full 7x7 with a per-tap branch (~49
+// conditional samples per call, re-emitted for the cascade-blend and debug paths). Distant
+// geometry is tiny on screen, so the far cascade uses a smaller kernel than the near one. The
+// comparison sampler is LINEAR, so even radius 0 is a hardware 2x2 PCF -- the far cascade stays
+// smooth, just with a smaller footprint. 0 = single (bilinear) tap, 1 = 3x3, 2 = 5x5.
 #ifndef SHADOW_PCF_RADIUS
 #define SHADOW_PCF_RADIUS 1
 #endif
+#ifndef SHADOW_PCF_RADIUS_C0
+#define SHADOW_PCF_RADIUS_C0 SHADOW_PCF_RADIUS // near cascade: full kernel
+#endif
+#ifndef SHADOW_PCF_RADIUS_C1
+#define SHADOW_PCF_RADIUS_C1 SHADOW_PCF_RADIUS // mid cascade: full kernel
+#endif
+#ifndef SHADOW_PCF_RADIUS_C2
+#define SHADOW_PCF_RADIUS_C2 0                 // far cascade: single bilinear tap
+#endif
 
-float SampleShadowPCF(ShadowSetup setup, int cascade)
+// Fixed-radius PCF kernel. RADIUS is a compile-time literal at every call site (see
+// SampleShadowPCF below), so fxc constant-folds the loop bounds and unrolls each instance into
+// a tight (2R+1)^2 loop -- there is no runtime loop bound.
+float SampleShadowKernel(ShadowSetup setup, int cascade, int RADIUS)
 {
-    if (setup.outside)
-        return 1.0f;
-
     float shadow = 0.0f;
     float weightSum = 0.0f;
     float texelSize = cb_ShadowParams.y;
 
-    [unroll] for (int dy = -SHADOW_PCF_RADIUS; dy <= SHADOW_PCF_RADIUS; dy++)
+    [unroll] for (int dy = -RADIUS; dy <= RADIUS; dy++)
     {
-        [unroll] for (int dx = -SHADOW_PCF_RADIUS; dx <= SHADOW_PCF_RADIUS; dx++)
+        [unroll] for (int dx = -RADIUS; dx <= RADIUS; dx++)
         {
             float2 sampleOffset = float2(dx, dy);
-            float  weight = (SHADOW_PCF_RADIUS + 1.0f - abs((float)dx)) * (SHADOW_PCF_RADIUS + 1.0f - abs((float)dy));
+            float  weight = (RADIUS + 1.0f - abs((float)dx)) * (RADIUS + 1.0f - abs((float)dy));
             shadow += shadowMaps.SampleCmpLevelZero(
                 shadowSampler,
                 float3(setup.shadowUV + sampleOffset * texelSize, cascade),
@@ -159,6 +169,19 @@ float SampleShadowPCF(ShadowSetup setup, int cascade)
     }
 
     return shadow / weightSum;
+}
+
+// Dispatch to the cascade's kernel. The cascade index is dynamic, but each branch passes a
+// compile-time literal radius, so every kernel instance is a fixed-size unroll (the far
+// cascade gets a cheaper kernel than the near one).
+float SampleShadowPCF(ShadowSetup setup, int cascade)
+{
+    if (setup.outside)
+        return 1.0f;
+
+    if (cascade == 0) return SampleShadowKernel(setup, cascade, SHADOW_PCF_RADIUS_C0);
+    if (cascade == 1) return SampleShadowKernel(setup, cascade, SHADOW_PCF_RADIUS_C1);
+    return SampleShadowKernel(setup, cascade, SHADOW_PCF_RADIUS_C2);
 }
 
 float SampleShadowCascade(float3 worldPos, float3 worldNormal, int cascade)

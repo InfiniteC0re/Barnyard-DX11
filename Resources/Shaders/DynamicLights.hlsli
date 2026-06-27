@@ -12,6 +12,14 @@ cbuffer DynamicGlowLights : register(b2)
 Texture2DArray         dynamicGlowShadowMaps    : register(t6);
 SamplerComparisonState dynamicGlowShadowSampler : register(s6);
 
+// PCF kernel half-size for the glow-light shadows. 1 = 3x3 (surface shading). Volumetric fog
+// defines this to 0 (single tap) before including this file -- a per-step PCF is wasted work
+// when the result is integrated over a whole march. Compile-time constant so the loop stays a
+// tight unconditional (2R+1)^2.
+#ifndef GLOW_SHADOW_PCF_RADIUS
+#define GLOW_SHADOW_PCF_RADIUS 1
+#endif
+
 float4 GetDynamicGlowProjectedPosition(float3 worldPos, int lightIndex)
 {
 	float4 shadowPos = mul(float4(worldPos, 1.0f), cb_glowLightVP[lightIndex]);
@@ -34,20 +42,22 @@ float SampleDynamicGlowShadow(float3 worldPos, int lightIndex, float4 shadowPos)
 	float texelSize = shadowParams.y;
 	float slice = shadowParams.x;
 	float shadow = 0.0f;
+	float weightSum = 0.0f;
 
-	[unroll] for (int y = -1; y <= 1; y++)
+	[unroll] for (int y = -GLOW_SHADOW_PCF_RADIUS; y <= GLOW_SHADOW_PCF_RADIUS; y++)
 	{
-		[unroll] for (int x = -1; x <= 1; x++)
+		[unroll] for (int x = -GLOW_SHADOW_PCF_RADIUS; x <= GLOW_SHADOW_PCF_RADIUS; x++)
 		{
 			shadow += dynamicGlowShadowMaps.SampleCmpLevelZero(
 				dynamicGlowShadowSampler,
 				float3(shadowUV + float2(x, y) * texelSize, slice),
 				shadowZ
 			);
+			weightSum += 1.0f;
 		}
 	}
 
-	shadow *= 1.0f / 9.0f;
+	shadow /= weightSum;
 	return lerp(1.0f, shadow, shadowParams.w);
 }
 
@@ -84,10 +94,19 @@ float3 SampleDynamicGlowLight(float3 worldPos, float3 normal, float3 specNormal,
 	float  spotAttenuation = smoothstep(cosOuter, cosInner, cosAngle);
 	float2 edgeFade        = saturate(min(lightUV, 1.0f - lightUV) * 8.0f);
 	float  projectionFade  = edgeFade.x * edgeFade.y;
-	float  shadow          = SampleDynamicGlowShadow(worldPos, lightIndex, lightProjPos);
+
+	// Everything but the shadow term. A pixel beyond the light's radius or outside its cone
+	// contributes nothing regardless of the shadow value, so bail before the shadow PCF (and
+	// the specular below). This only culls work that would multiply out to zero -- the lit
+	// result is unchanged.
+	float  attenNoShadow = distAttenuation * spotAttenuation * projectionFade * intensity;
+	if (attenNoShadow <= 0.0f)
+		return 0.0f;
+
+	float  shadow      = SampleDynamicGlowShadow(worldPos, lightIndex, lightProjPos);
 
 	// Attenuation shared by diffuse and specular (everything but NdotL and the material term).
-	float  attenuation = distAttenuation * spotAttenuation * projectionFade * shadow * intensity;
+	float  attenuation = attenNoShadow * shadow;
 
 	if (specInt > 0.0f && dot(specNormal, specNormal) > 0.25f && NdotL > 0.0f)
 	{

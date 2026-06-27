@@ -12,6 +12,10 @@ SamplerState           cloudSampler  : register( s2 );
 #endif
 
 #if !NO_DYN_LIGHT
+// Single-tap glow-light shadow per march step -- the 3x3 PCF the surface shaders use is wasted
+// here because the fog integrates visibility over the whole ray (up to ~176 steps). Cuts the
+// per-light per-step shadow cost 9x with no visible change to the volumetrics.
+#define GLOW_SHADOW_PCF_RADIUS 0
 #include "DynamicLights.hlsli"
 #endif
 
@@ -31,6 +35,9 @@ cbuffer VolumetricFogCBuffer : register( b1 )
 };
 
 static const float PI                    = 3.14159265f;
+// 0.25 keeps the per-frame march fine enough to look clean on its own. The coarser 0.4 only
+// works paired with temporal accumulation (ps_temporal), which is currently dormant because
+// the no-reprojection history blend lags the camera -- re-coarsen once reprojection lands.
 static const int   MAX_LIGHT_STEPS       = 384;
 static const int   MAX_TRANSMITTANCE_STEPS = 64;
 static const float LIGHT_STEP_LENGTH     = 0.25f;

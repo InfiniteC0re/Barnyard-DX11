@@ -38,6 +38,12 @@ extern TBOOL  g_bGlowBloomEnabled;
 extern TINT   g_iGlowBloomKawaseLevels;
 extern TFLOAT g_flGlowBloomKawaseOffset;
 extern TFLOAT g_flGlowBloomIntensity;
+
+extern TBOOL  g_bHDRBloomEnabled;
+extern TINT   g_iHDRBloomKawaseLevels;
+extern TFLOAT g_flHDRBloomKawaseOffset;
+extern TFLOAT g_flHDRBloomThreshold;
+extern TFLOAT g_flHDRBloomIntensity;
 extern TBOOL  g_bDynamicGlowEnabled;
 extern TFLOAT g_flDynamicGlowIntensity;
 extern TFLOAT g_flDynamicGlowVolumetricIntensity;
@@ -74,6 +80,7 @@ extern TFLOAT g_flSSRStepSize;
 extern TINT   g_iSSRMaxSteps;
 extern TFLOAT g_flSSRFresnelPower;
 extern TFLOAT g_flSSREdgeFade;
+extern TFLOAT g_flSSRSkyFallbackIntensity;
 extern TBOOL  g_bVolumetricFogEnabled;
 extern TINT   g_iVolumetricFogCompositeMode;
 extern TFLOAT g_flVolumetricFogDensity;
@@ -267,6 +274,7 @@ public:
 				ImGui::DragFloat( "SSR Thickness", &remaster::g_flSSRThickness, 0.01f, 0.02f, 5.0f, "%.3f" );
 				ImGui::SliderFloat( "SSR Fresnel Power", &remaster::g_flSSRFresnelPower, 0.0f, 8.0f, "%.2f" );
 				ImGui::SliderFloat( "SSR Edge Fade", &remaster::g_flSSREdgeFade, 0.5f, 8.0f, "%.2f" );
+				ImGui::SliderFloat( "SSR Sky Fallback", &remaster::g_flSSRSkyFallbackIntensity, 0.0f, 2.0f, "%.2f" );
 			}
 
 			ImGui::Separator();
@@ -293,6 +301,17 @@ public:
 			ImGui::SliderInt( "Glow Blur Levels", &remaster::g_iGlowBloomKawaseLevels, 1, KAWASE_MAX_LEVELS );
 			ImGui::SliderFloat( "Glow Blur Offset", &remaster::g_flGlowBloomKawaseOffset, 0.1f, 12.0f );
 			ImGui::SliderFloat( "Glow Intensity", &remaster::g_flGlowBloomIntensity, 0.0f, 10.0f );
+		}
+
+		ImGui::Separator();
+		ImGui::TextUnformatted( "HDR Bloom" );
+		ImGui::Checkbox( "Enable HDR Bloom", &remaster::g_bHDRBloomEnabled );
+		if ( remaster::g_bHDRBloomEnabled )
+		{
+			ImGui::SliderInt( "HDR Blur Levels", &remaster::g_iHDRBloomKawaseLevels, 1, KAWASE_MAX_LEVELS );
+			ImGui::SliderFloat( "HDR Blur Offset", &remaster::g_flHDRBloomKawaseOffset, 0.1f, 12.0f );
+			ImGui::SliderFloat( "HDR Threshold", &remaster::g_flHDRBloomThreshold, 0.0f, 4.0f );
+			ImGui::SliderFloat( "HDR Intensity", &remaster::g_flHDRBloomIntensity, 0.0f, 4.0f );
 		}
 
 		ImGui::Separator();

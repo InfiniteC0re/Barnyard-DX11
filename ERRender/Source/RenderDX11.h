@@ -16,6 +16,10 @@
 #include <xmmintrin.h>
 #include <d3d11_1.h>
 
+// GPU-side profiling. Real Tracy timestamp queries under --profiler=perf; the
+// header's TRACY_ENABLE guard makes every macro/type a no-op otherwise.
+#include "Profiler/tracy/TracyD3D11.hpp"
+
 #define DX11_API_VALIDATE( CALL )       \
 	{                                   \
 		HRESULT hr = CALL;              \
@@ -576,8 +580,8 @@ public:
 
 	void DiscardView( ID3D11View* a_pView )
 	{
-		if ( m_pDeviceContext1 )
-			m_pDeviceContext1->DiscardView( a_pView );
+// 		if ( m_pDeviceContext1 )
+// 			m_pDeviceContext1->DiscardView( a_pView );
 	}
 
 	void ClearCurrentRenderTarget( const TFLOAT a_pColorRGBA[ 4 ] )
@@ -675,6 +679,7 @@ public:
 	Toshi::TPriList<Toshi::TOrderTable>& GetOrderTables() { return m_OrderTables; }
 	ID3D11Device*                        GetD3D11Device() const { return m_pDevice; }
 	ID3D11DeviceContext*                 GetD3D11DeviceContext() const { return m_pDeviceContext; }
+	TracyD3D11Ctx                        GetTracyGpuContext() const { return m_pTracyD3D11Ctx; }
 	IDXGISwapChain*                      GetD3D11SwapChain() const { return m_pSwapChain; }
 	ID3D11RenderTargetView*              GetD3D11RenderTargetView() const { return m_pRenderTargetView; }
 	ID3D11ShaderResourceView*            GetD3D11RenderTargetSRV() const { return m_pRenderTargetSRV; }
@@ -733,6 +738,9 @@ private:
 	D3D_FEATURE_LEVEL         m_eFeatureLevel;
 	IDXGISwapChain*           m_pSwapChain               = TNULL;
 	ID3D11Texture2D*          m_pSwapChainBackBuffer     = TNULL;
+	ID3D11RenderTargetView*   m_pSwapChainBackBufferRTV  = TNULL;
+	ID3D11Texture2D*          m_pPresentResolveTexture   = TNULL;
+	ID3D11ShaderResourceView* m_pPresentResolveSRV       = TNULL;
 	ID3D11RenderTargetView*   m_pRenderTargetView        = TNULL;
 	ID3D11Texture2D*          m_pRenderTargetTexture     = TNULL;
 	ID3D11ShaderResourceView* m_pRenderTargetSRV         = TNULL;
@@ -763,6 +771,8 @@ private:
 	TUINT            m_uiSyncInterval  = 0; // Present sync interval (0 = no vsync)
 
 	ID3D11DeviceContext1* m_pDeviceContext1 = TNULL; // D3D11.1 context
+
+	TracyD3D11Ctx m_pTracyD3D11Ctx = TNULL;
 
 	// Font rendering
 	// TODO: move this away from here

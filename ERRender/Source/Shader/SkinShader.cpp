@@ -468,11 +468,13 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	const TFLOAT flRoughness         = pSpecParams ? pSpecParams->fRoughness         : 0.0f;
 	g_pRender->VSBufferSetVec4( 16, TVector4( flNormalStrength, flRoughnessStrength, flRoughness, flMapFlags ) );
 
-	// SSR params (slot 17): reflectivity + fresnel power so skin writes a real G-buffer
-	// (normal + reflectivity) and can be reflected when authored reflective.
-	const TFLOAT flReflectivity = pSpecParams ? pSpecParams->fReflectivity : 0.0f;
-	const TFLOAT flFresnelPower  = pSpecParams ? TMath::Max( pSpecParams->fFresnelPower, 0.1f ) : 0.1f;
-	g_pRender->VSBufferSetVec4( 17, TVector4( flReflectivity, flFresnelPower, 0.0f, 0.0f ) );
+	// SSR params (slot 17): x = reflectivity, y = fresnel power, z = emissive intensity
+	// (1 = neutral, >1 pushes into HDR range for bloom). Reflectivity 0 means SSR ignores it
+	// but the G-buffer normal is still written so reflective skin materials work.
+	const TFLOAT flReflectivity      = pSpecParams ? pSpecParams->fReflectivity : 0.0f;
+	const TFLOAT flFresnelPower      = pSpecParams ? TMath::Max( pSpecParams->fFresnelPower, 0.1f ) : 0.1f;
+	const TFLOAT flEmissiveIntensity = pSpecParams ? pSpecParams->fEmissiveIntensity : 1.0f;
+	g_pRender->VSBufferSetVec4( 17, TVector4( flReflectivity, flFresnelPower, flEmissiveIntensity, 0.0f ) );
 
 	if ( bHasDynLight ) UploadDynamicGlowLights( a_pRenderPacket );
 

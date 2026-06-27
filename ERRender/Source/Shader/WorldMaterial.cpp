@@ -55,6 +55,8 @@ void remaster::WorldMaterial::OnDestroy()
 	BaseClass::OnDestroy();
 }
 
+extern TBOOL g_bEnableWaterReflections;
+
 void remaster::WorldMaterial::PreRender()
 {
 	// Setup textures
@@ -122,7 +124,7 @@ void remaster::WorldMaterial::PreRender()
 		{
 			case 1:
 				g_pRender->SetBlendMode( g_pRender->IsBlendEnabled(), g_pRender->GetBlendOp(), D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA );
-				g_pRender->SetDepthWrite( TFALSE );
+				g_pRender->SetDepthWrite( g_bEnableWaterReflections );
 				break;
 			case 3:
 				g_pRender->SetBlendMode( g_pRender->IsBlendEnabled(), g_pRender->GetBlendOp(), D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ONE );

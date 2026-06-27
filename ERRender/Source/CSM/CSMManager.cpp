@@ -350,6 +350,8 @@ void CSMManager::RenderShadowMaps()
 
 	if ( !m_pShadowTexture ) return;
 
+	TracyD3D11Zone( g_pRender->GetTracyGpuContext(), "CSM Shadow Maps" );
+
 	ID3D11DeviceContext* pDeviceContext = g_pRender->GetD3D11DeviceContext();
 
 	g_pRender->PSSetShaderResource( 2, TNULL );
