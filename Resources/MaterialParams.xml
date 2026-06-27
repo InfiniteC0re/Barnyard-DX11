@@ -9,7 +9,7 @@
 	<material name="utebod_matte" reflectivity="0.4" roughness="0.05" fresnelPower="4.0" specularIntensity="0.2" specularPower="1" />
 
 	<!--  -->
-	<material name="water_env" reflectivity="0" roughness="0.05" fresnelPower="0" specularIntensity="1" specularPower="26" />
+	<material name="water_env" reflectivity="0" roughness="0.05" fresnelPower="0" specularIntensity="1.5" specularPower="160" />
 
 	<material name="water_tank" reflectivity="0.5" roughness="0.85" fresnelPower="0" specularIntensity="0.8" specularPower="26" />
 	<material name="Trough_Bath_01" reflectivity="0.8" roughness="0.5" fresnelPower="0" specularIntensity="1" specularPower="26" />
@@ -45,7 +45,7 @@
 	<!--  -->
 	<material name="lamp" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
 	<!--  -->
-	<material name="barnroof" reflectivity="0.4" roughness="0.8" fresnelPower="4" specularIntensity="0.14" specularPower="26" />
+	<material name="barnroof" reflectivity="0.4" roughness="0.8" fresnelPower="4" specularIntensity="0.14" specularPower="120" />
 	<material name="silosim" reflectivity="0.4" roughness="0.8" fresnelPower="0" specularIntensity="0.35" specularPower="26" />
 	<material name="fence_post" reflectivity="1" roughness="0.05" fresnelPower="0" specularIntensity="10" specularPower="26" />
 	<material name="corrugiron" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="10" specularPower="26" />

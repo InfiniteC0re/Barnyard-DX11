@@ -94,6 +94,13 @@ void remaster::GrassShaderDX11::StartFlush()
 		g_pRender->PSSetShaderResource( 2, g_pCSMManager->GetShadowSRV() );
 		g_pRender->PSSetSamplerState( 2, g_pCSMManager->GetShadowSampler() );
 		g_pRender->PSSetConstantBuffer( 1, g_pRender->GetShadowConstantBuffer() );
+
+		// Animated cloud shadow map (t9/s3), sampled by world XZ in SampleShadow.
+		if ( g_bCloudShadowsEnabled )
+		{
+			g_pRender->PSSetShaderResource( 9, g_pCloudShadowSRV );
+			g_pRender->PSSetSamplerState( 3, g_pCloudShadowSampler );
+		}
 	}
 
 	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
@@ -115,6 +122,7 @@ void remaster::GrassShaderDX11::EndFlush()
 	g_pRender->SetBlendEnabled( TTRUE );
 	g_pRender->PSSetShaderResource( 2, TNULL );
 	g_pRender->PSSetShaderResource( 6, TNULL );
+	g_pRender->PSSetShaderResource( 9, TNULL );
 	g_pRender->PSSetConstantBuffer( 2, TNULL );
 
 // 	TRenderD3DInterface* pRenderInterface = TRenderD3DInterface::Interface();
@@ -210,6 +218,7 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		TMatrix44 mShadowMVP;
 		mShadowMVP.Multiply( g_pCSMManager->GetCurrentLightProjection(), a_pRenderPacket->GetModelViewMatrix() );
 		g_pRender->VSBufferSetMat4( 0, mShadowMVP );
+		g_pRender->VSBufferSetVec4( 4, TVector4( g_pCSMManager->GetCurrentCascade(), 0.0f, 0.0f ) );
 
 		TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
 		TIndexPoolResource*  pIndexPool  = TSTATICCAST( TIndexPoolResource, pMesh->GetSubMesh( 0 )->pIndexPool );
@@ -246,6 +255,8 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		uiComboFlags |= shadercombos::Grass_NO_FOG;
 	if ( !bHasDynLight )
 		uiComboFlags |= shadercombos::Grass_NO_DYN_LIGHT;
+	if ( g_bCloudShadowsEnabled )
+		uiComboFlags |= shadercombos::Grass_CLOUD_SHADOWS;
 
 	g_pRender->SetShaderPipelineState( m_vecGrassPipelines[ shadercombos::GetGrassComboIndex( uiComboFlags ) ] );
 

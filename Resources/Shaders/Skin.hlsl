@@ -4,6 +4,8 @@
 // STATIC: "NO_FOG" "0..1"
 // STATIC: "NO_DYN_LIGHT" "0..1"
 // STATIC: "ANIMATED" "0..1"
+// STATIC: "MATERIAL_MAPS" "0..1"
+// STATIC: "CLOUD_SHADOWS" "0..1"
 
 struct VS_IN
 {
@@ -26,7 +28,8 @@ struct PS_IN
 	float4 LightingLerp1 : TEXCOORD5;
 	float4 LightingLerp2 : TEXCOORD6;
 #else // BAKED_LIGHTING
-	float4 Color	: COLOR;
+	float4 Color	: COLOR;        // xyz = ambient (FOB: full hardcoded colour), w = alpha
+	float3 DirectLight : TEXCOORD8; // NdotL * lightColor -- the sun term, gated by shadow in the PS
 #endif // !BAKED_LIGHTING
 	float3 WorldPos    : TEXCOORD2;
 	float ViewDepth    : TEXCOORD3;
@@ -49,6 +52,8 @@ cbuffer ConstantBuffer : register(b0)
 	float4   cb_FogColor;
     float4x4 cb_matModel;
     float4   cb_CameraPos;      // 15: xyz = camera world position
+    float4   cb_MapParams;      // 16: x = normal strength, y = roughness strength, z = roughness, w = map flags (1=normal,2=rough,3=both)
+    float4   cb_SSRParams;      // 17: x = SSR reflectivity, y = fresnel power
 };
 
 #ifdef ANIMATED
@@ -70,6 +75,9 @@ cbuffer BoneCBuffer : register(b1)
 #if !NO_DYN_LIGHT
 #include "DynamicLights.hlsli"
 #endif
+
+#include "ShaderUtils.hlsli" // PerturbNormalDeriv (derivative TBN normal mapping)
+#include "GBuffer.hlsli"     // OctEncodeNormal / PackFresnelRoughness for SSR
 
 PS_IN vs_main(VS_IN In)
 {
@@ -159,6 +167,7 @@ PS_IN vs_main(VS_IN In)
 	// Out.Color.xyz = float3(1.0f, 1.0f, 1.0f) * (NdotL * lightColor + (1.0f - NdotL) * baseColor);
 	Out.Color.xyz = colorB + (colorA - colorB) * 1;
 	Out.Color.w = cb_ambientColor.a;
+	Out.DirectLight = float3(0.0f, 0.0f, 0.0f); // FOB is a flat hardcoded look, no directional term
 	// Out.Color.xyz = lerp(float3(0.54509807f, 0.60784316f, 0.47058824f), cb_lightColor.xyz + float3(0.7372549f, 0.8156863f, 0.5254902f), NdotL);
 
 #else // !FOB && !BAKED_LIGHTING
@@ -170,10 +179,11 @@ PS_IN vs_main(VS_IN In)
 	// Original PC shading:
 	// Out.Color.xyz = NdotL * cb_lightColor.xyz + (1.0f - NdotL) * cb_ambientColor.xyz;
 
-	// Correct console shading:
-	Out.Color.xyz = NdotL * cb_lightColor.xyz + cb_ambientColor.xyz;
-	
-	Out.Color.w = cb_ambientColor.a;
+	// Correct console shading -- ambient stays, directional (sun) is split out so the PS can
+	// gate it by the shadow factor (no sun term in shade), like a specular highlight.
+	Out.Color.xyz   = cb_ambientColor.xyz;
+	Out.DirectLight = NdotL * cb_lightColor.xyz;
+	Out.Color.w     = cb_ambientColor.a;
 
 #endif // !BAKED_LIGHTING
 
@@ -194,6 +204,8 @@ float CalculateExponentialSquaredFog(float distance, float fogStart, float densi
 
 Texture2D texture0 : register(t0);
 SamplerState sampler0 : register(s0);
+Texture2D normalMap    : register(t7); // per-material normal map (t1-t4 are baked lighting)
+Texture2D roughnessMap : register(t8); // per-material roughness (R channel)
 
 #if BAKED_LIGHTING
 Texture2D lighting1 : register(t1);
@@ -214,6 +226,13 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
     float4 texColor = texture0.Sample(sampler0, In.UV0);
 	clip(texColor.a - In.AlphaRef);
 
+	// Sun shadow visibility, up front so the directional lighting term can be gated by it.
+#if !NO_CSM
+	float shadow = SampleShadow(In.WorldPos, In.WorldNormal, In.ViewDepth);
+#else
+	float shadow = 1.0f;
+#endif
+
 #if BAKED_LIGHTING
 	float3 lighting1Color = lighting1.Sample(samplerLighting, In.UV1).rgb;
 	float3 lighting2Color = lighting2.Sample(samplerLighting, In.UV1).rgb;
@@ -224,39 +243,67 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 	texColor.rgb = clamp(texColor.rgb + lerp(lighting2Color, lighting4Color, In.LightingLerp2.xxx), 0.0f, 1.0f);
 	texColor.a *= cb_ambientColor.a;
 #else // BAKED_LIGHTING
-	texColor.rgb = texColor.rgb * In.Color.rgb;
+	// Ambient (In.Color) always; the directional sun term is gated by shadow so it vanishes
+	// in shade (FOB has DirectLight = 0, so it's unaffected).
+	texColor.rgb = texColor.rgb * (In.Color.rgb + In.DirectLight * shadow);
 	texColor.a *= cb_ambientColor.a;
 #endif // !BAKED_LIGHTING
 
+	// Per-material normal/roughness maps. Skin has no tangent stream, so the TBN is built
+	// from screen derivatives. Maps live in cb_MapParams.w (1=normal, 2=rough, 3=both).
+	float3 worldN        = normalize(In.WorldNormal);
+	float  surfRoughness = cb_MapParams.z;
+#if MATERIAL_MAPS
+	if (cb_MapParams.w == 1.0f || cb_MapParams.w == 3.0f)
+	{
+		float3 nt = normalMap.Sample(sampler0, In.UV0).xyz * 2.0f - 1.0f;
+		nt.xy    *= cb_MapParams.x; // normal strength
+		worldN    = PerturbNormalDeriv(In.WorldPos, worldN, In.UV0, nt);
+	}
+	if (cb_MapParams.w >= 2.0f)
+	{
+		surfRoughness = saturate(roughnessMap.Sample(sampler0, In.UV0).r * cb_MapParams.y);
+	}
+#endif
+
+	// View dir + roughness-shaped specular params, shared by the sun and dynamic highlights.
+	float3 V       = normalize(cb_CameraPos.xyz - In.WorldPos); // toward the camera
+	float  rough   = saturate(surfRoughness);
+	float  specPow = max(lerp(8.0f, max(cb_SpecPower, 1.0f), 1.0f - rough), 1.0f);
+	float  specInt = cb_SpecIntensity * (1.0f - rough);
+
+	float3 specular = 0.0f;
+
 #if !NO_DYN_LIGHT
-	float3 glow = SampleDynamicGlowLights(In.WorldPos, ComputeDerivedWorldNormal(In.WorldPos, In.WorldNormal, In.UV0, texture0, sampler0, cb_glowLightIntensity[0].y));
-	texColor.rgb = ApplyDynamicGlowLighting(texColor.rgb, glow);
+	// Diffuse uses the bumpy derived normal; specular uses the clean normal-mapped worldN.
+	float3 dynN    = ComputeDerivedWorldNormal(In.WorldPos, worldN, In.UV0, texture0, sampler0, cb_glowLightIntensity[0].y);
+	float3 dynSpec = 0.0f;
+	float3 glow    = SampleDynamicGlowLights(In.WorldPos, dynN, worldN, V, specInt, specPow, dynSpec);
+	texColor.rgb   = ApplyDynamicGlowLighting(texColor.rgb, glow);
+	specular      += dynSpec;
 #endif
 
 #if !NO_CSM
-	float shadow = SampleShadow(In.WorldPos, In.ViewDepth);
 	float shadowStrength = cb_ShadowParams.w;
 	float shadowScale = shadow * shadowStrength + (1.0f - shadowStrength);
 	#if !NO_DYN_LIGHT
 	shadowScale = lerp(shadowScale, 1.0f, saturate(max(glow.r, max(glow.g, glow.b))));
 	#endif
 	texColor.rgb *= shadowScale;
-	float specShadow = shadowScale;
+	float specShadow = shadow; // raw shadow -- a sun highlight shouldn't survive in shadow
 #else
 	float specShadow = 1.0f;
 #endif
 
-	// Per-material Blinn-Phong sun specular (lit, sun-facing; killed in shadow).
-	float3 specular = 0.0f;
+	// Per-material Blinn-Phong sun specular (roughness-shaped, killed in shadow).
 	if (cb_SpecIntensity > 0.0f)
 	{
-		float3 N = normalize(In.WorldNormal);
-		float3 V = normalize(cb_CameraPos.xyz - In.WorldPos); // toward the camera
+		float3 N = worldN;
 		if (dot(N, V) < 0.0f) N = -N;                         // orient to the visible side
 		float3 L = -cb_lightDirection.xyz;                    // toward the sun (same light as diffuse)
 		float3 H = normalize(L + V);
-		float  specTerm = pow(saturate(dot(N, H)), max(cb_SpecPower, 1.0f));
-		specular = specTerm * cb_SpecIntensity * specShadow * saturate(dot(N, L));
+		float  specTerm = pow(saturate(dot(N, H)), specPow);
+		specular += specTerm * specInt * specShadow * saturate(dot(N, L));
 	}
 
 #if !NO_FOG
@@ -271,6 +318,12 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 
     PS_OUT Out;
     Out.Color   = float4(finalColor, texColor.a);
-    Out.GBuffer = float4(0.0f, 0.0f, 0.0f, 0.0f);
+    // G-buffer: rg = octahedral world normal (the normal-mapped one), b = reflectivity,
+    // a = pack(fresnelPower, roughness). Reflectivity 0 = SSR ignores it, but the normal is
+    // still written so the buffer reads correctly and reflective skin materials work.
+    Out.GBuffer = float4(
+        OctEncodeNormal(worldN),
+        cb_SSRParams.x,
+        PackFresnelRoughness(cb_SSRParams.y, surfRoughness));
     return Out;
 }

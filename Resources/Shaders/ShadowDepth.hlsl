@@ -4,6 +4,7 @@
 cbuffer ShadowPassBuffer : register(b0)
 {
     float4x4 cb_matShadowMVP;
+    float cb_CurrentCascade;
 };
 
 cbuffer BoneCBuffer : register(b1)
@@ -118,7 +119,7 @@ SamplerState sampler0 : register(s0);
 float4 ps_main(VS_OUT In) : SV_TARGET
 {
     float4 texColor = texture0.Sample(sampler0, In.UV);
-	clip(texColor.a - 0.8f);
+	clip(texColor.a - (0.8f - cb_CurrentCascade * 0.35f));
 
     return float4(1, 1, 1, 1);
 }

@@ -77,11 +77,6 @@ public:
 	// Probably used in debug mode but is stripped out in release
 	virtual void* CreateUnknown( void*, void*, void*, void* );
 
-	// Draws all currently-loaded merged section shadow batches for the current
-	// cascade. Sets the shared shadow MVP once, then one DrawIndexed per material
-	// group. Called from the shadow pass after per-mesh casters are flushed.
-	void RenderShadowBatches();
-
 private:
 	void UploadDynamicGlowLights( Toshi::TRenderPacket* a_pRenderPacket );
 

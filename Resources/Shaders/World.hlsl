@@ -3,6 +3,9 @@
 // STATIC: "NO_FOG" "0..1"
 // STATIC: "NO_DYN_LIGHT" "0..1"
 // STATIC: "GLOW" "0..1"
+// STATIC: "MATERIAL_MAPS" "0..1"
+// STATIC: "PARALLAX" "0..1"
+// STATIC: "CLOUD_SHADOWS" "0..1"
 
 struct VS_IN
 {
@@ -10,6 +13,7 @@ struct VS_IN
     float3 normal : NORMAL;
     float4 Color : Color;
     float2 UV : TEXCOORD0;
+    float4 Tangent : TANGENT; // xyz = object-space tangent, w = handedness (parallel stream, slot 1)
 };
 
 struct PS_IN
@@ -20,6 +24,7 @@ struct PS_IN
     float3 WorldPos : TEXCOORD1;
     float ViewDepth : TEXCOORD2;
     float3 WorldNormal : TEXCOORD3;
+    float4 WorldTangent : TEXCOORD4; // xyz = world-space tangent, w = handedness
 };
 
 cbuffer ConstantBuffer : register(b0)
@@ -36,7 +41,8 @@ cbuffer ConstantBuffer : register(b0)
     float4x4 cb_matModel;
     float4   cb_Reflectivity; // x = SSR reflectivity, y = fresnel power, z = specular intensity, w = specular power (slot 13)
     float4   cb_SunDirection; // xyz = direction toward the sun (world), w = SSR roughness (slot 14)
-    float4   cb_CameraPos;    // xyz = camera world position (slot 15)
+    float4   cb_CameraPos;    // xyz = camera world position, w = map flags (slot 15)
+    float4   cb_MapParams;    // x = normal-map strength, y = roughness-map strength (slot 16)
 };
 
 struct PS_OUT
@@ -65,7 +71,8 @@ PS_IN vs_main(VS_IN In)
     Out.WorldPos = mul(float4(In.ObjPos, 1.0f), cb_matModel).xyz;
     Out.ViewDepth = Out.ProjPos.w;
     Out.WorldNormal = normalize(mul(In.normal, (float3x3)cb_matModel));
-    
+    Out.WorldTangent = float4(normalize(mul(In.Tangent.xyz, (float3x3)cb_matModel)), In.Tangent.w);
+
 	// Calculate vertex Color based on current lighting settings and shadow factor (stored as vertex data)
 	Out.Color.xyz = lerp(cb_ShadowColor.xyz, cb_AmbientColor.xyz, In.Color.xyz);
     
@@ -97,40 +104,229 @@ float CalculateExponentialSquaredFog(float distance, float fogStart, float densi
 
 Texture2D texture0 : register(t0);
 SamplerState sampler0 : register(s0);
+Texture2D normalMap     : register(t1); // per-material tangent-space normal map
+Texture2D roughnessMap  : register(t3); // per-material roughness (R channel)
+Texture2D heightMap     : register(t4); // per-material height map (white = raised) for parallax
+// Normal/roughness/height maps share the albedo's sampler (sampler0 @ s0), set per-material
+// by WorldMaterial::PreRender, so they inherit the same wrap/clamp addressing as the diffuse.
+
+// Parallax occlusion mapping: march the height field along the tangent-space view dir and
+// return the offset UV so the surface appears to have depth. a_viewTS points toward the
+// viewer (z = +N). a_scale is the max displacement. Height map: white = raised.
+// a_dx/a_dy are the *original-UV* screen derivatives: sampling with them (SampleGrad) keeps
+// mip selection stable across the march, which is what stops the "boiling" near edges.
+float2 ParallaxOcclusionUV(float2 a_uv, float3 a_viewTS, float a_scale, float2 a_dx, float2 a_dy)
+{
+    const int   iMaxSteps = 24;
+    const float fMinLayers = 12.0f;
+
+    // More layers at grazing angles where parallax shifts most.
+    float numLayers  = lerp((float)iMaxSteps, fMinLayers, saturate(abs(a_viewTS.z)));
+    float layerDepth = 1.0f / numLayers;
+
+    // Total UV shift across the full depth; step amount per layer. Clamp the magnitude so
+    // grazing angles (large viewTS.xy / viewTS.z) can't smear the UV far across the surface
+    // -- this keeps the apparent depth without the trippy stretching.
+    float2 P       = (a_viewTS.xy / max(a_viewTS.z, 0.001f)) * a_scale;
+    float  pLen    = length(P);
+    float  pMax    = a_scale * 2.0f;
+    if (pLen > pMax) P *= pMax / pLen;
+    float2 deltaUV = P / numLayers;
+
+    float2 curUV    = a_uv;
+    float  curDepth = 1.0f - heightMap.SampleGrad(sampler0, curUV, a_dx, a_dy).r; // height -> depth
+    float  curLayer = 0.0f;
+
+    [loop]
+    for (int i = 0; i < iMaxSteps; i++)
+    {
+        if (curLayer >= curDepth) break;
+        curUV   -= deltaUV;
+        curDepth = 1.0f - heightMap.SampleGrad(sampler0, curUV, a_dx, a_dy).r;
+        curLayer += layerDepth;
+    }
+
+    // Interpolate between the last two layers for a smooth intersection.
+    float2 prevUV = curUV + deltaUV;
+    float  after  = curDepth - curLayer;
+    float  before = (1.0f - heightMap.SampleGrad(sampler0, prevUV, a_dx, a_dy).r) - (curLayer - layerDepth);
+    float  w      = after / (after - before);
+    return lerp(curUV, prevUV, saturate(w));
+}
+
+// Self-shadow march toward the sun. From the hit at (a_uv, a_hitDepth) we walk through
+// the heightfield in tangent space; where the surface rises above the ray, the bump is
+// blocking the sun. Returns 1 = fully lit, 0 = fully shadowed.
+float ParallaxSelfShadow(float2 a_uv, float a_hitDepth, float3 a_lightTS, float a_scale, float2 a_dx, float2 a_dy)
+{
+    if (a_lightTS.z <= 0.0f) return 1.0f;
+
+    const int   iSteps    = 8;
+    const float numLayers = (float)iSteps;
+
+    // Same grazing clamp as the view march so a low sun doesn't smear the shadow.
+    float2 dirTS  = (a_lightTS.xy / max(a_lightTS.z, 0.001f)) * a_scale;
+    float  dirLen = length(dirTS);
+    if (dirLen > a_scale * 2.0f) dirTS *= (a_scale * 2.0f) / dirLen;
+
+    float  layerDepth = 1.0f / numLayers;
+    float2 deltaUV    = dirTS / numLayers;
+
+    float2 curUV     = a_uv;
+    float  curDepth  = a_hitDepth;
+    float  occlusion = 0.0f;
+
+    [loop]
+    for (int i = 0; i < iSteps; i++)
+    {
+        curUV    += deltaUV;
+        curDepth -= layerDepth;
+        if (curDepth <= 0.0f) break;
+
+        float sampleDepth = 1.0f - heightMap.SampleGrad(sampler0, curUV, a_dx, a_dy).r;
+        float diff        = max(0.0f, curDepth - sampleDepth);
+        // Earlier samples (closer to the surface) dominate, multiplied by a darkness ramp.
+        float weight      = (numLayers - (float)i) / numLayers;
+        occlusion         = max(occlusion, diff * weight * 4.0f);
+    }
+
+    return 1.0f - saturate(occlusion);
+}
 
 PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 {
-    float4 texColor = texture0.Sample(sampler0, In.UV0) * In.Color * cb_TexCoordOffsetAndAlpha.z;
-	
+    // Debug: negative roughness sentinel (set by the CPU when tangent debugging is on)
+    // visualises the precomputed world-space tangent as colour. Stable colours on flat
+    // ground that don't swim with the camera mean the tangents are correct world-space.
+    if (cb_SunDirection.w < -0.5f)
+    {
+        PS_OUT dbg;
+        dbg.Color   = float4(normalize(In.WorldTangent.xyz) * 0.5f + 0.5f, 1.0f);
+        dbg.GBuffer = float4(0.0f, 0.0f, 0.0f, 0.0f);
+        return dbg;
+    }
+
+    // Tangent frame from the geometric normal + precomputed tangent (reused by parallax,
+    // the normal map and the dynamic-light bump). V points toward the camera.
+    float3 Ngeo = normalize(In.WorldNormal);
+    float3 T    = normalize(In.WorldTangent.xyz - Ngeo * dot(Ngeo, In.WorldTangent.xyz));
+    float3 B    = cross(Ngeo, T) * In.WorldTangent.w;
+    float3 V    = normalize(cb_CameraPos.xyz - In.WorldPos);
+
+    // Screen-space derivatives of the *un-parallaxed* UV. All parallaxed samples use these
+    // (SampleGrad) so mip selection stays stable across the POM march -- the offset UV is
+    // discontinuous per pixel, and letting the GPU derive mips from it is what makes it boil.
+    float2 dUVdx = ddx(In.UV0);
+    float2 dUVdy = ddy(In.UV0);
+
+    // Parallax occlusion mapping: shift the UV so the height map reads as apparent depth.
+    // Gated by parallaxScale (cb_MapParams.z > 0); every later sample uses this offset uv.
+    float2 uv             = In.UV0;
+    float  parallaxShadow = 1.0f;
+#if PARALLAX
+    if (cb_MapParams.z > 0.0f)
+    {
+        float3 viewTS = float3(dot(V, T), dot(V, B), dot(V, Ngeo));
+        // Fade off at grazing angles and at distance so the heightmap doesn't shimmer when
+        // it minifies or run sideways across the texture under a low view angle.
+        float  grazeFade = smoothstep(0.05f, 0.35f, viewTS.z);
+        float  distFade  = 1.0f - smoothstep(15.0f, 30.0f, In.ViewDepth);
+        float  scale     = cb_MapParams.z * grazeFade * distFade;
+        uv = ParallaxOcclusionUV(uv, viewTS, scale, dUVdx, dUVdy);
+
+        // Self-shadow march toward the sun. The 0.4 keeps the contribution subtle.
+        // Skipped in tangent-debug mode where sun lighting is bypassed anyway.
+        if (cb_SunDirection.w >= -0.5f && scale > 0.0f)
+        {
+            float3 lightTS  = float3(dot(cb_SunDirection.xyz, T),
+                                     dot(cb_SunDirection.xyz, B),
+                                     dot(cb_SunDirection.xyz, Ngeo));
+            float  hitDepth = 1.0f - heightMap.SampleGrad(sampler0, uv, dUVdx, dUVdy).r;
+            float  rawSelf  = ParallaxSelfShadow(uv, hitDepth, lightTS, scale, dUVdx, dUVdy);
+            parallaxShadow  = lerp(1.0f, rawSelf, distFade * 0.4f);
+        }
+    }
+#endif
+
+    float4 texColor = texture0.SampleGrad(sampler0, uv, dUVdx, dUVdy) * In.Color * cb_TexCoordOffsetAndAlpha.z;
+
 #if ALPHAREF
 	// The only alpharef value used by the game is 128 (0.5f)
     if (texColor.a < 0.5f) discard;
 #endif
 
+    // Per-material normal/roughness maps (sampled at the parallaxed uv), reusing T/B/Ngeo.
+    // Computed before the dynamic lights so they can use the real normal-mapped normal.
+    float3 worldN        = Ngeo;
+    float  surfRoughness = cb_SunDirection.w;
+#if MATERIAL_MAPS
+    if (cb_CameraPos.w == 1.0f || cb_CameraPos.w == 3.0f)
+    {
+        float3 nt = normalMap.SampleGrad(sampler0, uv, dUVdx, dUVdy).xyz * 2.0f - 1.0f;
+        nt.xy    *= cb_MapParams.x; // normal-map strength (scales the tangent-space tilt)
+        worldN    = normalize(T * nt.x + B * nt.y + Ngeo * nt.z);
+    }
+    if (cb_CameraPos.w >= 2.0f)
+    {
+        surfRoughness = saturate(roughnessMap.SampleGrad(sampler0, uv, dUVdx, dUVdy).r * cb_MapParams.y);
+    }
+#endif
+
+    // Roughness-shaped specular params shared by the dynamic-light and sun highlights
+    // (smooth = tight & bright, rough = broad & dim, none at full roughness). The rough
+    // end is clamped below the material's specularPower so materials authored with a
+    // narrow lobe (specularPower < 8) don't end up tighter at high roughness than at low.
+    float  rough        = saturate(surfRoughness);
+    float  roughSpecPow = min(cb_Reflectivity.w, 8.0f);
+    float  specPow      = max(lerp(roughSpecPow, cb_Reflectivity.w, 1.0f - rough), 1.0f);
+    float  specInt      = cb_Reflectivity.z * (1.0f - rough);
+
+    float3 specular = 0.0f;
+
 #if !NO_DYN_LIGHT
-	float3 glow = SampleDynamicGlowLights(In.WorldPos, ComputeDerivedWorldNormal(In.WorldPos, In.WorldNormal, In.UV0, texture0, sampler0, cb_glowLightIntensity[0].y));
-	texColor.rgb = ApplyDynamicGlowLighting(texColor.rgb, glow);
+	// Dynamic glow lights use the real normal-mapped normal, still perturbed by the cheap
+	// albedo-luminance micro-bump for extra detail, and now contribute specular too.
+	float3 dynN    = ComputeDerivedWorldNormalT(worldN, In.WorldTangent.xyz, In.WorldTangent.w, uv, texture0, sampler0, cb_glowLightIntensity[0].y);
+	float3 dynSpec = 0.0f;
+	// Diffuse uses the bumpy derived normal (dynN); specular uses the clean worldN so the
+	// highlight is a crisp glint that tracks the light, not a broad smear over the surface.
+	float3 glow    = SampleDynamicGlowLights(In.WorldPos, dynN, worldN, V, specInt, specPow, dynSpec);
+	texColor.rgb   = ApplyDynamicGlowLighting(texColor.rgb, glow);
+	specular      += dynSpec;
 #endif
 
 #if !NO_CSM
-    float shadow = SampleShadow(In.WorldPos, In.ViewDepth);
+    float shadow = SampleShadow(In.WorldPos, In.WorldNormal, In.ViewDepth);
     float shadowStrength = cb_ShadowParams.w;
     float shadowScale = shadow * shadowStrength + (1.0f - shadowStrength);
+    // Specular uses the *raw* shadow (no ambient floor): a sun highlight shouldn't survive
+    // where the sun is occluded, even though diffuse keeps the lifted shadow for art.
+    float specShadow = shadow;
 #else
     float shadowScale = 1.0f;
+    float specShadow  = 1.0f;
 #endif
 
-    // Per-material Blinn-Phong sun specular: only on lit, sun-facing surfaces.
-    float3 specular = 0.0f;
+    // Normal-map detail shading: add only the *delta* in sun lambert caused by the bump,
+    // so it sculpts the surface without double-counting the game's baked vertex lighting.
+    // Zero when there's no normal map (worldN == Ngeo); gated by shadow (it's sun-driven).
+    {
+        float bumpDelta = saturate(dot(worldN, cb_SunDirection.xyz)) - saturate(dot(Ngeo, cb_SunDirection.xyz));
+        texColor.rgb *= clamp(1.0f + bumpDelta * 1.5f * shadowScale * parallaxShadow, 0.0f, 2.0f);
+    }
+
+    // Crevice darkening from the parallax self-shadow. 0.75 = floor brightness.
+    texColor.rgb *= lerp(0.75f, 1.0f, parallaxShadow);
+
+    // Per-material Blinn-Phong sun specular (roughness-shaped, killed in shadow).
     if (cb_Reflectivity.z > 0.0f)
     {
-        float3 N = normalize(In.WorldNormal);
-        float3 V = normalize(cb_CameraPos.xyz - In.WorldPos); // toward the camera
+        float3 N = worldN;
         if (dot(N, V) < 0.0f) N = -N;
         float3 L = cb_SunDirection.xyz;                       // toward the sun
         float3 H = normalize(L + V);
-        float  specTerm = pow(saturate(dot(N, H)), cb_Reflectivity.w);
-        specular = specTerm * cb_Reflectivity.z * shadowScale * saturate(dot(N, L));
+        float  specTerm = pow(saturate(dot(N, H)), specPow);
+        specular += specTerm * specInt * specShadow * saturate(dot(N, L)) * parallaxShadow;
     }
 
 #if !NO_FOG
@@ -150,8 +346,8 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
     Out.Color = float4(finalColor, texColor.a);
     // G-buffer: rg = octahedral normal, b = reflectivity, a = pack(fresnelPower, roughness).
     Out.GBuffer = float4(
-        OctEncodeNormal(normalize(In.WorldNormal)),
+        OctEncodeNormal(worldN),
         cb_Reflectivity.x,
-        PackFresnelRoughness(cb_Reflectivity.y, cb_SunDirection.w));
+        PackFresnelRoughness(cb_Reflectivity.y, surfRoughness));
     return Out;
 }

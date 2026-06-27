@@ -3,8 +3,8 @@
 #include "RenderDX11.h"
 #include "MaterialParams.h"
 #include "Editor.h"
+#include "Settings.h"
 #include "CSM/CSMManager.h"
-#include "CSM/CSMShadowBatch.h"
 
 #include "UI/FontRenderer.h"
 
@@ -66,6 +66,7 @@ extern TFLOAT g_flXeGTAOThinOccluderCompensation;
 extern TBOOL  g_bSSREnabled;
 extern TBOOL  g_bSSRDebug;
 extern TBOOL  g_bSSRDebugNormals;
+extern TBOOL  g_bDebugTangents;
 extern TFLOAT g_flSSRIntensity;
 extern TFLOAT g_flSSRMaxDistance;
 extern TFLOAT g_flSSRThickness;
@@ -156,22 +157,70 @@ public:
 		}
 
 		ImGui::Separator();
-		ImGui::TextUnformatted( "Shadow Settings" );
+		ImGui::TextUnformatted( "Shadow Settings (Global)" );
 		ImGui::Checkbox( "Enable CSM", &remaster::g_bCSMEnabled );
 		ImGui::SliderFloat( "Shadow Intensity", &remaster::g_flShadowIntensity, 0.0f, 1.0f );
 		ImGui::DragFloat( "Shadow Distance", &remaster::g_flShadowDistance, 1.0f, 10.0f, 500.0f, "%.0f m" );
-		ImGui::DragFloat( "Cascade Padding", &remaster::g_flShadowCascadePadding, 0.25f, 0.0f, 50.0f, "%.1f m" );
-		ImGui::DragFloat( "Caster Padding", &remaster::g_flShadowCasterPadding, 1.0f, 0.0f, 300.0f, "%.0f m" );
-		ImGui::DragFloat( "Slope Depth Bias", &remaster::g_flShadowSlopeScaledDepthBias, 0.01f, 0.0f, 5.0f, "%.2f" );
-		ImGui::DragFloat( "Min Slope Depth Bias", &remaster::g_flShadowMinSlopeScaledDepthBias, 0.01f, 0.0f, 5.0f, "%.2f" );
-		ImGui::DragFloat( "Receiver Bias", &remaster::g_flShadowReceiverBias, 0.00005f, 0.0f, 0.01f, "%.5f" );
-		ImGui::SliderFloat( "Receiver Plane Bias", &remaster::g_flShadowReceiverPlaneBias, 0.0f, 2.0f, "%.2f" );
-		ImGui::SliderFloat( "PCF Radius", &remaster::g_flShadowPCFRadius, 1.0f, 3.0f, "%.0f" );
+		ImGui::SliderFloat( "Split Lambda", &remaster::g_flShadowSplitLambda, 0.0f, 1.0f, "%.2f" );
 		ImGui::SliderFloat( "Cascade Blend", &remaster::g_flShadowCascadeBlend, 0.0f, 0.5f, "%.2f" );
-		ImGui::Text( "Shadow batches: %d sections, %d groups, %d captured",
-		    remaster::CSMShadowBatch::GetSingleton().GetSectionCount(),
-		    remaster::CSMShadowBatch::GetSingleton().GetGroupCount(),
-		    remaster::CSMShadowBatch::GetSingleton().GetCapturedCount() );
+		ImGui::DragFloat( "Min Slope Depth Bias", &remaster::g_flShadowMinSlopeScaledDepthBias, 0.01f, 0.0f, 5.0f, "%.2f" );
+		ImGui::SliderFloat( "Receiver Plane Bias", &remaster::g_flShadowReceiverPlaneBias, 0.0f, 2.0f, "%.2f" );
+		ImGui::SliderFloat( "Normal Offset", &remaster::g_flShadowNormalOffsetScale, 0.0f, 8.0f, "%.2f texels" );
+		ImGui::SliderFloat( "Grazing Scale", &remaster::g_flShadowGrazingScale, 1.0f, 16.0f, "%.1fx" );
+
+		ImGui::TextUnformatted( "Per-Cascade Settings" );
+
+		// One row per tunable, one column per cascade. Each cell drives the matching
+		// entry of the per-cascade global arrays in CSMManager.
+		auto CascadeRow = [ & ]( const char* a_szLabel, TFLOAT* a_pValues, TFLOAT a_fSpeed, TFLOAT a_fMin, TFLOAT a_fMax, const char* a_szFormat )
+		{
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			ImGui::TextUnformatted( a_szLabel );
+			for ( TINT i = 0; i < remaster::CSM_CASCADE_COUNT; i++ )
+			{
+				ImGui::TableNextColumn();
+				ImGui::PushID( a_szLabel );
+				ImGui::PushID( i );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				ImGui::DragFloat( "##v", &a_pValues[ i ], a_fSpeed, a_fMin, a_fMax, a_szFormat );
+				ImGui::PopID();
+				ImGui::PopID();
+			}
+		};
+
+		if ( ImGui::BeginTable( "CSM Cascades", remaster::CSM_CASCADE_COUNT + 1, ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchSame ) )
+		{
+			const char* apCascadeHeaders[] = { "Param", "Cascade 0", "Cascade 1", "Cascade 2" };
+			for ( TINT i = 0; i < remaster::CSM_CASCADE_COUNT + 1; i++ )
+				ImGui::TableSetupColumn( apCascadeHeaders[ i ] );
+			ImGui::TableHeadersRow();
+
+			CascadeRow( "Cascade Pad", remaster::g_aflShadowCascadePadding, 0.25f, 0.0f, 50.0f, "%.1f m" );
+			CascadeRow( "Caster Pad", remaster::g_aflShadowCasterPadding, 1.0f, 0.0f, 300.0f, "%.0f m" );
+			CascadeRow( "Slope Bias", remaster::g_aflShadowSlopeScaledDepthBias, 0.01f, 0.0f, 5.0f, "%.2f" );
+			CascadeRow( "Receiver Bias", remaster::g_aflShadowReceiverBias, 0.00005f, 0.0f, 0.01f, "%.5f" );
+			CascadeRow( "PCF Radius", remaster::g_aflShadowPCFRadius, 1.0f, 1.0f, 3.0f, "%.0f" );
+
+			ImGui::EndTable();
+		}
+
+		ImGui::TextUnformatted( "Cloud Shadows" );
+		ImGui::Checkbox( "Enable Cloud Shadows", &remaster::g_bCloudShadowsEnabled );
+		if ( remaster::g_bCloudShadowsEnabled )
+		{
+			if ( !remaster::g_bCSMEnabled )
+				ImGui::TextDisabled( "(requires CSM enabled)" );
+			ImGui::Checkbox( "Clouds in Volumetric Fog", &remaster::g_bCloudShadowsVolumetrics );
+			ImGui::SliderFloat( "Cloud Strength", &remaster::g_flCloudShadowStrength, 0.0f, 1.0f, "%.2f" );
+			ImGui::DragFloat( "Cloud Region Size", &remaster::g_flCloudShadowRegionSize, 5.0f, 50.0f, 2000.0f, "%.0f m" );
+			ImGui::SliderFloat( "Cloud Feature Scale", &remaster::g_flCloudShadowFeatureScale, 0.001f, 0.05f, "%.4f" );
+			ImGui::SliderFloat( "Cloud Coverage", &remaster::g_flCloudShadowCoverage, -0.5f, 1.0f, "%.2f" );
+			ImGui::SliderFloat( "Cloud Density", &remaster::g_flCloudShadowDensity, 0.0f, 16.0f, "%.1f" );
+			ImGui::SliderFloat( "Cloud Contrast", &remaster::g_flCloudShadowContrast, 0.1f, 4.0f, "%.2f" );
+			ImGui::SliderFloat( "Cloud Speed", &remaster::g_flCloudShadowSpeed, 0.0f, 0.5f, "%.3f" );
+			ImGui::DragFloat2( "Cloud Wind Dir", remaster::g_flCloudShadowWindDir, 0.01f, -1.0f, 1.0f, "%.2f" );
+		}
 
 		ImGui::Separator();
 		ImGui::TextUnformatted( "Screen-Space AO" );
@@ -219,6 +268,10 @@ public:
 				ImGui::SliderFloat( "SSR Fresnel Power", &remaster::g_flSSRFresnelPower, 0.0f, 8.0f, "%.2f" );
 				ImGui::SliderFloat( "SSR Edge Fade", &remaster::g_flSSREdgeFade, 0.5f, 8.0f, "%.2f" );
 			}
+
+			ImGui::Separator();
+			ImGui::TextUnformatted( "Tangents" );
+			ImGui::Checkbox( "Debug Tangents (world)", &remaster::g_bDebugTangents );
 
 			ImGui::Separator();
 			ImGui::TextUnformatted( "Sun Shafts" );
@@ -295,10 +348,9 @@ public:
 
 	virtual void OnImGuiRenderOverlay( AImGUI* a_pImGui )
 	{
-		if ( editor::g_bEnabled )
-		{
-			editor::Render();
-		}
+		if ( editor::g_bEnabled ) editor::Render();
+
+		settings::Render();
 
 		if ( m_bDebugFontAtlas )
 		{
@@ -328,7 +380,7 @@ public:
 
 	virtual TBOOL IsOverlayVisible() OVERRIDE
 	{
-		return ( editor::g_bEnabled || m_bDebugFontAtlas );
+		return ( editor::g_bEnabled || settings::g_bEnabled || m_bDebugFontAtlas );
 	}
 };
 

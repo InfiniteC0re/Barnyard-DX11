@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "Editor.h"
+#include "Settings.h"
 #include "DynamicGlowLights.h"
 
 using namespace remaster;
@@ -233,22 +234,48 @@ static void RemoveLight( TINT a_iIndex )
 // Input hook
 // ============================================================
 
+// True while this module is holding an ImGui input lock for a debug overlay.
+static bool s_bDebugInputLocked = false;
+
+// Acquires/releases the ImGui input lock exactly once to match whether any debug overlay
+// is open. AImGUI's lock is a counter (m_iNumInputLocks); calling LockInput on every
+// toggle would let it drift above zero and never release, leaving the game unable to
+// receive input. Tracking our own held state keeps the counter balanced.
+static void SyncDebugInputLock()
+{
+	const bool bWantLock = g_bEnabled || settings::g_bEnabled;
+	if ( bWantLock == s_bDebugInputLocked )
+		return;
+
+	if ( bWantLock )
+		g_pImGui->LockInput();
+	else
+		g_pImGui->UnlockInput();
+
+	s_bDebugInputLocked = bWantLock;
+}
+
 MEMBER_HOOK( 0x004293d0, AGameStateController, AGameStateController_ProcessInput, TBOOL, TInputInterface::InputEvent* a_pInputEvent )
 {
-	if ( a_pInputEvent->GetEventType() == TInputInterface::EVENT_TYPE_GONE_DOWN && a_pInputEvent->GetDoodad() == TInputDeviceKeyboard::KEY_Z )
+	if ( a_pInputEvent->GetEventType() == TInputInterface::EVENT_TYPE_GONE_DOWN )
 	{
 		Toshi::TInputDeviceKeyboard* pKeyboard = TSTATICCAST( Toshi::TInputDeviceKeyboard, a_pInputEvent->GetSource() );
 
-		if ( pKeyboard->IsAltDown() )
+		if ( pKeyboard->IsAltDown() && a_pInputEvent->GetDoodad() == TInputDeviceKeyboard::KEY_Z )
 		{
-			static bool s_bCursorWasVisible;
-			if ( !g_bEnabled ) s_bCursorWasVisible = AGUI2::GetSingleton()->m_bShowMouseCursor;
-
 			g_bEnabled = !g_bEnabled;
+			if ( g_bEnabled ) settings::g_bEnabled = false; // only one debug overlay open at a time
 
-			if ( g_bEnabled ) g_pImGui->LockInput();
-			else g_pImGui->UnlockInput();
+			SyncDebugInputLock();
+			return TTRUE;
+		}
 
+		if ( pKeyboard->IsAltDown() && a_pInputEvent->GetDoodad() == TInputDeviceKeyboard::KEY_G )
+		{
+			settings::g_bEnabled = !settings::g_bEnabled;
+			if ( settings::g_bEnabled ) g_bEnabled = false; // only one debug overlay open at a time
+
+			SyncDebugInputLock();
 			return TTRUE;
 		}
 	}

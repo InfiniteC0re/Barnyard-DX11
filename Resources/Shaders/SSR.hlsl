@@ -182,7 +182,11 @@ float4 ps_gather( PS_IN i ) : SV_TARGET
     float  edgeFade = saturate( 1.0f - pow( max( edge.x, edge.y ), max( cb_MarchParams.z, 0.0001f ) ) );
 
     float3 reflColor = colorTexture.SampleLevel( linearSampler, hitUV, 0 ).rgb;
-    float  confidence = saturate( fresnel * edgeFade * cb_Params.x * reflectivity );
+
+    // Rough surfaces scatter their reflection, so fade the sharp screen-space hit as
+    // roughness rises (the blur pass also widens it). Smooth (0) keeps full strength.
+    float  roughFade  = 1.0f - saturate( roughness );
+    float  confidence = saturate( fresnel * edgeFade * cb_Params.x * reflectivity * roughFade );
 
     return float4( reflColor, confidence );
 }

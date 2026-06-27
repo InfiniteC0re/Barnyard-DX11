@@ -9,7 +9,6 @@
 #include "Shader/SysShader.h"
 #include "Ref/AWorld.h"
 #include "Ref/AWorldVIS.h"
-#include "CSM/CSMShadowBatch.h"
 #include "Resource/TextureResource.h"
 #include "Resource/Viewport.h"
 #include "Resource/OrderTable.h"
@@ -33,6 +32,7 @@
 #include "Generated/HBAOCompositeShaderCombos.h"
 #include "Generated/VolumetricFogShaderCombos.h"
 #include "Generated/VolumetricFogCompositeShaderCombos.h"
+#include "Generated/CloudShadowShaderCombos.h"
 #include "RenderContentDX11.h"
 #include "DynamicGlowLights.h"
 
@@ -46,6 +46,14 @@
 #include <BYardSDK/AGlowViewport.h>
 
 #include <Platform/DX8/TRenderInterface_DX8.h>
+#include <Render/TVertexFactoryResourceInterface.h>
+#include <Platform/DX8/TVertexPoolResource_DX8.h>
+#include <Platform/DX8/TIndexPoolResource_DX8.h>
+#include "Ref/AWorld.h"
+#include "Ref/AWorldShader/AWorldMesh.h"
+#include "MaterialParams.h"
+#include "DirectXTex/DirectXTex.h"
+#include <File/TTRB.h>
 
 //-----------------------------------------------------------------------------
 // Enables memory debugging.
@@ -54,6 +62,160 @@
 #include <Core/TMemoryDebugOn.h>
 
 TOSHI_NAMESPACE_USING
+
+namespace remaster
+{
+
+TBOOL  g_bSunShaftsEnabled       = TTRUE;
+TFLOAT g_flSunShaftsAlpha        = 0.04f;
+TFLOAT g_flSunShaftsRaysLength   = 0.3f;
+TFLOAT g_flSunShaftsTint[ 3 ]    = { 1.0f, 0.91f, 0.8f };
+TINT   g_iSunShaftsKawaseLevels  = 1;
+TFLOAT g_flSunShaftsKawaseOffset = 1.0f;
+
+TBOOL  g_bGlowBloomEnabled       = TTRUE;
+TINT   g_iGlowBloomKawaseLevels  = 2;
+TFLOAT g_flGlowBloomKawaseOffset = 1.7f;
+TFLOAT g_flGlowBloomIntensity    = 0.715f;
+
+TBOOL g_bHBAOEnabled = TTRUE;
+TBOOL g_bHBAODebug   = TFALSE;
+
+TBOOL  g_bSSREnabled                      = TTRUE;
+TBOOL  g_bSSRDebug                        = TFALSE;
+TBOOL  g_bSSRDebugNormals                 = TFALSE; // visualise G-buffer world normals
+TFLOAT g_flSSRIntensity                   = 1.0f;
+TFLOAT g_flSSRMaxDistance                 = 30.0f;
+TFLOAT g_flSSRThickness                   = 0.4f;
+TFLOAT g_flSSRStepSize                    = 0.15f;
+TINT   g_iSSRMaxSteps                     = 80;
+TFLOAT g_flSSRFresnelPower                = 4.0f;
+TFLOAT g_flSSREdgeFade                    = 3.0f;
+TBOOL  g_bDebugTangents                   = TFALSE; // visualise precomputed world-mesh tangents
+TINT   g_iAOAlgorithm                     = 0;
+TFLOAT g_flHBAORadius                     = 0.7f;
+TFLOAT g_flHBAOSceneScale                 = 1.0f;
+TFLOAT g_flHBAOBias                       = 0.10f;
+TFLOAT g_flHBAOIntensity                  = 1.0f;
+TFLOAT g_flHBAOPower                      = 1.0f;
+TFLOAT g_flHBAOBlurSharpness              = 4.0f;
+TFLOAT g_flXeGTAORadiusMultiplier         = 1.457f;
+TFLOAT g_flXeGTAOFalloffRange             = 0.9f;
+TFLOAT g_flXeGTAOSampleDistributionPower  = 2.8f;
+TFLOAT g_flXeGTAOThinOccluderCompensation = 0.5f;
+
+TBOOL  g_bVolumetricFogEnabled       = TTRUE;
+TINT   g_iVolumetricFogCompositeMode = 0;
+TFLOAT g_flVolumetricFogDensity      = 0.019f;
+TFLOAT g_flVolumetricFogG            = 0.0f;
+TFLOAT g_flVolumetricFogMaxDist      = 44.0f;
+TFLOAT g_flVolumetricFogIntensity    = 0.16f;
+TFLOAT g_flVolumetricFogColor[ 3 ]   = { 0.937f, 0.8f, 0.5254f };
+
+// --- Normal/roughness map loading -------------------------------------------
+static Toshi::T2Map<TUINT32, void*, MaterialHashComparator>& GetTextureCache()
+{
+	static Toshi::T2Map<TUINT32, void*, MaterialHashComparator> s_oCache;
+	return s_oCache;
+}
+
+// Re-apply params to every live material in the game's pool (AModelLoader::ms_oNodesAlloc
+// at 0x0079b848), so hot-reload reaches materials that exist but weren't matched at
+// creation time (e.g. a newly-added XML entry for an already-loaded material).
+void ApplyParamsToAllMaterials()
+{
+	// Layout mirror of AModelLoader::MaterialNode (T2DList::Node = {next,prev} + fields).
+	struct MaterialNode
+	{
+		void*             pNext;
+		void*             pPrev;
+		Toshi::TMaterial* pMaterial;
+		TCHAR             szName[ 64 ];
+		TUINT16           iNumRefs;
+		TUINT16           iId;
+		TCHAR             szTextureName[ 32 ];
+	};
+
+	auto* pNodes = reinterpret_cast<MaterialNode*>( 0x0079b848 );
+	for ( TUINT i = 0; i < 512; i++ ) // MAX_NUM_ALLOCATED_MATERIALS
+	{
+		MaterialNode& rNode = pNodes[ i ];
+		if ( rNode.iNumRefs == 0 || !rNode.pMaterial )
+			continue; // free/empty slot
+
+		// Strip the "ws_"/"ss_"/"gs_" shader prefix to recover the authored name.
+		const TCHAR* szName = rNode.szName;
+		if ( szName[ 0 ] && szName[ 1 ] && szName[ 2 ] == '_' )
+			szName += 3;
+
+		ApplyParamsToMaterial( rNode.pMaterial, HashMaterialName( szName ) );
+	}
+}
+
+// Release every cached SRV and empty the cache, so the next LoadCachedTexture re-reads
+// from disk. Used by material hot-reload to pick up edited image files.
+void ClearTextureCache()
+{
+	auto& rCache = GetTextureCache();
+	for ( auto it = rCache.Begin(); it != rCache.End(); it++ )
+	{
+		auto* pSRV = (ID3D11ShaderResourceView*)it.GetValue()->GetSecond();
+		if ( pSRV ) pSRV->Release();
+	}
+	rCache.Clear();
+}
+
+// Load an image file (Data\Textures\<name>) into a D3D11 SRV, caching by name so a map
+// shared by several materials is loaded only once. PNG/TGA load as linear (correct for
+// normal/roughness data); DDS as authored. Returns TNULL on a missing/bad file.
+void* LoadCachedTexture( const TCHAR* a_szName )
+{
+	auto& s_oCache = GetTextureCache();
+
+	const TUINT32 uHash = HashMaterialName( a_szName );
+	auto          it    = s_oCache.Find( uHash );
+	if ( s_oCache.IsValid( it ) )
+		return it.GetValue()->GetSecond();
+
+	void* pResult = TNULL;
+
+	Toshi::TString8 oPath = TEXTURE_DIR;
+	oPath += a_szName;
+
+	Toshi::TFile* pFile = Toshi::TFile::Create( oPath, Toshi::TFILEMODE_READ );
+	if ( pFile )
+	{
+		const TUINT uiSize = pFile->GetSize();
+		void*       pData  = TMalloc( uiSize );
+
+		if ( pData && pFile->Read( pData, uiSize ) == uiSize )
+		{
+			DirectX::TexMetadata  oMeta;
+			DirectX::ScratchImage oImage;
+
+			const uint8_t* pBytes = static_cast<const uint8_t*>( pData );
+			HRESULT hRes = DirectX::LoadFromDDSMemory( pBytes, uiSize, DirectX::DDS_FLAGS_NONE, &oMeta, oImage );
+			if ( FAILED( hRes ) ) hRes = DirectX::LoadFromTGAMemory( pBytes, uiSize, DirectX::TGA_FLAGS_NONE, &oMeta, oImage );
+			// IGNORE_SRGB: normal/roughness data is linear, never gamma-encoded.
+			if ( FAILED( hRes ) ) hRes = DirectX::LoadFromWICMemory( pBytes, uiSize, DirectX::WIC_FLAGS_IGNORE_SRGB, &oMeta, oImage );
+
+			if ( SUCCEEDED( hRes ) )
+			{
+				ID3D11ShaderResourceView* pSRV = TNULL;
+				DirectX::CreateShaderResourceView( g_pRender->GetD3D11Device(), oImage.GetImages(), oImage.GetImageCount(), oMeta, &pSRV );
+				pResult = pSRV;
+			}
+		}
+
+		if ( pData ) TFree( pData );
+		pFile->Destroy();
+	}
+
+	s_oCache.Insert( uHash, pResult ); // cache misses too, to avoid repeated disk hits
+	return pResult;
+}
+
+} // namespace remaster
 
 static TBOOL __stdcall LoadTRBModelCallback( TModel* a_pModel )
 {
@@ -234,14 +396,128 @@ HOOK( 0x005e7d10, RenderCellMeshDefault, void, CellMeshSphere* a_pMeshSphere, Re
 	if ( bNormalPass ) pContext->ClearLightIDs();
 }
 
-// Build merged per-material shadow buffers for each streamed world section once
-// its meshes are loaded. The original walks the WorldDatabase and fills per-mesh
-// GPU pools; afterwards every CellMesh has a valid pMesh, so we can group them.
-HOOK( 0x00613a40, AModelLoader_LoadWorldMeshTRB_Shadow, void, TModel* a_pModel, TINT a_iLODIndex, TModelLOD* a_pLOD, TTMDWin::TRBLODHeader* a_pLODHeader )
+// Per-vertex accumulator for the tangent solve.
+struct TangentAccum { TFLOAT tx, ty, tz, bx, by, bz; };
+
+// Compute per-vertex tangents (Lengyel's method) for a triangle-strip world mesh and
+// write float4 tangents (xyz = orthonormal tangent, w = handedness) into a_pOut, 4
+// floats per vertex. The UV-gradient tangent is winding-independent, so triangle-strip
+// winding flips need no special handling; degenerate strip-stitch triangles and
+// zero-UV-area triangles are skipped.
+void GenerateWorldMeshTangents( const WorldVertex* a_pVerts, TUINT a_uiNumVerts, const TUINT16* a_pIndices, TUINT a_uiNumIndices, TFLOAT* a_pOut )
+{
+	TangentAccum* pAccum = new TangentAccum[ a_uiNumVerts ]();
+
+	for ( TUINT i = 0; i + 2 < a_uiNumIndices; i++ )
+	{
+		const TUINT16 i0 = a_pIndices[ i ], i1 = a_pIndices[ i + 1 ], i2 = a_pIndices[ i + 2 ];
+		if ( i0 == i1 || i1 == i2 || i0 == i2 ) continue;                   // degenerate strip stitch
+		if ( i0 >= a_uiNumVerts || i1 >= a_uiNumVerts || i2 >= a_uiNumVerts ) continue; // out-of-range guard
+
+		const WorldVertex& v0 = a_pVerts[ i0 ];
+		const WorldVertex& v1 = a_pVerts[ i1 ];
+		const WorldVertex& v2 = a_pVerts[ i2 ];
+
+		const TFLOAT e1x = v1.Position.x - v0.Position.x, e1y = v1.Position.y - v0.Position.y, e1z = v1.Position.z - v0.Position.z;
+		const TFLOAT e2x = v2.Position.x - v0.Position.x, e2y = v2.Position.y - v0.Position.y, e2z = v2.Position.z - v0.Position.z;
+
+		const TFLOAT du1 = v1.UV.x - v0.UV.x, dv1 = v1.UV.y - v0.UV.y;
+		const TFLOAT du2 = v2.UV.x - v0.UV.x, dv2 = v2.UV.y - v0.UV.y;
+
+		const TFLOAT det = du1 * dv2 - du2 * dv1;
+		if ( TMath::Abs( det ) < 1e-8f ) continue; // no UV area
+		const TFLOAT r = 1.0f / det;
+
+		const TFLOAT tx = ( e1x * dv2 - e2x * dv1 ) * r, ty = ( e1y * dv2 - e2y * dv1 ) * r, tz = ( e1z * dv2 - e2z * dv1 ) * r;
+		const TFLOAT bx = ( e2x * du1 - e1x * du2 ) * r, by = ( e2y * du1 - e1y * du2 ) * r, bz = ( e2z * du1 - e1z * du2 ) * r;
+
+		const TUINT16 tri[ 3 ] = { i0, i1, i2 };
+		for ( TINT j = 0; j < 3; j++ )
+		{
+			TangentAccum& a = pAccum[ tri[ j ] ];
+			a.tx += tx; a.ty += ty; a.tz += tz;
+			a.bx += bx; a.by += by; a.bz += bz;
+		}
+	}
+
+	for ( TUINT i = 0; i < a_uiNumVerts; i++ )
+	{
+		const TVector3&     N = a_pVerts[ i ].Normal;
+		const TangentAccum& a = pAccum[ i ];
+
+		// Gram-Schmidt orthonormalize the accumulated tangent against the normal.
+		const TFLOAT ndt = N.x * a.tx + N.y * a.ty + N.z * a.tz;
+		TFLOAT       tx = a.tx - N.x * ndt, ty = a.ty - N.y * ndt, tz = a.tz - N.z * ndt;
+		TFLOAT       len = TMath::Sqrt( tx * tx + ty * ty + tz * tz );
+
+		if ( len > 1e-6f )
+		{
+			const TFLOAT inv = 1.0f / len;
+			tx *= inv; ty *= inv; tz *= inv;
+		}
+		else
+		{
+			// No usable UV gradient: synthesise any tangent perpendicular to N via
+			// cross(ref, N) with a reference axis that isn't parallel to N.
+			const TFLOAT rx = ( TMath::Abs( N.y ) < 0.99f ) ? 0.0f : 1.0f;
+			const TFLOAT ry = ( TMath::Abs( N.y ) < 0.99f ) ? 1.0f : 0.0f;
+			tx = ry * N.z;
+			ty = -rx * N.z;
+			tz = rx * N.y - ry * N.x;
+			len = TMath::Sqrt( tx * tx + ty * ty + tz * tz );
+			const TFLOAT inv = ( len > 1e-6f ) ? 1.0f / len : 0.0f;
+			tx *= inv; ty *= inv; tz *= inv;
+		}
+
+		// Handedness = sign of dot(cross(N, T), accumulated bitangent).
+		const TFLOAT cx = N.y * tz - N.z * ty;
+		const TFLOAT cy = N.z * tx - N.x * tz;
+		const TFLOAT cz = N.x * ty - N.y * tx;
+		const TFLOAT handedness = ( cx * a.bx + cy * a.by + cz * a.bz ) < 0.0f ? -1.0f : 1.0f;
+
+		TFLOAT* pOut = a_pOut + i * 4;
+		pOut[ 0 ] = tx; pOut[ 1 ] = ty; pOut[ 2 ] = tz; pOut[ 3 ] = handedness;
+	}
+
+	delete[] pAccum;
+}
+
+// Fill the tangent stream (managed vertex slot 1) for every world mesh in a freshly
+// loaded LOD. The managed->HAL upload is lazy (first render), so writing the managed
+// array here is enough; no lock or re-upload needed.
+void GenerateWorldTangentsForLOD( TModelLOD* a_pLOD )
+{
+	for ( TINT k = 0; k < a_pLOD->iNumMeshes; k++ )
+	{
+		AWorldMesh* pMesh = TSTATICCAST( AWorldMesh, a_pLOD->ppMeshes[ k ] );
+		if ( !pMesh ) continue;
+
+		auto pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
+		auto pIndexPool  = TSTATICCAST( TIndexPoolResource, pMesh->GetSubMesh( 0 )->pIndexPool );
+		if ( !pVertexPool || !pIndexPool ) continue;
+
+		const TUINT uiNumVerts   = pVertexPool->GetNumVertices();
+		const TUINT uiNumIndices = pIndexPool->GetNumIndices();
+		if ( uiNumVerts == 0 || uiNumIndices < 3 ) continue;
+
+		const WorldVertex* pVerts    = TREINTERPRETCAST( const WorldVertex*, pVertexPool->GetManagedStream( 0 ) );
+		TFLOAT*            pTangents = TREINTERPRETCAST( TFLOAT*, pVertexPool->GetManagedStream( 1 ) );
+		const TUINT16*     pIndices  = pIndexPool->GetIndices();
+		if ( !pVerts || !pTangents || !pIndices ) continue;
+
+		GenerateWorldMeshTangents( pVerts, uiNumVerts, pIndices, uiNumIndices, pTangents );
+	}
+}
+
+// Generate the tangent stream for each streamed world section once its meshes are
+// loaded. The original walks the WorldDatabase and fills per-mesh GPU pools;
+// afterwards every CellMesh has a valid pMesh.
+HOOK( 0x00613a40, AModelLoader_LoadWorldMeshTRB_Tangents, void, TModel* a_pModel, TINT a_iLODIndex, TModelLOD* a_pLOD, TTMDWin::TRBLODHeader* a_pLODHeader )
 {
 	CallOriginal( a_pModel, a_iLODIndex, a_pLOD, a_pLODHeader );
 
-	//remaster::CSMShadowBatch::GetSingleton().BuildSection( a_pModel, a_pLOD );
+	// Generate the tangent stream for the freshly loaded world meshes (slot 1).
+	GenerateWorldTangentsForLOD( a_pLOD );
 }
 
 static ID3D11Texture2D*          s_pSkyMaskTexture            = TNULL;
@@ -317,6 +593,27 @@ static ID3D11Buffer*       s_pKawaseCBuffer       = TNULL;
 static ID3D11SamplerState* s_pPointClampSampler   = TNULL;
 static ID3D11SamplerState* s_pLinearClampSampler  = TNULL;
 
+// Cloud shadow bake target (top-down sun-amount map) + its generation cbuffer. The
+// SRV/sampler are exposed via the externs in CSMManager.h so the receivers can bind
+// them in StartFlush.
+static ID3D11Texture2D*          s_pCloudShadowTexture = TNULL;
+static ID3D11RenderTargetView*   s_pCloudShadowRTV     = TNULL;
+static ID3D11Buffer*             s_pCloudShadowCBuffer = TNULL;
+static constexpr TUINT           s_uiCloudShadowRes    = 1024;
+
+namespace remaster
+{
+ID3D11ShaderResourceView* g_pCloudShadowSRV     = TNULL;
+ID3D11SamplerState*       g_pCloudShadowSampler = TNULL;
+}
+
+struct CloudShadowCBuffer
+{
+	TFLOAT region[ 4 ]; // xy = world region min (X,Z), z = region size, w = feature scale
+	TFLOAT anim[ 4 ];   // x = time, yz = wind dir, w = coverage
+	TFLOAT shape[ 4 ];  // x = density, y = contrast
+};
+
 struct HBAOCBuffer
 {
 	TFLOAT projection[ 4 ];
@@ -382,6 +679,7 @@ struct VolumetricFogCBuffer
 	TFLOAT fogColor[ 4 ];
 	TFLOAT fogParams[ 4 ];
 	TFLOAT frameParams[ 4 ];
+	TFLOAT cloudParams[ 4 ];
 };
 
 struct VolumetricFogCompositeCBuffer
@@ -392,55 +690,6 @@ struct VolumetricFogCompositeCBuffer
 
 static ID3D11Buffer* s_pVolumetricFogConstantBuffer          = TNULL;
 static ID3D11Buffer* s_pVolumetricFogCompositeConstantBuffer = TNULL;
-
-namespace remaster
-{
-TBOOL  g_bSunShaftsEnabled       = TTRUE;
-TFLOAT g_flSunShaftsAlpha        = 0.04f;
-TFLOAT g_flSunShaftsRaysLength   = 0.3f;
-TFLOAT g_flSunShaftsTint[ 3 ]    = { 1.0f, 0.91f, 0.8f };
-TINT   g_iSunShaftsKawaseLevels  = 1;
-TFLOAT g_flSunShaftsKawaseOffset = 1.0f;
-
-TBOOL  g_bGlowBloomEnabled       = TTRUE;
-TINT   g_iGlowBloomKawaseLevels  = 2;
-TFLOAT g_flGlowBloomKawaseOffset = 1.7f;
-TFLOAT g_flGlowBloomIntensity    = 0.715f;
-
-TBOOL g_bHBAOEnabled = TTRUE;
-TBOOL g_bHBAODebug   = TFALSE;
-
-TBOOL  g_bSSREnabled                      = TTRUE;
-TBOOL  g_bSSRDebug                        = TFALSE;
-TBOOL  g_bSSRDebugNormals                 = TFALSE; // visualise G-buffer world normals
-TFLOAT g_flSSRIntensity                   = 1.0f;
-TFLOAT g_flSSRMaxDistance                 = 30.0f;
-TFLOAT g_flSSRThickness                   = 0.4f;
-TFLOAT g_flSSRStepSize                    = 0.15f;
-TINT   g_iSSRMaxSteps                     = 80;
-TFLOAT g_flSSRFresnelPower                = 4.0f;
-TFLOAT g_flSSREdgeFade                    = 3.0f;
-TINT   g_iAOAlgorithm                     = 0;
-TFLOAT g_flHBAORadius                     = 0.7f;
-TFLOAT g_flHBAOSceneScale                 = 1.0f;
-TFLOAT g_flHBAOBias                       = 0.10f;
-TFLOAT g_flHBAOIntensity                  = 1.0f;
-TFLOAT g_flHBAOPower                      = 1.0f;
-TFLOAT g_flHBAOBlurSharpness              = 4.0f;
-TFLOAT g_flXeGTAORadiusMultiplier         = 1.457f;
-TFLOAT g_flXeGTAOFalloffRange             = 0.9f;
-TFLOAT g_flXeGTAOSampleDistributionPower  = 2.8f;
-TFLOAT g_flXeGTAOThinOccluderCompensation = 0.5f;
-
-TBOOL  g_bVolumetricFogEnabled       = TTRUE;
-TINT   g_iVolumetricFogCompositeMode = 0;
-TFLOAT g_flVolumetricFogDensity      = 0.019f;
-TFLOAT g_flVolumetricFogG            = 0.0f;
-TFLOAT g_flVolumetricFogMaxDist      = 44.0f;
-TFLOAT g_flVolumetricFogIntensity    = 0.16f;
-TFLOAT g_flVolumetricFogColor[ 3 ]   = { 0.937f, 0.8f, 0.5254f };
-
-} // namespace remaster
 
 void remaster::RenderDX11::CreateRenderTargets()
 {
@@ -552,6 +801,27 @@ void remaster::RenderDX11::CreateRenderTargets()
 		DX11_API_VALIDATE( GetD3D11Device()->CreateTexture2D( &desc, TNULL, &s_pHBAOBlurTexture ) );
 		DX11_API_VALIDATE( GetD3D11Device()->CreateRenderTargetView( s_pHBAOBlurTexture, TNULL, &s_pHBAOBlurRTV ) );
 		DX11_API_VALIDATE( GetD3D11Device()->CreateShaderResourceView( s_pHBAOBlurTexture, TNULL, &s_pHBAOBlurSRV ) );
+
+		// Cloud shadow bake target: single-channel sun-amount map, fixed resolution.
+		D3D11_TEXTURE2D_DESC cloudDesc = {};
+		cloudDesc.Width              = s_uiCloudShadowRes;
+		cloudDesc.Height             = s_uiCloudShadowRes;
+		cloudDesc.MipLevels          = 1;
+		cloudDesc.ArraySize          = 1;
+		cloudDesc.Format             = DXGI_FORMAT_R8_UNORM;
+		cloudDesc.SampleDesc.Count   = 1;
+		cloudDesc.Usage              = D3D11_USAGE_DEFAULT;
+		cloudDesc.BindFlags          = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+		DX11_API_VALIDATE( GetD3D11Device()->CreateTexture2D( &cloudDesc, TNULL, &s_pCloudShadowTexture ) );
+		DX11_API_VALIDATE( GetD3D11Device()->CreateRenderTargetView( s_pCloudShadowTexture, TNULL, &s_pCloudShadowRTV ) );
+		DX11_API_VALIDATE( GetD3D11Device()->CreateShaderResourceView( s_pCloudShadowTexture, TNULL, &remaster::g_pCloudShadowSRV ) );
+
+		D3D11_BUFFER_DESC cloudCBDesc = {};
+		cloudCBDesc.ByteWidth      = sizeof( CloudShadowCBuffer );
+		cloudCBDesc.Usage          = D3D11_USAGE_DYNAMIC;
+		cloudCBDesc.BindFlags      = D3D11_BIND_CONSTANT_BUFFER;
+		cloudCBDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		DX11_API_VALIDATE( GetD3D11Device()->CreateBuffer( &cloudCBDesc, TNULL, &s_pCloudShadowCBuffer ) );
 
 		D3D11_BUFFER_DESC hbaoCBDesc = {};
 		hbaoCBDesc.ByteWidth         = sizeof( HBAOCBuffer );
@@ -706,6 +976,98 @@ void remaster::RenderDX11::CreateRenderTargets()
 	    D3D11_FLOAT32_MAX,
 	    1
 	);
+
+	// Cloud shadows reuse the linear-clamp sampler (clamp = full sun outside the region).
+	remaster::g_pCloudShadowSampler = s_pLinearClampSampler;
+}
+
+void remaster::RenderDX11::ReleaseRenderTargets()
+{
+	auto fnRelease = []( auto*& a_rpObject )
+	{
+		if ( a_rpObject )
+		{
+			a_rpObject->Release();
+			a_rpObject = TNULL;
+		}
+	};
+
+	// Sky mask / sunshafts
+	fnRelease( s_pSkyMaskShaderResourceView );
+	fnRelease( s_pSkyMaskRenderTargetView );
+	fnRelease( s_pSkyMaskTexture );
+	fnRelease( s_pSunshaftsShaderResourceView );
+	fnRelease( s_pSunshaftsRenderTargetView );
+	fnRelease( s_pSunshaftsTexture );
+	fnRelease( s_pSunShaftsConstantBuffer );
+
+	// Resolved colour / glow / G-buffer
+	fnRelease( s_pResolvedColorSRV );
+	fnRelease( s_pResolvedColorTexture );
+	fnRelease( s_pResolvedGlowSRV );
+	fnRelease( s_pResolvedGlowTexture );
+	fnRelease( s_pResolvedGBufferSRV );
+	fnRelease( s_pResolvedGBufferTexture );
+
+	// Resolved depth
+	fnRelease( s_pResolvedDepthSRV );
+	fnRelease( s_pResolvedDepthRTV );
+	fnRelease( s_pResolvedDepthTexture );
+
+	// HBAO / AO
+	fnRelease( s_pHBAOSRV );
+	fnRelease( s_pHBAORTV );
+	fnRelease( s_pHBAOTexture );
+	fnRelease( s_pHBAOBlurSRV );
+	fnRelease( s_pHBAOBlurRTV );
+	fnRelease( s_pHBAOBlurTexture );
+	fnRelease( s_pHBAOConstantBuffer );
+	fnRelease( s_pXeGTAOConstantBuffer );
+	fnRelease( s_pHBAOBlurConstantBuffer );
+
+	// Cloud shadow bake target (the sampler aliases s_pLinearClampSampler, released below)
+	fnRelease( remaster::g_pCloudShadowSRV );
+	fnRelease( s_pCloudShadowRTV );
+	fnRelease( s_pCloudShadowTexture );
+	fnRelease( s_pCloudShadowCBuffer );
+
+	// SSR
+	fnRelease( s_pSSRSRV );
+	fnRelease( s_pSSRRTV );
+	fnRelease( s_pSSRTexture );
+	fnRelease( s_pSSRBlurSRV );
+	fnRelease( s_pSSRBlurRTV );
+	fnRelease( s_pSSRBlurTexture );
+	fnRelease( s_pSSRConstantBuffer );
+
+	// Dual Kawase blur chain
+	for ( TINT i = 0; i < KAWASE_MAX_LEVELS; i++ )
+	{
+		fnRelease( s_pKawaseSRVs[ i ] );
+		fnRelease( s_pKawaseRTVs[ i ] );
+		fnRelease( s_pKawaseTextures[ i ] );
+	}
+	fnRelease( s_pKawaseCBuffer );
+
+	// Volumetric fog
+	fnRelease( s_pVolumetricFogSRV );
+	fnRelease( s_pVolumetricFogRTV );
+	fnRelease( s_pVolumetricFogTexture );
+	fnRelease( s_pVolumetricFogTemporalSRV );
+	fnRelease( s_pVolumetricFogTemporalRTV );
+	fnRelease( s_pVolumetricFogTemporalTexture );
+	fnRelease( s_pVolumetricFogHistorySRV );
+	fnRelease( s_pVolumetricFogHistoryRTV );
+	fnRelease( s_pVolumetricFogHistoryTexture );
+	fnRelease( s_pVolumetricFogConstantBuffer );
+	fnRelease( s_pVolumetricFogCompositeConstantBuffer );
+	s_bVolumetricFogHistoryValid = TFALSE;
+
+	// Samplers
+	fnRelease( s_pSkyMaskSampler );
+	fnRelease( s_pPointClampSampler );
+	fnRelease( s_pLinearClampSampler );
+	remaster::g_pCloudShadowSampler = TNULL; // aliased s_pLinearClampSampler (now released)
 }
 
 TBOOL g_bHasGlowObjectsThisFrame = TFALSE;
@@ -731,6 +1093,57 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		csmManager.RenderShadowMaps();
 
 	remaster::RenderDynamicGlowShadowMaps();
+
+	//-----------------------------------------------------------------------------
+	// 1b. Cloud shadow bake (animated top-down sun-amount map, sampled in SampleShadow)
+	//-----------------------------------------------------------------------------
+	if ( remaster::g_bCloudShadowsEnabled && s_pCloudShadowRTV )
+	{
+		static TFLOAT s_flCloudTime = 0.0f;
+		s_flCloudTime += a_flDeltaTime * remaster::g_flCloudShadowSpeed;
+
+		const auto&  shadowData  = csmManager.GetShadowCBufferData();
+		const TFLOAT fRegionSize = ( shadowData.cloudParams[ 2 ] > 0.0f ) ? ( 1.0f / shadowData.cloudParams[ 2 ] ) : remaster::g_flCloudShadowRegionSize;
+
+		CloudShadowCBuffer cbData = {};
+		cbData.region[ 0 ] = shadowData.cloudParams[ 0 ];
+		cbData.region[ 1 ] = shadowData.cloudParams[ 1 ];
+		cbData.region[ 2 ] = fRegionSize;
+		cbData.region[ 3 ] = remaster::g_flCloudShadowFeatureScale;
+		cbData.anim[ 0 ]   = s_flCloudTime;
+		cbData.anim[ 1 ]   = remaster::g_flCloudShadowWindDir[ 0 ];
+		cbData.anim[ 2 ]   = remaster::g_flCloudShadowWindDir[ 1 ];
+		cbData.anim[ 3 ]   = remaster::g_flCloudShadowCoverage;
+		cbData.shape[ 0 ]  = remaster::g_flCloudShadowDensity;
+		cbData.shape[ 1 ]  = TMath::Max( remaster::g_flCloudShadowContrast, 0.01f );
+
+		D3D11_MAPPED_SUBRESOURCE mapped;
+		remaster::g_pRender->GetD3D11DeviceContext()->Map( s_pCloudShadowCBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped );
+		TUtil::MemCopy( mapped.pData, &cbData, sizeof( cbData ) );
+		remaster::g_pRender->GetD3D11DeviceContext()->Unmap( s_pCloudShadowCBuffer, 0 );
+
+		D3D11_VIEWPORT oOldVP;
+		TUINT          uiNumVP = 1;
+		remaster::g_pRender->GetD3D11DeviceContext()->RSGetViewports( &uiNumVP, &oOldVP );
+		D3D11_VIEWPORT oCloudVP = oOldVP;
+		oCloudVP.TopLeftX = 0.0f;
+		oCloudVP.TopLeftY = 0.0f;
+		oCloudVP.Width    = TFLOAT( s_uiCloudShadowRes );
+		oCloudVP.Height   = TFLOAT( s_uiCloudShadowRes );
+		remaster::g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &oCloudVP );
+
+		remaster::g_pRender->SetRenderTargetView( s_pCloudShadowRTV, TNULL );
+		remaster::g_pRender->SetCullMode( D3D11_CULL_NONE );
+		remaster::g_pRender->SetBlendEnabled( TFALSE );
+		remaster::g_pRender->SetDepthEnabled( TFALSE );
+		remaster::g_pRender->PSSetConstantBuffer( 1, s_pCloudShadowCBuffer );
+		remaster::g_pRender->DrawScreenRectangle(
+		    remaster::shadercombos::GetCloudShadowPixelShaderCombo_ps_main().GetPixelShader( remaster::shadercombos::CloudShadow_NoCombos )
+		);
+		remaster::g_pRender->PSSetConstantBuffer( 1, TNULL );
+
+		remaster::g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &oOldVP );
+	}
 
 	//-----------------------------------------------------------------------------
 	// 2. Main pass
@@ -1184,6 +1597,10 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		cbFog.frameParams[ 1 ]   = 0.0f;
 		cbFog.frameParams[ 2 ]   = 0.0f;
 		cbFog.frameParams[ 3 ]   = 0.0f;
+		cbFog.cloudParams[ 0 ]   = shadowData.cloudParams[ 0 ];
+		cbFog.cloudParams[ 1 ]   = shadowData.cloudParams[ 1 ];
+		cbFog.cloudParams[ 2 ]   = shadowData.cloudParams[ 2 ];
+		cbFog.cloudParams[ 3 ]   = shadowData.cloudParams[ 3 ];
 		s_uiVolumetricFogFrameIndex++;
 
 		D3D11_MAPPED_SUBRESOURCE fogMapped;
@@ -1220,6 +1637,15 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		{
 			remaster::UploadVolumetricDynamicGlowLightsCBuffer();
 		}
+		// Cloud shadows in the fog are an independent toggle (the per-step tap is the
+		// priciest cloud consumer); bind + compile them in only when both are on.
+		const TBOOL bFogClouds = remaster::g_bCloudShadowsEnabled && remaster::g_bCloudShadowsVolumetrics;
+		if ( bFogClouds )
+		{
+			uiVolumetricFogComboFlags |= remaster::shadercombos::VolumetricFog_CLOUD_SHADOWS;
+			remaster::g_pRender->PSSetShaderResource( 2, remaster::g_pCloudShadowSRV );
+			remaster::g_pRender->PSSetSamplerState( 2, remaster::g_pCloudShadowSampler );
+		}
 		const TUINT uiVolumetricFogComboIndex = remaster::shadercombos::GetVolumetricFogComboIndex( uiVolumetricFogComboFlags );
 		remaster::g_pRender->SetCullMode( D3D11_CULL_NONE );
 		remaster::g_pRender->SetBlendEnabled( TFALSE );
@@ -1238,6 +1664,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		}
 		remaster::g_pRender->PSSetShaderResource( 0, TNULL );
 		remaster::g_pRender->PSSetShaderResource( 1, TNULL );
+		remaster::g_pRender->PSSetShaderResource( 2, TNULL );
 		remaster::g_pRender->PSSetShaderResource( 6, TNULL );
 		remaster::g_pRender->PSSetConstantBuffer( 1, TNULL );
 		remaster::g_pRender->PSSetConstantBuffer( 2, TNULL );
@@ -1692,8 +2119,30 @@ HOOK(0x00611f50, AModelLoader_DestroyMaterial, void, TMaterial* a_pMaterial)
 	CallOriginal( a_pMaterial );
 }
 
+// Tangent stream layout: float4 per vertex (xyz = tangent, w = handedness sign).
+static constexpr TUINT16 TANGENT_STREAM_SIZE = sizeof( Toshi::TVector4 );
+
+// Append a parallel tangent stream to the world and skin vertex factories right after
+// the original creates them (before any mesh pools exist). The engine's pool/block code
+// is fully stream-driven, so it allocates, locks, and manages the extra GPU buffer
+// automatically. The stream is filled at mesh load (LoadTreeIntersect / LoadSkinLOD)
+// and bound as vertex slot 1 by the world/skin shaders.
+MEMBER_HOOK( 0x006150e0, ARenderer, ARenderer_CreateTRenderResources, TBOOL )
+{
+	const TBOOL bResult = CallOriginal();
+
+	auto pRender = Toshi::TRenderInterface::GetSingleton();
+	if ( auto pWorldVF = pRender->GetSystemResource<Toshi::TVertexFactoryResourceInterface>( SYSRESOURCE_VFWORLD ) )
+		pWorldVF->AddVertexStream( TANGENT_STREAM_SIZE );
+	if ( auto pSkinVF = pRender->GetSystemResource<Toshi::TVertexFactoryResourceInterface>( SYSRESOURCE_VFSKIN ) )
+		pSkinVF->AddVertexStream( TANGENT_STREAM_SIZE );
+
+	return bResult;
+}
+
 void remaster::SetupRenderHooks()
 {
+	InstallHook<ARenderer_CreateTRenderResources>();
 	InstallHook<TRenderD3DInterface_Create>();
 	InstallHook<TRenderD3DInterface_CreateObject>();
 	InstallHook<TRenderD3DInterface_BeginEndScene>();
@@ -1702,7 +2151,7 @@ void remaster::SetupRenderHooks()
 	InstallHook<ARenderer_RenderMainScene>();
 	InstallHook<RenderCellMeshWin>();
 	InstallHook<RenderCellMeshDefault>();
-	InstallHook<AModelLoader_LoadWorldMeshTRB_Shadow>();
+	InstallHook<AModelLoader_LoadWorldMeshTRB_Tangents>();
 	InstallHook<AGlowViewport_AddGlowObject>();
 	InstallHook<AModelLoader_CreateMaterial>();
 	InstallHook<AModelLoader_DestroyMaterial>();

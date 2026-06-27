@@ -59,6 +59,41 @@ enum SAMPLERSTATE : TINT
 // Selects the linear (anisotropic) sampler matching a texture's U/V addressing.
 TINT GetLinearSamplerForAddressing( Toshi::ADDRESSINGMODE a_eAddressU, Toshi::ADDRESSINGMODE a_eAddressV );
 
+//-----------------------------------------------------------------------------
+// Runtime graphics settings
+//
+// Callers mutate a pending GraphicsSettings copy through RenderDX11::Request*,
+// which records a dirty bit. ApplyGraphicsSettings() (run once per frame from
+// Update(), outside any scene) consumes the dirty mask and rebuilds only what
+// changed: swapchain resize, MSAA/RT recreate, CSM atlas resize, etc.
+//-----------------------------------------------------------------------------
+enum GFXDirtyFlags : TUINT
+{
+	GFX_DIRTY_NONE        = 0,
+	GFX_DIRTY_RESOLUTION  = 1 << 0, // width/height change -> ResizeBuffers + rebuild sized RTs
+	GFX_DIRTY_DISPLAYMODE = 1 << 1, // windowed / borderless / fullscreen
+	GFX_DIRTY_VSYNC       = 1 << 2, // Present sync interval
+	GFX_DIRTY_MSAA        = 1 << 3, // offscreen MSAA sample count -> rebuild sized RTs
+	GFX_DIRTY_CSM         = 1 << 4, // CSM shadow-map resolution preset
+};
+
+enum DisplayMode : TUINT
+{
+	DISPLAY_WINDOWED,
+	DISPLAY_BORDERLESS,
+	DISPLAY_FULLSCREEN,
+};
+
+struct GraphicsSettings
+{
+	TUINT       uiWidth       = 0;
+	TUINT       uiHeight      = 0;
+	DisplayMode eDisplayMode  = DISPLAY_WINDOWED;
+	TBOOL       bVSync        = TFALSE;
+	TUINT       uiMSAASamples = 1;                 // 1/2/4/8 desired (clamped to device support)
+	CSMPreset   eCSMPreset    = CSM_PRESET_MEDIUM;
+};
+
 class RenderDX11 : public Toshi::TRenderInterface
 {
 public:
@@ -66,7 +101,7 @@ public:
 
 	static constexpr TUINT MSAA_SAMPLE_COUNT            = 4;
 	static constexpr TSIZE HEAPSIZE                     = 0x10000;
-	static constexpr TSIZE VERTEX_CONSTANT_BUFFER_SIZE  = 256;
+	static constexpr TSIZE VERTEX_CONSTANT_BUFFER_SIZE  = 320; // 20 vec4 slots (16-19 spare for material extras)
 	static constexpr TSIZE PIXEL_CONSTANT_BUFFER_SIZE   = 256;
 	static constexpr TSIZE SHADOW_CONSTANT_BUFFER_SIZE  = sizeof( ShadowCBufferData );
 	static constexpr TSIZE NUMBUFFERS                   = 1;
@@ -248,6 +283,27 @@ public:
 	TBOOL Create( const TCHAR* a_pchWindowTitle );
 	void  CreateRenderObjects();
 	void  CreateRenderTargets();
+	void  ReleaseRenderTargets(); // tears down everything CreateRenderTargets allocated
+
+	// Swapchain-size-dependent resources (MSAA colour/glow/G-buffer, depth, back-buffer ref).
+	// Split out of CreateDisplay so a runtime resolution/MSAA change can recreate them.
+	void CreateSwapchainSizedResources();
+	void ReleaseSwapchainSizedResources();
+
+	//-----------------------------------------------------------------------------
+	// Runtime graphics settings
+	//-----------------------------------------------------------------------------
+	const GraphicsSettings& GetGraphicsSettings() const { return m_oActiveSettings; }
+
+	void RequestResolution( TUINT a_uiWidth, TUINT a_uiHeight );
+	void RequestDisplayMode( DisplayMode a_eMode );
+	void RequestVSync( TBOOL a_bEnabled );
+	void RequestMSAA( TUINT a_uiSamples );
+	void RequestCSMPreset( CSMPreset a_ePreset );
+
+	// Consumes m_uiGraphicsDirty and applies the pending settings. Must be called
+	// between frames (outside BeginScene/EndScene); see Update().
+	void ApplyGraphicsSettings();
 
 	ID3D11SamplerState* CreateSamplerState(
 	    D3D11_FILTER               filter,
@@ -350,6 +406,34 @@ public:
 		m_PreviousBlendState.Raw         = ~m_BlendState.Raw;
 	}
 
+	// Full invalidation of every cached device binding. Call after
+	// m_pDeviceContext->ClearState() (e.g. the resolution/MSAA rebuild), which unbinds
+	// everything on the device. Without this, a re-bind of an already-cached object is
+	// wrongly skipped (e.g. the skin bone cbuffer never rebinds and animated meshes
+	// collapse to the origin). ClearState leaves NULL bindings, so resetting the caches
+	// to TNULL keeps them consistent.
+	void InvalidateStateCache()
+	{
+		ClearStateCache();
+
+		for ( TINT i = 0; i < TARRAYSIZE( m_aVSCurrentConstantBuffers ); i++ )
+			m_aVSCurrentConstantBuffers[ i ] = TNULL;
+		for ( TINT i = 0; i < TARRAYSIZE( m_aPSCurrentConstantBuffers ); i++ )
+			m_aPSCurrentConstantBuffers[ i ] = TNULL;
+		for ( TINT i = 0; i < TARRAYSIZE( m_aVSCurrentSampleStates ); i++ )
+			m_aVSCurrentSampleStates[ i ] = TNULL;
+		for ( TINT i = 0; i < TARRAYSIZE( m_aPSCurrentSampleStates ); i++ )
+			m_aPSCurrentSampleStates[ i ] = TNULL;
+		for ( TINT i = 0; i < TARRAYSIZE( m_apShaderResourceViewsPS ); i++ )
+			m_apShaderResourceViewsPS[ i ] = TNULL;
+		for ( TINT i = 0; i < TARRAYSIZE( m_apShaderResourceViewsVS ); i++ )
+			m_apShaderResourceViewsVS[ i ] = TNULL;
+
+		m_pCurrentVertexShader = TNULL;
+		m_pCurrentPixelShader  = TNULL;
+		m_pCurrentInputLayout  = TNULL;
+	}
+
 	void SetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY a_eCurrentTopology )
 	{
 		if ( m_eCurrentTopology != a_eCurrentTopology )
@@ -368,6 +452,13 @@ public:
 			m_uiVBCurrentStride    = a_uiStride;
 			m_uiVBCurrentOffset    = a_uiOffset;
 		}
+	}
+
+	// Bind an additional vertex stream at an arbitrary input slot (e.g. the world
+	// tangent stream at slot 1). Uncached, so the per-slot-0 cache above is unaffected.
+	void SetVertexBufferStream( TUINT a_uiSlot, ID3D11Buffer* a_pVertexBuffer, TUINT a_uiStride, TUINT a_uiOffset )
+	{
+		m_pDeviceContext->IASetVertexBuffers( a_uiSlot, 1, &a_pVertexBuffer, &a_uiStride, &a_uiOffset );
 	}
 
 	void SetIndexBuffer( ID3D11Buffer* a_pIndexBuffer, DXGI_FORMAT a_eFormat, TUINT a_uiOffset )
@@ -664,6 +755,12 @@ private:
 	// Actual MSAA sample count in use, clamped to what the device supports
 	// (see GetSupportedMSAASampleCount). May be lower than MSAA_SAMPLE_COUNT.
 	TUINT m_uiMSAASampleCount = 1;
+
+	// Runtime graphics settings + pending-change tracking (see ApplyGraphicsSettings).
+	GraphicsSettings m_oActiveSettings;
+	GraphicsSettings m_oPendingSettings;
+	TUINT            m_uiGraphicsDirty = GFX_DIRTY_NONE;
+	TUINT            m_uiSyncInterval  = 0; // Present sync interval (0 = no vsync)
 
 	ID3D11DeviceContext1* m_pDeviceContext1 = TNULL; // D3D11.1 context
 

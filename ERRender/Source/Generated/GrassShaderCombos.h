@@ -12,6 +12,7 @@ enum GrassComboFlags : TUINT
 	Grass_NO_CSM = BITFLAG( 0 ),
 	Grass_NO_FOG = BITFLAG( 1 ),
 	Grass_NO_DYN_LIGHT = BITFLAG( 2 ),
+	Grass_CLOUD_SHADOWS = BITFLAG( 3 ),
 };
 
 static constexpr dx11::ShaderComboDefinition GrassCombos[] =
@@ -19,10 +20,11 @@ static constexpr dx11::ShaderComboDefinition GrassCombos[] =
 	{ "NO_CSM", 0, 1, 1 },
 	{ "NO_FOG", 0, 1, 2 },
 	{ "NO_DYN_LIGHT", 0, 1, 4 },
+	{ "CLOUD_SHADOWS", 0, 1, 8 },
 };
 
-static constexpr TUINT GrassNumCombos = 3;
-static constexpr TUINT GrassNumPermutations = 8;
+static constexpr TUINT GrassNumCombos = 4;
+static constexpr TUINT GrassNumPermutations = 16;
 
 TINLINE TUINT GetGrassComboIndex( TUINT a_uiComboFlags )
 {
@@ -30,6 +32,7 @@ TINLINE TUINT GetGrassComboIndex( TUINT a_uiComboFlags )
 	uiIndex += ( ( ( a_uiComboFlags & Grass_NO_CSM ) ? 1U : 0U ) - 0U ) * 1U;
 	uiIndex += ( ( ( a_uiComboFlags & Grass_NO_FOG ) ? 1U : 0U ) - 0U ) * 2U;
 	uiIndex += ( ( ( a_uiComboFlags & Grass_NO_DYN_LIGHT ) ? 1U : 0U ) - 0U ) * 4U;
+	uiIndex += ( ( ( a_uiComboFlags & Grass_CLOUD_SHADOWS ) ? 1U : 0U ) - 0U ) * 8U;
 	return uiIndex;
 }
 

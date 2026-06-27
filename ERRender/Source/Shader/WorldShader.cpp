@@ -12,7 +12,6 @@
 #include "RenderDX11Utils.h"
 #include "RenderContentDX11.h"
 #include "CSM/CSMManager.h"
-#include "CSM/CSMShadowBatch.h"
 #include "DynamicGlowLights.h"
 
 #include <Render/TRenderPacket.h>
@@ -99,6 +98,13 @@ void remaster::WorldShaderDX11::StartFlush()
 		g_pRender->PSSetShaderResource( 2, g_pCSMManager->GetShadowSRV() );
 		g_pRender->PSSetSamplerState( 2, g_pCSMManager->GetShadowSampler() );
 		g_pRender->PSSetConstantBuffer( 1, g_pRender->GetShadowConstantBuffer() );
+
+		// Animated cloud shadow map (t9/s3), sampled by world XZ in SampleShadow.
+		if ( g_bCloudShadowsEnabled )
+		{
+			g_pRender->PSSetShaderResource( 9, g_pCloudShadowSRV );
+			g_pRender->PSSetSamplerState( 3, g_pCloudShadowSampler );
+		}
 	}
 
 	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
@@ -117,6 +123,7 @@ void remaster::WorldShaderDX11::EndFlush()
 	g_pRender->PSSetShaderResource( 1, TNULL );
 	g_pRender->PSSetShaderResource( 2, TNULL );
 	g_pRender->PSSetShaderResource( 6, TNULL );
+	g_pRender->PSSetShaderResource( 9, TNULL );
 	g_pRender->PSSetConstantBuffer( 2, TNULL );
 
 	g_pRender->SetBlendEnabled( TFALSE );
@@ -168,11 +175,21 @@ TBOOL remaster::WorldShaderDX11::Validate()
 		{ .SemanticName = "TEXCOORD", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32_FLOAT, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
 	};
 
+	// World layout adds the per-vertex tangent stream on slot 1. The shadow layout keeps
+	// the base attributes only since the shadow VS doesn't read tangents.
+	D3D11_INPUT_ELEMENT_DESC aWorldInputElements[] = {
+		aInputElements[ 0 ],
+		aInputElements[ 1 ],
+		aInputElements[ 2 ],
+		aInputElements[ 3 ],
+		{ .SemanticName = "TANGENT", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32A32_FLOAT, .InputSlot = 1, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+	};
+
 	ID3D11InputLayout* pWorldInputLayout = TNULL;
 	DX11_API_VALIDATE(
 	    g_pRender->GetD3D11Device()->CreateInputLayout(
-	        aInputElements,
-	        TARRAYSIZE( aInputElements ),
+	        aWorldInputElements,
+	        TARRAYSIZE( aWorldInputElements ),
 	        rWorldVSCombo.GetBlob( 0 )->GetBufferPointer(),
 	        rWorldVSCombo.GetBlob( 0 )->GetBufferSize(),
 	        &pWorldInputLayout
@@ -212,6 +229,8 @@ TBOOL remaster::WorldShaderDX11::TryValidate()
 
 extern TBOOL g_bHasGlowObjectsThisFrame;
 
+namespace remaster { extern TBOOL g_bDebugTangents; }
+
 void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 {
 	if ( !a_pRenderPacket || !a_pRenderPacket->GetMesh() ) return;
@@ -224,18 +243,12 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	if ( g_pCSMManager && g_pCSMManager->IsRenderingShadowPass() )
 	{
-		// Static world section geometry is drawn from merged per-section buffers
-		// (one draw per material) instead of one draw per tiny mesh. If this mesh
-		// is batched, record the section's model-view (so the batch reproduces the
-		// exact transform) and skip the per-mesh draw.
-// 		if ( CSMShadowBatch::GetSingleton().CaptureSectionModelView( pMesh, a_pRenderPacket->GetModelViewMatrix() ) )
-// 			return;
-
 		g_pRender->SetShaderPipelineState( m_vecShadowDepthPipelines[ shadercombos::GetShadowDepthComboIndex( shadercombos::ShadowDepth_ALPHATEST ) ] );
 
 		TMatrix44 mShadowMVP;
 		mShadowMVP.Multiply( g_pCSMManager->GetCurrentLightProjection(), a_pRenderPacket->GetModelViewMatrix() );
 		g_pRender->VSBufferSetMat4( 0, mShadowMVP );
+		g_pRender->VSBufferSetVec4( 4, TVector4( TFLOAT( g_pCSMManager->GetCurrentCascade() ), 0.0f, 0.0f ) );
 
 		TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
 		TIndexPoolResource*  pIndexPool  = TSTATICCAST( TIndexPoolResource, pMesh->GetSubMesh( 0 )->pIndexPool );
@@ -280,6 +293,8 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	const TBOOL  bHasDynLight  = g_bDynamicGlowEnabled && TINT8( a_pRenderPacket->m_ui8Unk1 ) >= 0 && !bIsGlowing;
 	g_pRender->SetBlendEnabled( bIsBlending );
 
+	const remaster::MaterialParams* pSSRParams = remaster::GetMaterialParams( pMaterial );
+
 	// Use either blending shader or alpharef shader
 	// The only used alpharef value is 128, so no need to dynamically change it
 	TUINT uiComboFlags = bIsBlending ? 0 : shadercombos::World_ALPHAREF;
@@ -293,6 +308,13 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		uiComboFlags |= shadercombos::World_GLOW;
 	if ( !bHasDynLight )
 		uiComboFlags |= shadercombos::World_NO_DYN_LIGHT;
+	// Per-material map sampling and POM compile out for meshes that don't use them.
+	if ( pSSRParams && ( pSSRParams->pNormalMap || pSSRParams->pRoughnessMap ) )
+		uiComboFlags |= shadercombos::World_MATERIAL_MAPS;
+	if ( pSSRParams && pSSRParams->pHeightMap )
+		uiComboFlags |= shadercombos::World_PARALLAX;
+	if ( g_bCloudShadowsEnabled )
+		uiComboFlags |= shadercombos::World_CLOUD_SHADOWS;
 
 	g_pRender->SetShaderPipelineState( m_vecWorldPipelines[ shadercombos::GetWorldComboIndex( uiComboFlags ) ] );
 
@@ -338,7 +360,6 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	g_pRender->VSBufferSetVec4( 7, vMiscSettings );
 	g_pRender->VSBufferSetVec4( 8, vFogColor );
 
-	const remaster::MaterialParams* pSSRParams = remaster::GetMaterialParams( pMaterial );
 	const TFLOAT flReflectivity  = pSSRParams ? pSSRParams->fReflectivity : 0.0f;
 	const TFLOAT flFresnelPower  = pSSRParams ? TMath::Max( pSSRParams->fFresnelPower, 0.1f ) : 0.0f;
 	const TFLOAT flSpecIntensity = pSSRParams ? pSSRParams->fSpecularIntensity : 0.05f;
@@ -347,9 +368,34 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	const TFLOAT   flRoughness = pSSRParams ? pSSRParams->fRoughness : 0.0f;
 	const TVector3 sunDir      = g_pCSMManager ? g_pCSMManager->GetLightDirection() : TVector3( 0.0f, -1.0f, 0.0f );
-	g_pRender->VSBufferSetVec4( 14, TVector4( -sunDir.x, sunDir.y, -sunDir.z, flRoughness ) );
+	// Negative roughness sentinel puts the world PS into tangent visualisation mode.
+	const TFLOAT flRoughnessOrDebug = remaster::g_bDebugTangents ? -1.0f : flRoughness;
+	g_pRender->VSBufferSetVec4( 14, TVector4( -sunDir.x, sunDir.y, -sunDir.z, flRoughnessOrDebug ) );
 	const TVector3 camPos = pCurrentContext->GetViewWorldMatrix().GetTranslation3();
-	g_pRender->VSBufferSetVec4( 15, TVector4( camPos.x, camPos.y, camPos.z, 0.0f ) );
+
+	// Per-material normal/roughness maps. camera.w packs a presence flag (1 = normal,
+	// 2 = roughness, 3 = both, 0 = none); the maps reuse the albedo sampler at s0.
+	TFLOAT flMapFlags = 0.0f;
+	if ( pSSRParams && pSSRParams->pNormalMap )
+	{
+		g_pRender->PSSetShaderResource( 1, (ID3D11ShaderResourceView*)pSSRParams->pNormalMap );
+		flMapFlags += 1.0f;
+	}
+	if ( pSSRParams && pSSRParams->pRoughnessMap )
+	{
+		g_pRender->PSSetShaderResource( 3, (ID3D11ShaderResourceView*)pSSRParams->pRoughnessMap );
+		flMapFlags += 2.0f;
+	}
+	if ( pSSRParams && pSSRParams->pHeightMap )
+		g_pRender->PSSetShaderResource( 4, (ID3D11ShaderResourceView*)pSSRParams->pHeightMap );
+	g_pRender->VSBufferSetVec4( 15, TVector4( camPos.x, camPos.y, camPos.z, flMapFlags ) );
+
+	// Per-material map strengths (slot 16): x = normal strength, y = roughness multiplier,
+	// z = parallax scale (0 unless a height map is present).
+	const TFLOAT flNormalStrength    = pSSRParams ? pSSRParams->fNormalStrength    : 1.0f;
+	const TFLOAT flRoughnessStrength = pSSRParams ? pSSRParams->fRoughnessStrength : 1.0f;
+	const TFLOAT flParallaxScale     = ( pSSRParams && pSSRParams->pHeightMap ) ? pSSRParams->fParallaxScale : 0.0f;
+	g_pRender->VSBufferSetVec4( 16, TVector4( flNormalStrength, flRoughnessStrength, flParallaxScale, 0.0f ) );
 
 	if ( bHasDynLight ) UploadDynamicGlowLights( a_pRenderPacket );
 
@@ -364,6 +410,11 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	TIndexBlockResource::HALBuffer indexBuffer;
 	CALL_THIS( 0x006d6180, TIndexPoolResource*, TBOOL, pIndexPool, TIndexBlockResource::HALBuffer&, indexBuffer ); // pIndexPool->GetHALBuffer( &indexBuffer );
+
+	// Bind the per-vertex tangent stream on slot 1. DrawIndexed applies the per-mesh
+	// vertex offset via BaseVertexLocation, so both streams share it at byte 0.
+	if ( vertexBuffer.uiNumStreams > 1 && vertexBuffer.apVertexBuffers[ 1 ] )
+		g_pRender->SetVertexBufferStream( 1, (ID3D11Buffer*)vertexBuffer.apVertexBuffers[ 1 ], sizeof( TVector4 ), 0 );
 
 	// Draw mesh
 	g_pRender->DrawIndexed(
@@ -383,65 +434,6 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	{
 		g_pRender->SetRenderTargetView( pOldRenderTargetView, pOldDepthStencilView );
 		g_pRender->SetDepthBias( 0 );
-	}
-}
-
-void remaster::WorldShaderDX11::RenderShadowBatches()
-{
-	CSMShadowBatch& rBatch = CSMShadowBatch::GetSingleton();
-	if ( !rBatch.HasSections() ) return;
-
-	g_pRender->SetShaderPipelineState( m_vecShadowDepthPipelines[ shadercombos::GetShadowDepthComboIndex( shadercombos::ShadowDepth_ALPHATEST ) ] );
-
-	// MVP = lightProj(cascade) * sectionModelView. The merged vertices are in
-	// section-local space, so we reuse the model-view captured from the section's
-	// per-mesh draw rather than a bare lightProj * lightView.
-	const TMatrix44& rLightProj = g_pCSMManager->GetCurrentLightProjection();
-
-	// DIAGNOSTIC: draw every section unconditionally. If a section's transform was
-	// not captured this pass, fall back to lightProj * lightView so we can tell
-	// "nothing drawn" (build/call problem) apart from "wrong position" (capture
-	// problem).
-	auto& rSections = rBatch.GetSections();
-	for ( auto it = rSections.Begin(); it != rSections.End(); it++ )
-	{
-		CSMShadowBatch::SectionBatch& rSection = it.GetValue()->GetSecond();
-
-		TMatrix44 mShadowMVP;
-		if ( rSection.bModelViewValid )
-			mShadowMVP.Multiply( rLightProj, rSection.matModelView );
-		else
-			mShadowMVP = g_pCSMManager->GetCurrentLightViewProj();
-		g_pRender->VSBufferSetMat4( 0, mShadowMVP );
-
-		for ( TINT i = 0; i < rSection.vecGroups.Size(); i++ )
-		{
-			CSMShadowBatch::MergedGroup& rGroup = rSection.vecGroups[ i ];
-
-			// Bind the material's diffuse texture for the alpha-test clip in the
-			// shadow pixel shader (matches WorldMaterial::PreRender's t0 bind).
-			if ( rGroup.pMaterial )
-			{
-				auto pTexture = TSTATICCAST( TTextureResourceHAL, rGroup.pMaterial->GetTexture( 0 ) );
-				if ( pTexture )
-				{
-					pTexture->Validate();
-					g_pRender->PSSetShaderResource( 0, (ID3D11ShaderResourceView*)pTexture->GetD3DTexture() );
-				}
-			}
-
-			g_pRender->DrawIndexed(
-			    D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
-			    rGroup.uiIndexCount,
-			    rGroup.pIndexBuffer,
-			    0,
-			    DXGI_FORMAT_R32_UINT,
-			    rGroup.pVertexBuffer,
-			    sizeof( WorldVertex ),
-			    0,
-			    TNULL
-			);
-		}
 	}
 }
 

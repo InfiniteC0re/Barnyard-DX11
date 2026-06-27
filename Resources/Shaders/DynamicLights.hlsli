@@ -53,7 +53,11 @@ float SampleDynamicGlowShadow(float3 worldPos, int lightIndex, float4 shadowPos)
 
 #include "ShaderUtils.hlsli"
 
-float3 SampleDynamicGlowLight(float3 worldPos, float3 normal, int lightIndex, float intensity)
+// Returns the diffuse contribution of one light; accumulates its Blinn-Phong specular
+// into a_specular (skipped when specInt <= 0 or the spec normal is degenerate). `normal`
+// drives the diffuse NdotL; `specNormal` drives the specular highlight (kept separate so
+// the specular can use a clean normal while the diffuse uses a bumpier one).
+float3 SampleDynamicGlowLight(float3 worldPos, float3 normal, float3 specNormal, float3 viewDir, int lightIndex, float intensity, float specInt, float specPow, inout float3 a_specular)
 {
 	float4 lightPositionRadius = cb_glowLightPositionRadius[lightIndex];
 	float4 lightDirectionCone  = cb_glowLightDirectionCone[lightIndex];
@@ -82,34 +86,53 @@ float3 SampleDynamicGlowLight(float3 worldPos, float3 normal, int lightIndex, fl
 	float  projectionFade  = edgeFade.x * edgeFade.y;
 	float  shadow          = SampleDynamicGlowShadow(worldPos, lightIndex, lightProjPos);
 
-	float lightAmount = distAttenuation * spotAttenuation * projectionFade * shadow * NdotL * intensity;
-	return cb_glowLightColor[lightIndex].rgb * lightAmount;
+	// Attenuation shared by diffuse and specular (everything but NdotL and the material term).
+	float  attenuation = distAttenuation * spotAttenuation * projectionFade * shadow * intensity;
+
+	if (specInt > 0.0f && dot(specNormal, specNormal) > 0.25f && NdotL > 0.0f)
+	{
+		float3 H        = normalize(-lightDir + viewDir);   // half vector (L = -lightDir = toward light)
+		float  specTerm = pow(saturate(dot(specNormal, H)), specPow);
+		a_specular += cb_glowLightColor[lightIndex].rgb * (specTerm * specInt * attenuation);
+	}
+
+	return cb_glowLightColor[lightIndex].rgb * (attenuation * NdotL);
 }
 
-// Surface lighting -- uses per-light surface intensity and full NdotL diffuse response
-float3 SampleDynamicGlowLights(float3 worldPos, float3 normal)
+// Surface lighting with specular -- returns diffuse glow, accumulates specular into
+// a_specular. `normal` drives diffuse, `specNormal` drives the highlight (see per-light).
+float3 SampleDynamicGlowLights(float3 worldPos, float3 normal, float3 specNormal, float3 viewDir, float specInt, float specPow, out float3 a_specular)
 {
 	float3 glow       = 0.0f;
+	a_specular        = 0.0f;
 	int    lightCount = (int)cb_glowLightParams.x;
 
-	if (lightCount > 0) glow += SampleDynamicGlowLight(worldPos, normal, 0, cb_glowLightIntensity[0].x);
-	if (lightCount > 1) glow += SampleDynamicGlowLight(worldPos, normal, 1, cb_glowLightIntensity[1].x);
-	if (lightCount > 2) glow += SampleDynamicGlowLight(worldPos, normal, 2, cb_glowLightIntensity[2].x);
-	if (lightCount > 3) glow += SampleDynamicGlowLight(worldPos, normal, 3, cb_glowLightIntensity[3].x);
+	if (lightCount > 0) glow += SampleDynamicGlowLight(worldPos, normal, specNormal, viewDir, 0, cb_glowLightIntensity[0].x, specInt, specPow, a_specular);
+	if (lightCount > 1) glow += SampleDynamicGlowLight(worldPos, normal, specNormal, viewDir, 1, cb_glowLightIntensity[1].x, specInt, specPow, a_specular);
+	if (lightCount > 2) glow += SampleDynamicGlowLight(worldPos, normal, specNormal, viewDir, 2, cb_glowLightIntensity[2].x, specInt, specPow, a_specular);
+	if (lightCount > 3) glow += SampleDynamicGlowLight(worldPos, normal, specNormal, viewDir, 3, cb_glowLightIntensity[3].x, specInt, specPow, a_specular);
 
 	return glow;
+}
+
+// Diffuse-only surface lighting (no specular) -- used by the skin shader.
+float3 SampleDynamicGlowLights(float3 worldPos, float3 normal)
+{
+	float3 dummySpecular;
+	return SampleDynamicGlowLights(worldPos, normal, normal, float3(0, 0, 0), 0.0f, 1.0f, dummySpecular);
 }
 
 // Volumetric fog sampling -- uses per-light volumetric intensity, no surface normal (NdotL = 1)
 float3 SampleDynamicGlowLights(float3 worldPos)
 {
 	float3 glow       = 0.0f;
+	float3 dummySpec  = 0.0f;
 	int    lightCount = (int)cb_glowLightParams.x;
 
-	if (lightCount > 0) glow += SampleDynamicGlowLight(worldPos, float3(0, 0, 0), 0, cb_glowLightColor[0].w);
-	if (lightCount > 1) glow += SampleDynamicGlowLight(worldPos, float3(0, 0, 0), 1, cb_glowLightColor[1].w);
-	if (lightCount > 2) glow += SampleDynamicGlowLight(worldPos, float3(0, 0, 0), 2, cb_glowLightColor[2].w);
-	if (lightCount > 3) glow += SampleDynamicGlowLight(worldPos, float3(0, 0, 0), 3, cb_glowLightColor[3].w);
+	if (lightCount > 0) glow += SampleDynamicGlowLight(worldPos, float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), 0, cb_glowLightColor[0].w, 0.0f, 1.0f, dummySpec);
+	if (lightCount > 1) glow += SampleDynamicGlowLight(worldPos, float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), 1, cb_glowLightColor[1].w, 0.0f, 1.0f, dummySpec);
+	if (lightCount > 2) glow += SampleDynamicGlowLight(worldPos, float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), 2, cb_glowLightColor[2].w, 0.0f, 1.0f, dummySpec);
+	if (lightCount > 3) glow += SampleDynamicGlowLight(worldPos, float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), 3, cb_glowLightColor[3].w, 0.0f, 1.0f, dummySpec);
 
 	return glow;
 }

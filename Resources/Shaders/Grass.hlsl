@@ -1,6 +1,7 @@
 // STATIC: "NO_CSM" "0..1"
 // STATIC: "NO_FOG" "0..1"
 // STATIC: "NO_DYN_LIGHT" "0..1"
+// STATIC: "CLOUD_SHADOWS" "0..1"
 
 struct VS_IN
 {
@@ -92,7 +93,7 @@ PS_OUT ps_main(PS_IN In)
 #endif
 
 #if !NO_CSM
-    float shadow = SampleShadow(In.WorldPos, In.ViewDepth);
+    float shadow = SampleShadow(In.WorldPos, In.WorldNormal, In.ViewDepth);
     float shadowStrength = cb_ShadowParams.w;
     float shadowScale = shadow * shadowStrength + (1.0f - shadowStrength);
     #if !NO_DYN_LIGHT

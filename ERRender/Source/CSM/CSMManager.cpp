@@ -3,7 +3,6 @@
 
 #include "RenderDX11.h"
 #include "Shader/WorldShader.h"
-#include "CSM/CSMShadowBatch.h"
 
 #include <HookHelpers.h>
 #include <BYardSDK/ACamera.h>
@@ -34,14 +33,30 @@ TFLOAT      g_flSunAzimuth                    = 9.0f;
 TFLOAT      g_flSunElevation                  = 139.0f;
 TFLOAT      g_flShadowIntensity               = 0.185f;
 TFLOAT      g_flShadowDistance                = 56.0f;
-TFLOAT      g_flShadowCasterPadding           = 3.0f;
-TFLOAT      g_flShadowCascadePadding          = 8.0f;
-TFLOAT      g_flShadowSlopeScaledDepthBias    = CSM_DEPTH_BIAS_SLOPE;
-TFLOAT      g_flShadowMinSlopeScaledDepthBias = CSM_MIN_SLOPE_DEPTH_BIAS;
-TFLOAT      g_flShadowReceiverBias            = CSM_RECEIVER_BIAS;
-TFLOAT      g_flShadowReceiverPlaneBias       = CSM_RECEIVER_PLANE_BIAS;
-TFLOAT      g_flShadowPCFRadius               = CSM_PCF_RADIUS;
+TFLOAT      g_flShadowSplitLambda             = CSM_SPLIT_LAMBDA;
 TFLOAT      g_flShadowCascadeBlend            = CSM_CASCADE_BLEND;
+TFLOAT      g_flShadowMinSlopeScaledDepthBias = CSM_MIN_SLOPE_DEPTH_BIAS;
+TFLOAT      g_flShadowReceiverPlaneBias       = CSM_RECEIVER_PLANE_BIAS;
+TFLOAT      g_flShadowNormalOffsetScale       = 2.0f;
+TFLOAT      g_flShadowGrazingScale            = 1.0f;
+
+TBOOL       g_bCloudShadowsEnabled            = TTRUE;
+TBOOL       g_bCloudShadowsVolumetrics        = TFALSE;
+TFLOAT      g_flCloudShadowStrength           = 0.8f;
+TFLOAT      g_flCloudShadowRegionSize         = 150.0f;
+TFLOAT      g_flCloudShadowFeatureScale       = 0.032f;
+TFLOAT      g_flCloudShadowCoverage           = -0.22f;
+TFLOAT      g_flCloudShadowDensity            = 4.0f;
+TFLOAT      g_flCloudShadowContrast           = 0.78f;
+TFLOAT      g_flCloudShadowSpeed              = 0.025f;
+TFLOAT      g_flCloudShadowWindDir[ 2 ]       = { -1.0f, 1.3f };
+
+// Per-cascade defaults.
+TFLOAT      g_aflShadowCasterPadding[ CSM_CASCADE_COUNT ]        = { 3.0f, 3.0f, 3.0f };
+TFLOAT      g_aflShadowCascadePadding[ CSM_CASCADE_COUNT ]       = { 8.0f, 8.0f, 8.0f };
+TFLOAT      g_aflShadowSlopeScaledDepthBias[ CSM_CASCADE_COUNT ] = { CSM_DEPTH_BIAS_SLOPE, CSM_DEPTH_BIAS_SLOPE, CSM_DEPTH_BIAS_SLOPE };
+TFLOAT      g_aflShadowReceiverBias[ CSM_CASCADE_COUNT ]         = { CSM_RECEIVER_BIAS, CSM_RECEIVER_BIAS, CSM_RECEIVER_BIAS };
+TFLOAT      g_aflShadowPCFRadius[ CSM_CASCADE_COUNT ]            = { 1.0f, 1.0f, 1.0f };
 
 CSMManager::CSMManager()
     : m_pShadowTexture( TNULL )
@@ -54,16 +69,22 @@ CSMManager::CSMManager()
     , m_uiCascadeRenderMask( 0 )
     , m_bForceAllCascades( TTRUE )
     , m_iLastDebugCascade( -1 )
+    , m_ePreset( CSM_PRESET_MEDIUM )
+    , m_iResolution( CSM_RESOLUTION )
 {
 	TUtil::MemClear( m_pCascadeDSV, sizeof( m_pCascadeDSV ) );
 	TUtil::MemClear( &m_oShadowCBufferData, sizeof( m_oShadowCBufferData ) );
 	m_LightView.Identity();
 
 	for ( TINT i = 0; i < CSM_CASCADE_COUNT; i++ )
+		m_aiCascadeResolution[ i ] = CSM_CASCADE_RESOLUTION[ i ];
+
+	for ( TINT i = 0; i < CSM_CASCADE_COUNT; i++ )
 	{
 		m_LightProj[ i ].Identity();
 		m_LightViewProj[ i ].Identity();
-		m_CascadeSplits[ i ] = 0.0f;
+		m_CascadeSplits[ i ]         = 0.0f;
+		m_CascadeWorldTexelSize[ i ] = 0.0f;
 	}
 }
 
@@ -77,8 +98,8 @@ TBOOL CSMManager::Create()
 	ID3D11Device* pDevice = g_pRender->GetD3D11Device();
 
 	D3D11_TEXTURE2D_DESC textureDesc = {};
-	textureDesc.Width                = CSM_RESOLUTION;
-	textureDesc.Height               = CSM_RESOLUTION;
+	textureDesc.Width                = m_iResolution;
+	textureDesc.Height               = m_iResolution;
 	textureDesc.MipLevels            = 1;
 	textureDesc.ArraySize            = CSM_CASCADE_COUNT;
 	textureDesc.Format               = DXGI_FORMAT_R16_TYPELESS;
@@ -115,7 +136,7 @@ TBOOL CSMManager::Create()
 	rasterizerDesc.CullMode              = D3D11_CULL_FRONT;
 	rasterizerDesc.DepthClipEnable       = TRUE;
 	rasterizerDesc.DepthBias             = CSM_DEPTH_BIAS_UNITS;
-	rasterizerDesc.SlopeScaledDepthBias  = g_flShadowSlopeScaledDepthBias;
+	rasterizerDesc.SlopeScaledDepthBias  = g_aflShadowSlopeScaledDepthBias[ 0 ];
 	DX11_API_VALIDATE_EXIT( pDevice->CreateRasterizerState( &rasterizerDesc, &m_pShadowRasterizerState ) );
 
 	D3D11_SAMPLER_DESC samplerDesc = {};
@@ -178,6 +199,27 @@ void CSMManager::Destroy()
 		g_pCSMManager = TNULL;
 }
 
+TBOOL CSMManager::ApplyResolution( CSMPreset a_ePreset )
+{
+	if ( a_ePreset >= CSM_PRESET_COUNT )
+		a_ePreset = CSM_PRESET_MEDIUM;
+
+	// Base atlas size per preset; cascade 0 matches it and the finer cascades keep the
+	// default {2048,1024,512}/2048 ratio.
+	static const TINT s_aiPresetBase[ CSM_PRESET_COUNT ] = { 1024, 2048, 4096 };
+
+	m_ePreset     = a_ePreset;
+	m_iResolution = s_aiPresetBase[ a_ePreset ];
+
+	for ( TINT i = 0; i < CSM_CASCADE_COUNT; i++ )
+		m_aiCascadeResolution[ i ] = ( m_iResolution * CSM_CASCADE_RESOLUTION[ i ] ) / CSM_RESOLUTION;
+
+	// Rebuild the depth atlas and its views at the new size. Create() re-renders every
+	// cascade on the next frame (m_bForceAllCascades), so no stale depth is sampled.
+	Destroy();
+	return Create();
+}
+
 void CSMManager::UpdateCascades( TRenderContext* a_pRenderContext )
 {
 	TPROFILER_SCOPE();
@@ -199,7 +241,7 @@ void CSMManager::UpdateCascades( TRenderContext* a_pRenderContext )
 		const TFLOAT fProgress     = TFLOAT( i + 1 ) / TFLOAT( CSM_CASCADE_COUNT );
 		const TFLOAT fLogSplit     = fNearZ * std::pow( fRatio, fProgress );
 		const TFLOAT fUniformSplit = fNearZ + fRange * fProgress;
-		m_CascadeSplits[ i ]       = CSM_SPLIT_LAMBDA * ( fLogSplit - fUniformSplit ) + fUniformSplit;
+		m_CascadeSplits[ i ]       = g_flShadowSplitLambda * ( fLogSplit - fUniformSplit ) + fUniformSplit;
 	}
 
 	// Decide which cascades to (re)build this frame. A change to the debug cascade
@@ -264,17 +306,42 @@ void CSMManager::UpdateCascades( TRenderContext* a_pRenderContext )
 	}
 
 	for ( TINT i = 0; i < CSM_CASCADE_COUNT; i++ )
-		m_oShadowCBufferData.cascadeScales[ i ] = TFLOAT( CSM_CASCADE_RESOLUTION[ i ] ) / TFLOAT( CSM_RESOLUTION );
+	{
+		m_oShadowCBufferData.cascadeScales[ i ]         = TFLOAT( m_aiCascadeResolution[ i ] ) / TFLOAT( m_iResolution );
+		m_oShadowCBufferData.cascadeReceiverBias[ i ]   = g_aflShadowReceiverBias[ i ];
+		m_oShadowCBufferData.cascadePCFRadius[ i ]      = g_aflShadowPCFRadius[ i ];
+		m_oShadowCBufferData.cascadeWorldTexelSize[ i ] = m_CascadeWorldTexelSize[ i ];
+	}
 
-	m_oShadowCBufferData.cascadeSplits[ 3 ]      = 0.0f;
-	m_oShadowCBufferData.shadowParams[ 0 ]       = g_flShadowReceiverBias;
-	m_oShadowCBufferData.shadowParams[ 1 ]       = 1.0f / TFLOAT( CSM_RESOLUTION );
+	m_oShadowCBufferData.cascadeSplits[ 3 ]         = 0.0f;
+	m_oShadowCBufferData.cascadeScales[ 3 ]         = g_flShadowNormalOffsetScale; // shared normal-offset scale (texels)
+	m_oShadowCBufferData.cascadeReceiverBias[ 3 ]   = 0.0f;
+	m_oShadowCBufferData.cascadePCFRadius[ 3 ]      = 0.0f;
+	m_oShadowCBufferData.cascadeWorldTexelSize[ 3 ] = 0.0f;
+	m_oShadowCBufferData.shadowParams[ 0 ]       = g_aflShadowReceiverBias[ 0 ]; // legacy fallback; per-cascade values live in cascadeReceiverBias
+	m_oShadowCBufferData.shadowParams[ 1 ]       = 1.0f / TFLOAT( m_iResolution );
 	m_oShadowCBufferData.shadowParams[ 2 ]       = g_iCSMDebugCascade >= 0 ? TFLOAT( TMath::Max( 0, TMath::Min( g_iCSMDebugCascade, CSM_CASCADE_COUNT - 1 ) ) + 1 ) : 0.0f;
 	m_oShadowCBufferData.shadowParams[ 3 ]       = g_flShadowIntensity;
-	m_oShadowCBufferData.shadowFilterParams[ 0 ] = g_flShadowPCFRadius;
+	m_oShadowCBufferData.shadowFilterParams[ 0 ] = g_aflShadowPCFRadius[ 0 ]; // legacy fallback; per-cascade values live in cascadePCFRadius
 	m_oShadowCBufferData.shadowFilterParams[ 1 ] = g_flShadowReceiverPlaneBias;
 	m_oShadowCBufferData.shadowFilterParams[ 2 ] = ( g_iCSMDebugCascade >= 0 && !g_bCSMDebugFullRange && g_bCSMDebugMaskBySplit ) ? 1.0f : 0.0f;
 	m_oShadowCBufferData.shadowFilterParams[ 3 ] = g_flShadowCascadeBlend;
+
+	// Sun travel direction (sun->scene) + grazing cap, used by the shader to scale the
+	// normal-offset bias up on surfaces that are near edge-on to the light.
+	const TVector3& rLightDir         = GetLightDirection();
+	m_oShadowCBufferData.lightDirection[ 0 ] = rLightDir.x;
+	m_oShadowCBufferData.lightDirection[ 1 ] = rLightDir.y;
+	m_oShadowCBufferData.lightDirection[ 2 ] = rLightDir.z;
+	m_oShadowCBufferData.lightDirection[ 3 ] = TMath::Max( g_flShadowGrazingScale, 1.0f );
+
+	// Cloud shadow region: a world square centred on the camera. The bake pass covers
+	// it and receivers map worldPos.xz into [0,1]. Strength 0 disables sampling in-shader.
+	const TFLOAT fCloudSize = TMath::Max( g_flCloudShadowRegionSize, 1.0f );
+	m_oShadowCBufferData.cloudParams[ 0 ] = m_oCameraWorldPos.x - fCloudSize * 0.5f;
+	m_oShadowCBufferData.cloudParams[ 1 ] = m_oCameraWorldPos.z - fCloudSize * 0.5f;
+	m_oShadowCBufferData.cloudParams[ 2 ] = 1.0f / fCloudSize;
+	m_oShadowCBufferData.cloudParams[ 3 ] = g_bCloudShadowsEnabled ? g_flCloudShadowStrength : 0.0f;
 }
 
 void CSMManager::RenderShadowMaps()
@@ -306,8 +373,8 @@ void CSMManager::RenderShadowMaps()
 		m_iCurrentCascade = i;
 
 		// Render this cascade into the top-left sub-rect matching its resolution.
-		viewport.Width  = TFLOAT( CSM_CASCADE_RESOLUTION[ i ] );
-		viewport.Height = TFLOAT( CSM_CASCADE_RESOLUTION[ i ] );
+		viewport.Width  = TFLOAT( m_aiCascadeResolution[ i ] );
+		viewport.Height = TFLOAT( m_aiCascadeResolution[ i ] );
 		pDeviceContext->RSSetViewports( 1, &viewport );
 
 		g_pRender->SetRenderTargetView( TNULL, m_pCascadeDSV[ i ] );
@@ -319,8 +386,7 @@ void CSMManager::RenderShadowMaps()
 		g_pRender->SetCullMode( D3D11_CULL_FRONT );
 		g_pRender->SetDepthClip( TTRUE );
 		g_pRender->SetDepthBias( CSM_DEPTH_BIAS_UNITS );
-		const TFLOAT fCascadeSlopeBias = g_flShadowSlopeScaledDepthBias / std::pow( 4.0f, TFLOAT( i ) );
-		g_pRender->SetSlopeScaledDepthBias( TMath::Max( fCascadeSlopeBias, g_flShadowMinSlopeScaledDepthBias ) );
+		g_pRender->SetSlopeScaledDepthBias( TMath::Max( g_aflShadowSlopeScaledDepthBias[ i ], g_flShadowMinSlopeScaledDepthBias ) );
 
 		RenderSceneCasters( TNULL, TRenderContext::CameraMode_Orthographic );
 	}
@@ -386,7 +452,7 @@ void CSMManager::RenderCustomShadowMap(
 	g_pRender->SetCullMode( D3D11_CULL_FRONT );
 	g_pRender->SetDepthClip( TTRUE );
 	g_pRender->SetDepthBias( CSM_DEPTH_BIAS_UNITS );
-	g_pRender->SetSlopeScaledDepthBias( g_flShadowSlopeScaledDepthBias );
+	g_pRender->SetSlopeScaledDepthBias( g_aflShadowSlopeScaledDepthBias[ 0 ] );
 
 	RenderSceneCasters( &a_rcProjectionParams, a_eCameraMode );
 
@@ -412,11 +478,6 @@ void CSMManager::RenderSceneCasters( const Toshi::TRenderContext::PROJECTIONPARA
 
 	auto pRenderContext = g_pRender->GetCurrentContext();
 	if ( !pRenderContext ) return;
-
-	// Invalidate per-section transforms; they are recaptured below as each
-	// section's casters are flushed against this pass's light frustum, which also
-	// gives per-cascade section culling for the merged batches.
-	CSMShadowBatch::GetSingleton().BeginShadowPass();
 
 	const TMatrix44 oOldWorldView     = pRenderContext->GetWorldViewMatrix();
 	const TMatrix44 oOldModelView     = pRenderContext->GetModelViewMatrix();
@@ -520,14 +581,8 @@ void CSMManager::RenderSceneCasters( const Toshi::TRenderContext::PROJECTIONPARA
 			CALL_THIS( 0x0053a320, void*, void, *(void**)0x00783c18, TBOOL, TFALSE ); // AAnimalPopulationManager::Render
 	}
 
-	// Flush per-mesh casters first. For batched world section meshes this captures
-	// each section's model-view and suppresses the per-mesh draw (see
-	// WorldShaderDX11::Render); other casters draw normally.
+	// Flush the per-mesh shadow casters.
 	g_pRender->FlushShaders();
-
-	// Then draw the merged static world geometry for this cascade -- one draw per
-	// material instead of thousands of tiny per-mesh draws.
-	// TSTATICCAST( WorldShaderDX11, WorldShaderDX11::GetSingleton() )->RenderShadowBatches();
 
 	rTransformStack.Reset();
 	rTransformStack.PushNull().Identity();
@@ -561,7 +616,7 @@ void CSMManager::BuildLightView( TRenderContext* a_pRenderContext )
 		lightDir.y = -std::sin( elRad );
 		lightDir.z = std::cos( elRad ) * std::cos( azRad );
 
-		// Derive right from azimuth directly -- always horizontal, never degenerates at high elevation
+		// Derive right from azimuth directly. Always horizontal, no degeneracy at high elevation.
 		right.x = std::cos( azRad );
 		right.y = 0.0f;
 		right.z = -std::sin( azRad );
@@ -587,6 +642,10 @@ void CSMManager::BuildLightView( TRenderContext* a_pRenderContext )
 		if ( pCamera )
 			sceneCenter = pCamera->m_Matrix.GetTranslation3();
 	}
+
+	// Cache the gameplay camera world position so the cloud shadow region can follow it.
+	// The open world means it can't be anchored near the origin.
+	m_oCameraWorldPos = sceneCenter;
 
 	m_LightView.Identity();
 	m_LightView.AsBasisVector3( 0 ) = right;
@@ -653,26 +712,33 @@ void CSMManager::BuildCascade( TRenderContext* a_pRenderContext, TINT a_iCascade
 		fMaxZ   = TMath::Max( fMaxZ, lightPos.z );
 	}
 
-	fRadius += g_flShadowCascadePadding;
+	fRadius += g_aflShadowCascadePadding[ a_iCascade ];
 
 	TVector3 oLightCenter;
 	TMatrix44::TransformVector( oLightCenter, m_LightView, oWorldCenter );
 
-	TFLOAT fMinX = oLightCenter.x - fRadius;
-	TFLOAT fMinY = oLightCenter.y - fRadius;
-	TFLOAT fMaxX = oLightCenter.x + fRadius;
-	TFLOAT fMaxY = oLightCenter.y + fRadius;
+	// fRadius is rotation-invariant (rigid transform preserves corner distances), so the
+	// extent and therefore the texel size are constant per cascade.
+	const TFLOAT fCascadeRes = TFLOAT( m_aiCascadeResolution[ a_iCascade ] );
+	const TFLOAT fTexelSize  = ( 2.0f * fRadius ) / fCascadeRes;
 
-	// Snap to this cascade's actual render resolution so the texel grid is stable.
-	const TFLOAT fCascadeRes = TFLOAT( CSM_CASCADE_RESOLUTION[ a_iCascade ] );
-	const TFLOAT fTexelSize  = ( fMaxX - fMinX ) / fCascadeRes;
+	// Snap the cascade origin to texel increments on a world-anchored grid. m_LightView's
+	// translation follows the camera (for depth precision), so snapping oLightCenter
+	// directly would anchor the grid to the camera and bring back the classic edge shimmer,
+	// worst on the coarse-texel far cascades. Strip the camera-relative translation
+	// (m_f41/m_f42) to get the world-space light projection, snap that, then add it back.
+	const TFLOAT fWorldCenterLX = oLightCenter.x - m_LightView.m_f41;
+	const TFLOAT fWorldCenterLY = oLightCenter.y - m_LightView.m_f42;
 
-	fMinX = std::floor( fMinX / fTexelSize ) * fTexelSize;
-	fMinY = std::floor( fMinY / fTexelSize ) * fTexelSize;
-	fMaxX = fMinX + fCascadeRes * fTexelSize;
-	fMaxY = fMinY + fCascadeRes * fTexelSize;
+	TFLOAT fMinX = std::floor( ( fWorldCenterLX - fRadius ) / fTexelSize ) * fTexelSize + m_LightView.m_f41;
+	TFLOAT fMinY = std::floor( ( fWorldCenterLY - fRadius ) / fTexelSize ) * fTexelSize + m_LightView.m_f42;
+	TFLOAT fMaxX = fMinX + fCascadeRes * fTexelSize;
+	TFLOAT fMaxY = fMinY + fCascadeRes * fTexelSize;
 
-	fMinZ -= fRadius * 2.0f + g_flShadowCasterPadding;
+	// World units per shadow texel, used by the shader's normal-offset bias.
+	m_CascadeWorldTexelSize[ a_iCascade ] = fTexelSize;
+
+	fMinZ -= fRadius * 2.0f + g_aflShadowCasterPadding[ a_iCascade ];
 
 	BuildOrthoMatrix( m_LightProj[ a_iCascade ], fMinX, fMaxX, fMinY, fMaxY, fMinZ, fMaxZ );
 	m_LightViewProj[ a_iCascade ].Multiply( m_LightProj[ a_iCascade ], m_LightView );

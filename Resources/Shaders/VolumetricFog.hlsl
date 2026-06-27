@@ -1,10 +1,15 @@
 // STATIC: "NO_DYN_LIGHT" "0..1"
+// STATIC: "CLOUD_SHADOWS" "0..1"
 #include "ScreenSpace.hlsl"
 
 Texture2D              depthTexture  : register( t0 );
 Texture2DArray         shadowMaps    : register( t1 );
 SamplerState           pointSampler  : register( s0 );
 SamplerComparisonState shadowSampler : register( s1 );
+#if CLOUD_SHADOWS
+Texture2D              cloudShadowTex : register( t2 );
+SamplerState           cloudSampler  : register( s2 );
+#endif
 
 #if !NO_DYN_LIGHT
 #include "DynamicLights.hlsli"
@@ -22,6 +27,7 @@ cbuffer VolumetricFogCBuffer : register( b1 )
     float4   cb_FogColor;
     float4   cb_FogParams;    // density, anisotropy, max distance, intensity/darkening
     float4   cb_FrameParams;  // temporal frame index
+    float4   cb_CloudParams;  // xy = cloud region min (X,Z), z = 1/region size, w = strength (0 = off)
 };
 
 static const float PI                    = 3.14159265f;
@@ -93,6 +99,27 @@ float SampleShadow( float3 worldPos, float viewDepth )
     return shadowMaps.SampleCmpLevelZero( shadowSampler, float3( shadowUV, (float)cascade ), shadowZ );
 }
 
+#if CLOUD_SHADOWS
+// Animated cloud shadow, sampled by world XZ -- matches the surface receivers so the
+// shafts dim under cloud cover. Outside the camera-centred region => full sun.
+float SampleCloudLight( float2 worldXZ )
+{
+    if ( cb_CloudParams.w <= 0.0f )
+        return 1.0f;
+
+    float2 uv = ( worldXZ - cb_CloudParams.xy ) * cb_CloudParams.z;
+    if ( any( uv < 0.0f ) || any( uv > 1.0f ) )
+        return 1.0f;
+
+    // Fade out over the outer ~15% of the region so the bake edge isn't a hard line.
+    float2 d    = min( uv, 1.0f - uv );
+    float  edge = smoothstep( 0.0f, 0.15f, min( d.x, d.y ) );
+
+    float sun = cloudShadowTex.SampleLevel( cloudSampler, uv, 0 ).r;
+    return lerp( 1.0f, sun, edge * cb_CloudParams.w );
+}
+#endif // CLOUD_SHADOWS
+
 float GetSceneViewDepth( float2 uv )
 {
     float hwDepth = depthTexture.SampleLevel( pointSampler, uv, 0 ).r;
@@ -140,7 +167,11 @@ float3 IntegrateLightRay( float2 uv, float2 pixel )
         float rayT = ( (float)step + jitter ) * stepSize;
         float3 viewPos = marchDirVS * rayT;
         float3 worldPos = mul( float4( viewPos, 1.0f ), cb_matViewWorld ).xyz;
+#if CLOUD_SHADOWS
+        float visibility = SampleShadow( worldPos, viewPos.z ) * SampleCloudLight( worldPos.xz );
+#else
         float visibility = SampleShadow( worldPos, viewPos.z );
+#endif
 
         float stepTransmittance = exp( -extinction * stepSize );
         float stepScatter       = scattering * stepSize;
@@ -195,7 +226,11 @@ float4 ps_visibility( PS_IN i ) : SV_TARGET
         float rayT = ( (float)step + jitter ) * stepSize;
         float3 viewPos = marchDirVS * rayT;
         float3 worldPos = mul( float4( viewPos, 1.0f ), cb_matViewWorld ).xyz;
+#if CLOUD_SHADOWS
+        float visibility = SampleShadow( worldPos, viewPos.z ) * SampleCloudLight( worldPos.xz );
+#else
         float visibility = SampleShadow( worldPos, viewPos.z );
+#endif
 
         shadowedOpticalDepth += ( 1.0f - visibility ) * density * SHADOW_EXTINCTION_SCALE * stepSize;
     }

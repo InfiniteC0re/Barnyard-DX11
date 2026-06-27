@@ -75,21 +75,20 @@ MEMBER_HOOK( 0x00615bc0, Toshi::T2Texture, T2Texture_Load, HRESULT )
 	DirectX::TexMetadata  texMetadata;
 	HRESULT               hRes = E_FAIL;
 
-	if ( m_ImageInfo.ImageFileFormat == D3DXIFF_DDS )
-	{
-		// DDS files may contain stored mipmaps -- load them as-is
-		hRes = DirectX::LoadFromDDSMemory(
-		    static_cast<const uint8_t*>( m_pData ),
-		    m_uiDataSize,
-		    DirectX::DDS_FLAGS_NONE,
-		    &texMetadata,
-		    scratchImage
-		);
-	}
+	// DDS files may contain stored mipmaps, so load them as-is
+	m_ImageInfo.ImageFileFormat = D3DXIFF_DDS;
+	hRes = DirectX::LoadFromDDSMemory(
+	    static_cast<const uint8_t*>( m_pData ),
+	    m_uiDataSize,
+	    DirectX::DDS_FLAGS_NONE,
+	    &texMetadata,
+	    scratchImage
+	);
 
 	if ( FAILED( hRes ) )
 	{
 		// Fall back to TGA
+		m_ImageInfo.ImageFileFormat = D3DXIFF_TGA;
 		hRes = DirectX::LoadFromTGAMemory(
 		    static_cast<const uint8_t*>( m_pData ),
 		    m_uiDataSize,
@@ -102,6 +101,7 @@ MEMBER_HOOK( 0x00615bc0, Toshi::T2Texture, T2Texture_Load, HRESULT )
 	if ( FAILED( hRes ) )
 	{
 		// Fall back to WIC (PNG, JPG, BMP, etc.)
+		m_ImageInfo.ImageFileFormat = D3DXIFF_PNG;
 		hRes = DirectX::LoadFromWICMemory(
 		    static_cast<const uint8_t*>( m_pData ),
 		    m_uiDataSize,

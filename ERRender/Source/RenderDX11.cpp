@@ -11,7 +11,13 @@
 #include <BYardSDK/THookedRenderD3DInterface.h>
 #include <BYardSDK/SDKHooks.h>
 
+#include <AHooks.h>
+
+#include <Toshi/TTask.h>
+#include <BYardSDK/ARenderer.h>
+
 #include <Render/TShader.h>
+#include <Render/TViewport.h>
 
 #include <Platform/DX8/TModel_DX8.h>
 #include <Platform/DX8/TTextureFactoryHAL_DX8.h>
@@ -236,78 +242,21 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		dxgiAdapter->Release();
 		dxgiDevice->Release();
 
-		// Create render target
-		D3D11_TEXTURE2D_DESC backBufferDesc = {};
-		backBufferDesc.ArraySize            = 1;
-		backBufferDesc.BindFlags            = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-		backBufferDesc.CPUAccessFlags       = 0;
-		backBufferDesc.Format               = DXGI_FORMAT_R8G8B8A8_UNORM;
-		backBufferDesc.Height               = m_oSwapChainDesc.BufferDesc.Height;
-		backBufferDesc.Width                = m_oSwapChainDesc.BufferDesc.Width;
-		backBufferDesc.MipLevels            = 1;
-		backBufferDesc.MiscFlags            = 0;
-		backBufferDesc.SampleDesc.Count     = m_uiMSAASampleCount;
-		backBufferDesc.SampleDesc.Quality   = 0;
-		backBufferDesc.Usage                = D3D11_USAGE_DEFAULT;
+		// Create the swapchain-size-dependent resources (colour/glow/G-buffer/depth +
+		// the back-buffer reference). Split out so a runtime resolution/MSAA change
+		// can release and recreate them without re-running the whole CreateDisplay path.
+		CreateSwapchainSizedResources();
 
-		DX11_API_VALIDATE_EXIT( m_pDevice->CreateTexture2D( &backBufferDesc, TNULL, &m_pRenderTargetTexture ) );
-		DX11_API_VALIDATE_EXIT( m_pDevice->CreateTexture2D( &backBufferDesc, TNULL, &m_pGlowRenderTargetTexture ) );
-		DX11_API_VALIDATE_EXIT( m_pDevice->CreateRenderTargetView( m_pRenderTargetTexture, TNULL, &m_pRenderTargetView ) );
-		DX11_API_VALIDATE_EXIT( m_pDevice->CreateRenderTargetView( m_pGlowRenderTargetTexture, TNULL, &m_pGlowRenderTargetView ) );
-
-		// Main-pass G-buffer
-		D3D11_TEXTURE2D_DESC gbufferDesc = backBufferDesc;
-		gbufferDesc.Format               = DXGI_FORMAT_R16G16B16A16_FLOAT;
-		DX11_API_VALIDATE_EXIT( m_pDevice->CreateTexture2D( &gbufferDesc, TNULL, &m_pGBufferTexture ) );
-		DX11_API_VALIDATE_EXIT( m_pDevice->CreateRenderTargetView( m_pGBufferTexture, TNULL, &m_pGBufferRTV ) );
-
-		{
-			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-			srvDesc.Format                    = backBufferDesc.Format;
-			srvDesc.ViewDimension             = backBufferDesc.SampleDesc.Count > 1 ? D3D11_SRV_DIMENSION_TEXTURE2DMS : D3D11_SRV_DIMENSION_TEXTURE2D;
-			srvDesc.Texture2D.MipLevels       = 1;
-			srvDesc.Texture2D.MostDetailedMip = 0;
-			DX11_API_VALIDATE_EXIT( m_pDevice->CreateShaderResourceView( m_pRenderTargetTexture, &srvDesc, &m_pRenderTargetSRV ) );
-			DX11_API_VALIDATE_EXIT( m_pDevice->CreateShaderResourceView( m_pGlowRenderTargetTexture, &srvDesc, &m_pGlowRenderTargetSRV ) );
-		}
-
-		DX11_API_VALIDATE_EXIT( m_pSwapChain->GetBuffer( 0, __uuidof( ID3D11Texture2D ), (LPVOID*)&m_pSwapChainBackBuffer ) );
-
-		// Create depth stencil view
-		D3D11_TEXTURE2D_DESC depthBufferDesc = {};
-		depthBufferDesc.ArraySize            = 1;
-		depthBufferDesc.BindFlags            = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
-		depthBufferDesc.CPUAccessFlags       = 0;
-		// D32_FLOAT: stencil is never used, and D32 enables faster HiZ compression
-		// on most IHVs compared to D24S8.  R32_TYPELESS allows the SRV to read it
-		// as R32_FLOAT for the depth-resolve pass.
-		depthBufferDesc.Format               = DXGI_FORMAT_R32_TYPELESS;
-		depthBufferDesc.Height               = m_oSwapChainDesc.BufferDesc.Height;
-		depthBufferDesc.Width                = m_oSwapChainDesc.BufferDesc.Width;
-		depthBufferDesc.MipLevels            = 1;
-		depthBufferDesc.MiscFlags            = 0;
-		depthBufferDesc.SampleDesc.Count     = m_uiMSAASampleCount;
-		depthBufferDesc.SampleDesc.Quality   = 0;
-		depthBufferDesc.Usage                = D3D11_USAGE_DEFAULT;
-
-		D3D11_DEPTH_STENCIL_VIEW_DESC depthStencilDesc = {};
-
-		depthStencilDesc.Format             = DXGI_FORMAT_D32_FLOAT;
-		depthStencilDesc.Flags              = 0;
-		depthStencilDesc.Texture2D.MipSlice = 0;
-		depthStencilDesc.ViewDimension      = depthBufferDesc.SampleDesc.Count > 1 ? D3D11_DSV_DIMENSION_TEXTURE2DMS : D3D11_DSV_DIMENSION_TEXTURE2D;
-
-		DX11_API_VALIDATE_EXIT( m_pDevice->CreateTexture2D( &depthBufferDesc, TNULL, &m_pDepthStencilTexture ) );
-		DX11_API_VALIDATE_EXIT( m_pDevice->CreateDepthStencilView( m_pDepthStencilTexture, &depthStencilDesc, &m_pDepthStencilView ) );
-
-		{
-			D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-			srvDesc.Format                    = DXGI_FORMAT_R32_FLOAT;
-			srvDesc.ViewDimension             = depthBufferDesc.SampleDesc.Count > 1 ? D3D11_SRV_DIMENSION_TEXTURE2DMS : D3D11_SRV_DIMENSION_TEXTURE2D;
-			srvDesc.Texture2D.MipLevels       = 1;
-			srvDesc.Texture2D.MostDetailedMip = 0;
-			DX11_API_VALIDATE_EXIT( m_pDevice->CreateShaderResourceView( m_pDepthStencilTexture, &srvDesc, &m_pDepthStencilSRV ) );
-		}
+		// Seed the runtime graphics settings from the values resolved above so the
+		// pending/active snapshots match the live device state.
+		m_oActiveSettings.uiWidth       = m_oSwapChainDesc.BufferDesc.Width;
+		m_oActiveSettings.uiHeight      = m_oSwapChainDesc.BufferDesc.Height;
+		m_oActiveSettings.eDisplayMode  = pDisplayParams->bWindowed ? DISPLAY_WINDOWED : DISPLAY_BORDERLESS;
+		m_oActiveSettings.bVSync        = ( m_uiSyncInterval != 0 );
+		m_oActiveSettings.uiMSAASamples = m_uiMSAASampleCount;
+		m_oActiveSettings.eCSMPreset    = m_oCSMManager.GetPreset();
+		m_oPendingSettings              = m_oActiveSettings;
+		m_uiGraphicsDirty               = GFX_DIRTY_NONE;
 
 		s_pRenderHeap = g_pMemory->CreateMemBlock( HEAPSIZE, "RenderDX11", TNULL, 0 );
 		CreateRenderObjects();
@@ -410,6 +359,10 @@ TBOOL RenderDX11::DestroyDisplay()
 
 TBOOL RenderDX11::Update( TFLOAT a_fDeltaTime )
 {
+	// Apply any pending runtime graphics changes here. Called between frames, outside any
+	// BeginScene/EndScene pair, so it's safe to release and recreate device resources.
+	ApplyGraphicsSettings();
+
 	FlushDyingResources();
 	m_Window.Update();
 
@@ -461,7 +414,8 @@ TBOOL RenderDX11::EndScene()
 
 	// DXGI_PRESENT_ALLOW_TEARING is only valid with a sync interval of 0 and a
 	// swapchain created with DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING.
-	m_pSwapChain->Present( 0, m_bAllowTearing ? DXGI_PRESENT_ALLOW_TEARING : 0 );
+	const TBOOL bTearing = ( m_uiSyncInterval == 0 ) && m_bAllowTearing;
+	m_pSwapChain->Present( m_uiSyncInterval, bTearing ? DXGI_PRESENT_ALLOW_TEARING : 0 );
 	m_bInScene = TFALSE;
 
 	return TTRUE;
@@ -566,9 +520,195 @@ void RenderDX11::DestroyDebugText()
 	throw std::logic_error( "The method or operation is not implemented." );
 }
 
+// Resizes the game's render viewports to the new backbuffer size. Without this the
+// scene keeps rendering into the old viewport rectangle (ARenderer::CreateMainViewport
+// sizes these once from the startup display params), so the new resolution would only
+// be used by the post-process targets. SetWidth/SetHeight push straight into each
+// viewport's render-context params (see TViewport_BeginSKU).
+static void UpdateGameViewports( TUINT a_uiWidth, TUINT a_uiHeight )
+{
+	ARenderer* pRenderer = ARenderer::GetSingleton();
+	if ( !pRenderer )
+		return;
+
+	const TFLOAT fWidth  = TFLOAT( a_uiWidth );
+	const TFLOAT fHeight = TFLOAT( a_uiHeight );
+
+	Toshi::TViewport* apViewports[] = { pRenderer->m_pViewport, pRenderer->m_pHALViewport1, pRenderer->m_pHALViewport2 };
+	for ( Toshi::TViewport* pViewport : apViewports )
+	{
+		if ( !pViewport )
+			continue;
+
+		pViewport->SetWidth( fWidth );
+		pViewport->SetHeight( fHeight );
+	}
+}
+
 TBOOL RenderDX11::RecreateDisplay( const DISPLAYPARAMS& a_rDisplayParams )
 {
+	if ( !IsDisplayCreated() || !m_pSwapChain )
+		return TFALSE;
+
+	// Make sure the GPU is finished with the resources we are about to release.
+	WaitForEndOfRender();
+
+	// Unbind everything on the device so the resources we release (and the swapchain
+	// backbuffer) have no outstanding references for ResizeBuffers.
+	SetSecondaryRenderTargetView( TNULL );
+	m_pDeviceContext->ClearState();
+
+	ReleaseSwapchainSizedResources();
+	ReleaseRenderTargets();
+
+	// Only the swapchain backbuffer needs a true resize; MSAA-only changes keep the
+	// (always 1-sample, flip-model) backbuffer and just rebuild the offscreen targets.
+	const TBOOL bSizeChanged = ( a_rDisplayParams.uiWidth != m_oSwapChainDesc.BufferDesc.Width ) ||
+	                           ( a_rDisplayParams.uiHeight != m_oSwapChainDesc.BufferDesc.Height );
+	if ( bSizeChanged )
+	{
+		const UINT uiFlags = m_bAllowTearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
+		DX11_API_VALIDATE( m_pSwapChain->ResizeBuffers(
+		    SWAPCHAIN_BUFFER_COUNT,
+		    a_rDisplayParams.uiWidth,
+		    a_rDisplayParams.uiHeight,
+		    DXGI_FORMAT_R8G8B8A8_UNORM,
+		    uiFlags
+		) );
+	}
+
+	m_pSwapChain->GetDesc( &m_oSwapChainDesc );
+
+	CreateSwapchainSizedResources();
+	CreateRenderTargets();
+
+	m_oDisplayParams           = a_rDisplayParams;
+	m_oDisplayParams.uiWidth   = m_oSwapChainDesc.BufferDesc.Width;
+	m_oDisplayParams.uiHeight  = m_oSwapChainDesc.BufferDesc.Height;
+
+	// Apply the window mode/size to the SDL window.
+	m_Window.SetFullscreen( !a_rDisplayParams.bWindowed );
+	if ( a_rDisplayParams.bWindowed )
+		m_Window.SetPosition( SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, m_oSwapChainDesc.BufferDesc.Width, m_oSwapChainDesc.BufferDesc.Height );
+
+	// ClearState() unbound everything on the device; fully reset our binding cache so the
+	// next frame rebinds it all (a partial reset would leave e.g. the skin bone cbuffer
+	// cached-but-unbound, making animated meshes vanish).
+	InvalidateStateCache();
+
+	// Resize the game's viewports so the scene renders at the new resolution.
+	UpdateGameViewports( m_oSwapChainDesc.BufferDesc.Width, m_oSwapChainDesc.BufferDesc.Height );
+
+	// Re-apply the resolution-dependent widescreen patches (aspect-ratio FOV + AGUI2
+	// canvas), which were otherwise only computed once at startup.
+	ApplyResolutionDependentPatches( m_oSwapChainDesc.BufferDesc.Width, m_oSwapChainDesc.BufferDesc.Height );
+
 	return TTRUE;
+}
+
+//-----------------------------------------------------------------------------
+// Runtime graphics settings. Request methods only record the desired value and a dirty
+// bit; the work happens in ApplyGraphicsSettings() between frames.
+//-----------------------------------------------------------------------------
+void RenderDX11::RequestResolution( TUINT a_uiWidth, TUINT a_uiHeight )
+{
+	if ( a_uiWidth == 0 || a_uiHeight == 0 )
+		return;
+
+	if ( m_oPendingSettings.uiWidth == a_uiWidth && m_oPendingSettings.uiHeight == a_uiHeight )
+		return;
+
+	m_oPendingSettings.uiWidth  = a_uiWidth;
+	m_oPendingSettings.uiHeight = a_uiHeight;
+	m_uiGraphicsDirty |= GFX_DIRTY_RESOLUTION;
+}
+
+void RenderDX11::RequestDisplayMode( DisplayMode a_eMode )
+{
+	if ( m_oPendingSettings.eDisplayMode == a_eMode )
+		return;
+
+	m_oPendingSettings.eDisplayMode = a_eMode;
+	m_uiGraphicsDirty |= GFX_DIRTY_DISPLAYMODE;
+}
+
+void RenderDX11::RequestVSync( TBOOL a_bEnabled )
+{
+	if ( m_oPendingSettings.bVSync == a_bEnabled )
+		return;
+
+	m_oPendingSettings.bVSync = a_bEnabled;
+	m_uiGraphicsDirty |= GFX_DIRTY_VSYNC;
+}
+
+void RenderDX11::RequestMSAA( TUINT a_uiSamples )
+{
+	if ( m_oPendingSettings.uiMSAASamples == a_uiSamples )
+		return;
+
+	m_oPendingSettings.uiMSAASamples = a_uiSamples;
+	m_uiGraphicsDirty |= GFX_DIRTY_MSAA;
+}
+
+void RenderDX11::RequestCSMPreset( CSMPreset a_ePreset )
+{
+	if ( m_oPendingSettings.eCSMPreset == a_ePreset )
+		return;
+
+	m_oPendingSettings.eCSMPreset = a_ePreset;
+	m_uiGraphicsDirty |= GFX_DIRTY_CSM;
+}
+
+void RenderDX11::ApplyGraphicsSettings()
+{
+	if ( m_uiGraphicsDirty == GFX_DIRTY_NONE )
+		return;
+
+	// Never reconfigure the device mid-scene; deferred to the next Update().
+	if ( IsInScene() )
+		return;
+
+	// VSync: cheap, just changes the Present sync interval (consumed in EndScene).
+	if ( m_uiGraphicsDirty & GFX_DIRTY_VSYNC )
+		m_uiSyncInterval = m_oPendingSettings.bVSync ? 1 : 0;
+
+	// Resolution / MSAA / display-mode: route through RecreateDisplay (the engine's
+	// display-change entry point), which rebuilds the swapchain-sized resources and
+	// resizes the game viewports. The game's own options menu calls the same path.
+	if ( m_uiGraphicsDirty & ( GFX_DIRTY_RESOLUTION | GFX_DIRTY_MSAA | GFX_DIRTY_DISPLAYMODE ) )
+	{
+		// MSAA isn't part of DISPLAYPARAMS; CreateSwapchainSizedResources reads the member.
+		if ( m_uiGraphicsDirty & GFX_DIRTY_MSAA )
+			m_uiMSAASampleCount = GetSupportedMSAASampleCount( m_oPendingSettings.uiMSAASamples );
+
+		const TBOOL bWindowed = ( m_oPendingSettings.eDisplayMode == DISPLAY_WINDOWED );
+
+		// Borderless/fullscreen tracks the current desktop resolution.
+		if ( !bWindowed )
+		{
+			const TINT      iDisplayIndex = SDL_GetWindowDisplayIndex( m_Window.GetSDLHandle() );
+			SDL_DisplayMode oSDLMode;
+			if ( SDL_GetCurrentDisplayMode( iDisplayIndex, &oSDLMode ) == 0 )
+			{
+				m_oPendingSettings.uiWidth  = TUINT( oSDLMode.w );
+				m_oPendingSettings.uiHeight = TUINT( oSDLMode.h );
+			}
+		}
+
+		DISPLAYPARAMS oParams     = m_oDisplayParams;
+		oParams.uiWidth           = m_oPendingSettings.uiWidth;
+		oParams.uiHeight          = m_oPendingSettings.uiHeight;
+		oParams.bWindowed         = bWindowed;
+
+		RecreateDisplay( oParams );
+	}
+
+	// CSM shadow atlas resize.
+	if ( m_uiGraphicsDirty & GFX_DIRTY_CSM )
+		m_oCSMManager.ApplyResolution( m_oPendingSettings.eCSMPreset );
+
+	m_oActiveSettings = m_oPendingSettings;
+	m_uiGraphicsDirty = GFX_DIRTY_NONE;
 }
 
 void RenderDX11::SetContrast( TFLOAT a_fConstrast )
@@ -658,6 +798,107 @@ TBOOL RenderDX11::Create( const TCHAR* a_pchWindowTitle )
 	return TFALSE;
 }
 
+void RenderDX11::CreateSwapchainSizedResources()
+{
+	// Create render target
+	D3D11_TEXTURE2D_DESC backBufferDesc = {};
+	backBufferDesc.ArraySize            = 1;
+	backBufferDesc.BindFlags            = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+	backBufferDesc.CPUAccessFlags       = 0;
+	backBufferDesc.Format               = DXGI_FORMAT_R8G8B8A8_UNORM;
+	backBufferDesc.Height               = m_oSwapChainDesc.BufferDesc.Height;
+	backBufferDesc.Width                = m_oSwapChainDesc.BufferDesc.Width;
+	backBufferDesc.MipLevels            = 1;
+	backBufferDesc.MiscFlags            = 0;
+	backBufferDesc.SampleDesc.Count     = m_uiMSAASampleCount;
+	backBufferDesc.SampleDesc.Quality   = 0;
+	backBufferDesc.Usage                = D3D11_USAGE_DEFAULT;
+
+	DX11_API_VALIDATE( m_pDevice->CreateTexture2D( &backBufferDesc, TNULL, &m_pRenderTargetTexture ) );
+	DX11_API_VALIDATE( m_pDevice->CreateTexture2D( &backBufferDesc, TNULL, &m_pGlowRenderTargetTexture ) );
+	DX11_API_VALIDATE( m_pDevice->CreateRenderTargetView( m_pRenderTargetTexture, TNULL, &m_pRenderTargetView ) );
+	DX11_API_VALIDATE( m_pDevice->CreateRenderTargetView( m_pGlowRenderTargetTexture, TNULL, &m_pGlowRenderTargetView ) );
+
+	// Main-pass G-buffer
+	D3D11_TEXTURE2D_DESC gbufferDesc = backBufferDesc;
+	gbufferDesc.Format               = DXGI_FORMAT_R16G16B16A16_FLOAT;
+	DX11_API_VALIDATE( m_pDevice->CreateTexture2D( &gbufferDesc, TNULL, &m_pGBufferTexture ) );
+	DX11_API_VALIDATE( m_pDevice->CreateRenderTargetView( m_pGBufferTexture, TNULL, &m_pGBufferRTV ) );
+
+	{
+		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format                    = backBufferDesc.Format;
+		srvDesc.ViewDimension             = backBufferDesc.SampleDesc.Count > 1 ? D3D11_SRV_DIMENSION_TEXTURE2DMS : D3D11_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels       = 1;
+		srvDesc.Texture2D.MostDetailedMip = 0;
+		DX11_API_VALIDATE( m_pDevice->CreateShaderResourceView( m_pRenderTargetTexture, &srvDesc, &m_pRenderTargetSRV ) );
+		DX11_API_VALIDATE( m_pDevice->CreateShaderResourceView( m_pGlowRenderTargetTexture, &srvDesc, &m_pGlowRenderTargetSRV ) );
+	}
+
+	DX11_API_VALIDATE( m_pSwapChain->GetBuffer( 0, __uuidof( ID3D11Texture2D ), (LPVOID*)&m_pSwapChainBackBuffer ) );
+
+	// Create depth stencil view
+	D3D11_TEXTURE2D_DESC depthBufferDesc = {};
+	depthBufferDesc.ArraySize            = 1;
+	depthBufferDesc.BindFlags            = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
+	depthBufferDesc.CPUAccessFlags       = 0;
+	// D32_FLOAT: stencil is never used, and D32 enables faster HiZ compression
+	// on most IHVs compared to D24S8.  R32_TYPELESS allows the SRV to read it
+	// as R32_FLOAT for the depth-resolve pass.
+	depthBufferDesc.Format               = DXGI_FORMAT_R32_TYPELESS;
+	depthBufferDesc.Height               = m_oSwapChainDesc.BufferDesc.Height;
+	depthBufferDesc.Width                = m_oSwapChainDesc.BufferDesc.Width;
+	depthBufferDesc.MipLevels            = 1;
+	depthBufferDesc.MiscFlags            = 0;
+	depthBufferDesc.SampleDesc.Count     = m_uiMSAASampleCount;
+	depthBufferDesc.SampleDesc.Quality   = 0;
+	depthBufferDesc.Usage                = D3D11_USAGE_DEFAULT;
+
+	D3D11_DEPTH_STENCIL_VIEW_DESC depthStencilDesc = {};
+
+	depthStencilDesc.Format             = DXGI_FORMAT_D32_FLOAT;
+	depthStencilDesc.Flags              = 0;
+	depthStencilDesc.Texture2D.MipSlice = 0;
+	depthStencilDesc.ViewDimension      = depthBufferDesc.SampleDesc.Count > 1 ? D3D11_DSV_DIMENSION_TEXTURE2DMS : D3D11_DSV_DIMENSION_TEXTURE2D;
+
+	DX11_API_VALIDATE( m_pDevice->CreateTexture2D( &depthBufferDesc, TNULL, &m_pDepthStencilTexture ) );
+	DX11_API_VALIDATE( m_pDevice->CreateDepthStencilView( m_pDepthStencilTexture, &depthStencilDesc, &m_pDepthStencilView ) );
+
+	{
+		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format                    = DXGI_FORMAT_R32_FLOAT;
+		srvDesc.ViewDimension             = depthBufferDesc.SampleDesc.Count > 1 ? D3D11_SRV_DIMENSION_TEXTURE2DMS : D3D11_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels       = 1;
+		srvDesc.Texture2D.MostDetailedMip = 0;
+		DX11_API_VALIDATE( m_pDevice->CreateShaderResourceView( m_pDepthStencilTexture, &srvDesc, &m_pDepthStencilSRV ) );
+	}
+}
+
+void RenderDX11::ReleaseSwapchainSizedResources()
+{
+	auto fnRelease = []( auto*& a_rpObject )
+	{
+		if ( a_rpObject )
+		{
+			a_rpObject->Release();
+			a_rpObject = TNULL;
+		}
+	};
+
+	fnRelease( m_pRenderTargetSRV );
+	fnRelease( m_pRenderTargetView );
+	fnRelease( m_pRenderTargetTexture );
+	fnRelease( m_pGlowRenderTargetSRV );
+	fnRelease( m_pGlowRenderTargetView );
+	fnRelease( m_pGlowRenderTargetTexture );
+	fnRelease( m_pGBufferRTV );
+	fnRelease( m_pGBufferTexture );
+	fnRelease( m_pDepthStencilSRV );
+	fnRelease( m_pDepthStencilView );
+	fnRelease( m_pDepthStencilTexture );
+	fnRelease( m_pSwapChainBackBuffer );
+}
+
 void RenderDX11::CreateRenderObjects()
 {
 	const TBOOL bShaderCombosCompiled = shadercombos::CompileAllShaderCombos();
@@ -732,7 +973,7 @@ void RenderDX11::CreateRenderObjects()
 	// Depth only pass constant buffer
 	{
 		D3D11_BUFFER_DESC bufferDesc;
-		bufferDesc.ByteWidth           = 64;
+		bufferDesc.ByteWidth           = 128;
 		bufferDesc.Usage               = D3D11_USAGE_DYNAMIC;
 		bufferDesc.BindFlags           = D3D11_BIND_CONSTANT_BUFFER;
 		bufferDesc.CPUAccessFlags      = D3D11_CPU_ACCESS_WRITE;

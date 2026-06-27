@@ -113,6 +113,13 @@ void remaster::SkinShaderDX11::StartFlush()
 		g_pRender->PSSetShaderResource( 5, g_pCSMManager->GetShadowSRV() );
 		g_pRender->PSSetSamplerState( 5, g_pCSMManager->GetShadowSampler() );
 		g_pRender->PSSetConstantBuffer( 1, g_pRender->GetShadowConstantBuffer() );
+
+		// Animated cloud shadow map (t9/s3), sampled by world XZ in SampleShadow.
+		if ( g_bCloudShadowsEnabled )
+		{
+			g_pRender->PSSetShaderResource( 9, g_pCloudShadowSRV );
+			g_pRender->PSSetSamplerState( 3, g_pCloudShadowSampler );
+		}
 	}
 
 	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
@@ -134,6 +141,7 @@ void remaster::SkinShaderDX11::EndFlush()
 	g_pRender->PSSetShaderResource( 3, TNULL );
 	g_pRender->PSSetShaderResource( 4, TNULL );
 	g_pRender->PSSetShaderResource( 5, TNULL );
+	g_pRender->PSSetShaderResource( 9, TNULL );
 	g_pRender->PSSetConstantBuffer( 2, TNULL );
 }
 
@@ -218,9 +226,15 @@ TBOOL remaster::SkinShaderDX11::TryValidate()
 	return TTRUE;
 }
 
-const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetSkinPipeline( TBOOL a_bBakedLighting, TBOOL a_bFOB, TBOOL a_bDynLighting, TBOOL a_bIsAnimated ) const
+const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetSkinPipeline( TBOOL a_bBakedLighting, TBOOL a_bFOB, TBOOL a_bDynLighting, TBOOL a_bIsAnimated, TBOOL a_bHasMaps ) const
 {
 	TUINT uiComboFlags = 0;
+
+	if ( a_bHasMaps )
+		uiComboFlags |= shadercombos::Skin_MATERIAL_MAPS;
+
+	if ( g_bCloudShadowsEnabled )
+		uiComboFlags |= shadercombos::Skin_CLOUD_SHADOWS;
 
 	if ( a_bBakedLighting )
 		uiComboFlags |= shadercombos::Skin_BAKED_LIGHTING;
@@ -288,7 +302,8 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 			D3D11_MAPPED_SUBRESOURCE mapped;
 			g_pRender->GetD3D11DeviceContext()->Map( pCBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped );
 
-			TSTATICCAST(TMatrix44, mapped.pData )->Multiply( g_pCSMManager->GetCurrentLightProjection(), a_pRenderPacket->GetModelViewMatrix() );
+			TSTATICCAST( TMatrix44, mapped.pData )->Multiply( g_pCSMManager->GetCurrentLightProjection(), a_pRenderPacket->GetModelViewMatrix() );
+			( TSTATICCAST( TMatrix44, mapped.pData ) + 1 )->AsBasisVector4( 0 ) = TVector4( TFLOAT( g_pCSMManager->GetCurrentCascade() ), 0.0f, 0.0f );
 
 			g_pRender->GetD3D11DeviceContext()->Unmap( pCBuffer, 0 );
 		}
@@ -342,7 +357,10 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	const TBOOL  bIsFOB            = pMesh->IsFOB();
 	const TBOOL  bHasDynLight      = g_bDynamicGlowEnabled && TINT8( a_pRenderPacket->m_ui8Unk1 ) >= 0;
 
-	g_pRender->SetShaderPipelineState( GetSkinPipeline( bUseBakedLighting, bIsFOB, bHasDynLight, bIsAnimated ) );
+	const remaster::MaterialParams* pSpecParams = remaster::GetMaterialParams( pMaterial );
+	const TBOOL bHasMaps = pSpecParams && ( pSpecParams->pNormalMap || pSpecParams->pRoughnessMap );
+
+	g_pRender->SetShaderPipelineState( GetSkinPipeline( bUseBakedLighting, bIsFOB, bHasDynLight, bIsAnimated, bHasMaps ) );
 
 	// Setup renderer
 	if ( bUseBakedLighting )
@@ -408,7 +426,6 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 		g_pRender->SetBlendEnabled( TFALSE );
 
 	// Fog + per-material specular settings (slot 9.zw)
-	const remaster::MaterialParams* pSpecParams = remaster::GetMaterialParams( pMaterial );
 	TVector4 vMiscSettings;
 	vMiscSettings.x = pCurrentContext->m_fFogDistanceStart;
 	vMiscSettings.y = pCurrentContext->m_fFogDistanceEnd;
@@ -432,6 +449,30 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	// Camera world position for specular
 	const TVector3 camPos = pCurrentContext->GetViewWorldMatrix().GetTranslation3();
 	g_pRender->VSBufferSetVec4( 15, TVector4( camPos.x, camPos.y, camPos.z, 0.0f ) );
+
+	// Per-material normal/roughness maps. Bind at t7/t8 (t1-t4 are baked lighting) and pack
+	// strengths + presence flags into slot 16. Maps sample with the diffuse sampler (s0).
+	TFLOAT flMapFlags = 0.0f;
+	if ( pSpecParams && pSpecParams->pNormalMap )
+	{
+		g_pRender->PSSetShaderResource( 7, (ID3D11ShaderResourceView*)pSpecParams->pNormalMap );
+		flMapFlags += 1.0f;
+	}
+	if ( pSpecParams && pSpecParams->pRoughnessMap )
+	{
+		g_pRender->PSSetShaderResource( 8, (ID3D11ShaderResourceView*)pSpecParams->pRoughnessMap );
+		flMapFlags += 2.0f;
+	}
+	const TFLOAT flNormalStrength    = pSpecParams ? pSpecParams->fNormalStrength    : 1.0f;
+	const TFLOAT flRoughnessStrength = pSpecParams ? pSpecParams->fRoughnessStrength : 1.0f;
+	const TFLOAT flRoughness         = pSpecParams ? pSpecParams->fRoughness         : 0.0f;
+	g_pRender->VSBufferSetVec4( 16, TVector4( flNormalStrength, flRoughnessStrength, flRoughness, flMapFlags ) );
+
+	// SSR params (slot 17): reflectivity + fresnel power so skin writes a real G-buffer
+	// (normal + reflectivity) and can be reflected when authored reflective.
+	const TFLOAT flReflectivity = pSpecParams ? pSpecParams->fReflectivity : 0.0f;
+	const TFLOAT flFresnelPower  = pSpecParams ? TMath::Max( pSpecParams->fFresnelPower, 0.1f ) : 0.1f;
+	g_pRender->VSBufferSetVec4( 17, TVector4( flReflectivity, flFresnelPower, 0.0f, 0.0f ) );
 
 	if ( bHasDynLight ) UploadDynamicGlowLights( a_pRenderPacket );
 

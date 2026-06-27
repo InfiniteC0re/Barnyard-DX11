@@ -21,6 +21,7 @@
 #include "HBAOCompositeShaderCombos.h"
 #include "VolumetricFogShaderCombos.h"
 #include "VolumetricFogCompositeShaderCombos.h"
+#include "CloudShadowShaderCombos.h"
 
 namespace remaster
 {
@@ -70,6 +71,8 @@ TINLINE TBOOL CompileAllShaderCombos()
 	if ( !CompileVolumetricFogShaderCombos() )
 		return TFALSE;
 	if ( !CompileVolumetricFogCompositeShaderCombos() )
+		return TFALSE;
+	if ( !CompileCloudShadowShaderCombos() )
 		return TFALSE;
 
 	return TTRUE;

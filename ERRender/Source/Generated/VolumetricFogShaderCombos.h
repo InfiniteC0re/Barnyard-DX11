@@ -10,20 +10,23 @@ namespace shadercombos
 enum VolumetricFogComboFlags : TUINT
 {
 	VolumetricFog_NO_DYN_LIGHT = BITFLAG( 0 ),
+	VolumetricFog_CLOUD_SHADOWS = BITFLAG( 1 ),
 };
 
 static constexpr dx11::ShaderComboDefinition VolumetricFogCombos[] =
 {
 	{ "NO_DYN_LIGHT", 0, 1, 1 },
+	{ "CLOUD_SHADOWS", 0, 1, 2 },
 };
 
-static constexpr TUINT VolumetricFogNumCombos = 1;
-static constexpr TUINT VolumetricFogNumPermutations = 2;
+static constexpr TUINT VolumetricFogNumCombos = 2;
+static constexpr TUINT VolumetricFogNumPermutations = 4;
 
 TINLINE TUINT GetVolumetricFogComboIndex( TUINT a_uiComboFlags )
 {
 	TUINT uiIndex = 0;
 	uiIndex += ( ( ( a_uiComboFlags & VolumetricFog_NO_DYN_LIGHT ) ? 1U : 0U ) - 0U ) * 1U;
+	uiIndex += ( ( ( a_uiComboFlags & VolumetricFog_CLOUD_SHADOWS ) ? 1U : 0U ) - 0U ) * 2U;
 	return uiIndex;
 }
 

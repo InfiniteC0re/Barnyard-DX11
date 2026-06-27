@@ -1,6 +1,5 @@
 #include "pch.h"
 #include "AWorldMesh.h"
-#include "CSM/CSMShadowBatch.h"
 
 #include <AHooks.h>
 
@@ -45,8 +44,6 @@ void AWorldMesh::Invalidate()
 // $Barnyard: FUNCTION 005f5e90
 void AWorldMesh::OnDestroy()
 {
-	// remaster::CSMShadowBatch::GetSingleton().NotifyMeshDestroyed( this );
-
 	CALL( 0x00611f50, void, TMaterial*, m_pMaterial ); // AModelLoader::DestroyMaterial( m_pMaterial );
 
 	DestroyResource();

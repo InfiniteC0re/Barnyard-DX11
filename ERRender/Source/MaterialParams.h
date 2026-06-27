@@ -4,6 +4,7 @@
 #include <Toshi/T2Map.h>
 #include <Toshi/TUtil.h>
 #include <ToshiTools/tinyxml2.h>
+#include <Thread/T2Mutex.h>
 
 namespace remaster
 {
@@ -12,14 +13,38 @@ static constexpr TUINT32 MATERIAL_PARAMS_SLOT = 5;
 
 struct MaterialParams
 {
-	TFLOAT fReflectivity;
-	TFLOAT fRoughness;         // reflection blur amount
+	TFLOAT fReflectivity;      // SSR reflectivity
+	TFLOAT fRoughness;         // reflection blur amount (used when no roughness map)
 	TFLOAT fFresnelPower;      // SSR Fresnel exponent
 	TFLOAT fSpecularIntensity; // sun specular highlight strength
 	TFLOAT fSpecularPower;     // specular shininess exponent
+	TFLOAT fNormalStrength;    // normal-map perturbation scale (1 = as authored, 0 = flat)
+	TFLOAT fRoughnessStrength; // roughness-map multiplier (1 = as authored)
+	TFLOAT fParallaxScale;     // parallax occlusion depth (0 = off, ~0.02-0.08 typical)
+	TCHAR  szNormalMap[ 64 ];  // normal-map file under Data\Textures (empty = none)
+	TCHAR  szRoughnessMap[ 64 ];
+	TCHAR  szHeightMap[ 64 ];  // height map (white = raised) for parallax
+	void*  pNormalMap;         // resolved ID3D11ShaderResourceView* (slot copy only)
+	void*  pRoughnessMap;
+	void*  pHeightMap;
 };
 
 static constexpr const TCHAR* MATERIAL_PARAMS_PATH = "Data\\MaterialParams.xml";
+
+// Root folder the XML map names are resolved against. Defined in ERRenderWrapper.cpp.
+static constexpr const TCHAR* TEXTURE_DIR = "Data\\Textures\\";
+
+// Load a texture file (Data\Textures\<name>) into a cached ID3D11ShaderResourceView,
+// returning the same view for repeated names. Returns TNULL if the file is missing/bad.
+// Defined in ERRenderWrapper.cpp (needs the D3D11 device + DirectXTex).
+void* LoadCachedTexture( const TCHAR* a_szName );
+
+// Release all cached map SRVs so the next resolve re-reads the files (hot-reload).
+void ClearTextureCache();
+
+// (Re)apply params to every live material in the engine's pool (catches materials that
+// exist but weren't matched at creation, e.g. newly-added XML entries). In ERRenderWrapper.
+void ApplyParamsToAllMaterials();
 
 struct MaterialHashComparator
 {
@@ -36,6 +61,15 @@ inline Toshi::T2Map<Toshi::TMaterial*, TUINT32>& GetMaterialRegistry()
 {
 	static Toshi::T2Map<Toshi::TMaterial*, TUINT32> s_oRegistry;
 	return s_oRegistry;
+}
+
+// Serializes all param mutations. Materials are created on the asset-streaming thread
+// (AAssetStreaming), so AttachMaterialParams runs off the main thread while the ImGui
+// "Reload Materials" button runs on it. Both touch the non-thread-safe T2Map caches.
+inline Toshi::T2Mutex& GetMaterialParamsMutex()
+{
+	static Toshi::T2Mutex s_oMutex;
+	return s_oMutex;
 }
 
 inline TUINT32 HashMaterialName( const TCHAR* a_szName )
@@ -74,9 +108,21 @@ inline void LoadMaterialParamsDB( const TCHAR* a_szPath )
 		MaterialParams oParams     = {};
 		oParams.fReflectivity      = pElem->FloatAttribute( "reflectivity", 0.0f );
 		oParams.fRoughness         = pElem->FloatAttribute( "roughness", 0.0f );
-		oParams.fFresnelPower      = pElem->FloatAttribute( "fresnelPower", 4.0f );
-		oParams.fSpecularIntensity = pElem->FloatAttribute( "specularIntensity", 0.0f );
-		oParams.fSpecularPower     = pElem->FloatAttribute( "specularPower", 32.0f );
+		oParams.fFresnelPower      = pElem->FloatAttribute( "fresnelPower", 0.0f );
+		oParams.fSpecularIntensity = pElem->FloatAttribute( "specularIntensity", 0.05f );
+		oParams.fSpecularPower     = pElem->FloatAttribute( "specularPower", 26.0f );
+		oParams.fNormalStrength    = pElem->FloatAttribute( "normalStrength", 1.0f );
+		oParams.fRoughnessStrength = pElem->FloatAttribute( "roughnessStrength", 1.0f );
+		oParams.fParallaxScale     = pElem->FloatAttribute( "parallaxScale", 0.0f );
+
+		// Optional normal/roughness/height map file names (resolved against Data\Textures).
+		if ( const TCHAR* szNormal = pElem->Attribute( "normalMap" ) )
+			Toshi::TStringManager::String8Copy( oParams.szNormalMap, szNormal, sizeof( oParams.szNormalMap ) );
+		if ( const TCHAR* szRough = pElem->Attribute( "roughnessMap" ) )
+			Toshi::TStringManager::String8Copy( oParams.szRoughnessMap, szRough, sizeof( oParams.szRoughnessMap ) );
+		if ( const TCHAR* szHeight = pElem->Attribute( "heightMap" ) )
+			Toshi::TStringManager::String8Copy( oParams.szHeightMap, szHeight, sizeof( oParams.szHeightMap ) );
+
 		rDB.Insert( HashMaterialName( szName ), oParams );
 	}
 }
@@ -111,12 +157,22 @@ inline void ApplyParamsToMaterial( Toshi::TMaterial* a_pMaterial, TUINT32 a_uNam
 		const MaterialParams& rSrc = it.GetValue()->GetSecond();
 		if ( bOurs )
 		{
-			*pSlot = rSrc; // overwrite in place (magic preserved from rSrc)
+			*pSlot = rSrc; // overwrite in place
 		}
 		else if ( a_pMaterial->GetTextureNum() <= MATERIAL_PARAMS_SLOT ) // slot 5 must be free
 		{
-			a_pMaterial->SetTexture( MATERIAL_PARAMS_SLOT, reinterpret_cast<Toshi::TTexture*>( new MaterialParams( rSrc ) ) );
+			pSlot = new MaterialParams( rSrc );
+			a_pMaterial->SetTexture( MATERIAL_PARAMS_SLOT, reinterpret_cast<Toshi::TTexture*>( pSlot ) );
 		}
+		else
+		{
+			return; // slot occupied by a real texture
+		}
+
+		// Resolve the XML map names into shared cached shader resource views.
+		pSlot->pNormalMap    = pSlot->szNormalMap[ 0 ]    ? LoadCachedTexture( pSlot->szNormalMap )    : TNULL;
+		pSlot->pRoughnessMap = pSlot->szRoughnessMap[ 0 ] ? LoadCachedTexture( pSlot->szRoughnessMap ) : TNULL;
+		pSlot->pHeightMap    = pSlot->szHeightMap[ 0 ]    ? LoadCachedTexture( pSlot->szHeightMap )    : TNULL;
 	}
 	else if ( bOurs )
 	{
@@ -132,6 +188,7 @@ inline void AttachMaterialParams( Toshi::TMaterial* a_pMaterial, const TCHAR* a_
 	if ( !a_pMaterial || !a_szName )
 		return;
 
+	Toshi::T2MutexLock oLock( GetMaterialParamsMutex() );
 	const TUINT32 uHash = HashMaterialName( a_szName );
 	GetMaterialRegistry().Insert( a_pMaterial, uHash );
 	ApplyParamsToMaterial( a_pMaterial, uHash );
@@ -144,6 +201,7 @@ inline void DetachMaterialParams( Toshi::TMaterial* a_pMaterial )
 	if ( !a_pMaterial )
 		return;
 
+	Toshi::T2MutexLock oLock( GetMaterialParamsMutex() );
 	auto* pSlot = reinterpret_cast<MaterialParams*>( a_pMaterial->GetTexture( MATERIAL_PARAMS_SLOT ) );
 	if ( pSlot )
 	{
@@ -156,15 +214,15 @@ inline void DetachMaterialParams( Toshi::TMaterial* a_pMaterial )
 		rReg.FindAndRemove( a_pMaterial );
 }
 
-// Re-parse the XML and re-apply to every registered material. Safe to call at any
-// time (e.g. an ImGui "Reload Materials" button) for live iteration.
+// Re-parse the XML and re-apply to every live material in the engine pool. Safe to call
+// at any time (e.g. from an ImGui "Reload Materials" button) for live iteration. Picks
+// up newly-added XML entries for already-loaded materials, not just ones we registered.
 inline void ReloadMaterialParams()
 {
+	Toshi::T2MutexLock oLock( GetMaterialParamsMutex() );
 	LoadMaterialParamsDB( MATERIAL_PARAMS_PATH );
-
-	auto& rReg = GetMaterialRegistry();
-	for ( auto it = rReg.Begin(); it != rReg.End(); it++ )
-		ApplyParamsToMaterial( it.GetValue()->GetFirst(), it.GetValue()->GetSecond() );
+	ClearTextureCache();        // drop cached SRVs so edited normal/roughness files re-read from disk
+	ApplyParamsToAllMaterials(); // walk the engine's material pool
 }
 
 } // namespace remaster
