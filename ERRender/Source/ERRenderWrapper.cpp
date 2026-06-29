@@ -17,6 +17,7 @@
 #include "Resource/IndexBlock.h"
 #include "UI/UIRenderer.h"
 #include "UI/FontRenderer.h"
+#include "LightData.h"
 
 #include "Generated/SkyMaskShaderCombos.h"
 #include "Generated/SunShaftsShaderCombos.h"
@@ -120,57 +121,18 @@ TFLOAT g_flVolumetricFogMaxDist      = 44.0f;
 TFLOAT g_flVolumetricFogIntensity    = 0.20f;
 TFLOAT g_flVolumetricFogColor[ 3 ]   = { 0.937f, 0.8f, 0.5254f };
 
-// --- Normal/roughness map loading -------------------------------------------
-static Toshi::T2Map<TUINT32, void*, MaterialHashComparator>& GetTextureCache()
-{
-	static Toshi::T2Map<TUINT32, void*, MaterialHashComparator> s_oCache;
-	return s_oCache;
-}
-
-// Re-apply params to every live material in the game's pool (AModelLoader::ms_oNodesAlloc
-// at 0x0079b848), so hot-reload reaches materials that exist but weren't matched at
-// creation time (e.g. a newly-added XML entry for an already-loaded material).
-void ApplyParamsToAllMaterials()
-{
-	// Layout mirror of AModelLoader::MaterialNode (T2DList::Node = {next,prev} + fields).
-	struct MaterialNode
-	{
-		void*             pNext;
-		void*             pPrev;
-		Toshi::TMaterial* pMaterial;
-		TCHAR             szName[ 64 ];
-		TUINT16           iNumRefs;
-		TUINT16           iId;
-		TCHAR             szTextureName[ 32 ];
-	};
-
-	auto* pNodes = reinterpret_cast<MaterialNode*>( 0x0079b848 );
-	for ( TUINT i = 0; i < 512; i++ ) // MAX_NUM_ALLOCATED_MATERIALS
-	{
-		MaterialNode& rNode = pNodes[ i ];
-		if ( rNode.iNumRefs == 0 || !rNode.pMaterial )
-			continue; // free/empty slot
-
-		// Strip the "ws_"/"ss_"/"gs_" shader prefix to recover the authored name.
-		const TCHAR* szName = rNode.szName;
-		if ( szName[ 0 ] && szName[ 1 ] && szName[ 2 ] == '_' )
-			szName += 3;
-
-		ApplyParamsToMaterial( rNode.pMaterial, HashMaterialName( szName ) );
-	}
-}
+static Toshi::T2Map<TUINT32, void*, MaterialHashComparator> s_oTextureCache;
 
 // Release every cached SRV and empty the cache, so the next LoadCachedTexture re-reads
 // from disk. Used by material hot-reload to pick up edited image files.
 void ClearTextureCache()
 {
-	auto& rCache = GetTextureCache();
-	for ( auto it = rCache.Begin(); it != rCache.End(); it++ )
+	for ( auto it = s_oTextureCache.Begin(); it != s_oTextureCache.End(); it++ )
 	{
 		auto* pSRV = (ID3D11ShaderResourceView*)it.GetValue()->GetSecond();
 		if ( pSRV ) pSRV->Release();
 	}
-	rCache.Clear();
+	s_oTextureCache.Clear();
 }
 
 // Load an image file (Data\Textures\<name>) into a D3D11 SRV, caching by name so a map
@@ -178,11 +140,9 @@ void ClearTextureCache()
 // normal/roughness data); DDS as authored. Returns TNULL on a missing/bad file.
 void* LoadCachedTexture( const TCHAR* a_szName )
 {
-	auto& s_oCache = GetTextureCache();
-
 	const TUINT32 uHash = HashMaterialName( a_szName );
-	auto          it    = s_oCache.Find( uHash );
-	if ( s_oCache.IsValid( it ) )
+	auto          it    = s_oTextureCache.Find( uHash );
+	if ( s_oTextureCache.IsValid( it ) )
 		return it.GetValue()->GetSecond();
 
 	void* pResult = TNULL;
@@ -219,7 +179,7 @@ void* LoadCachedTexture( const TCHAR* a_szName )
 		pFile->Destroy();
 	}
 
-	s_oCache.Insert( uHash, pResult ); // cache misses too, to avoid repeated disk hits
+	s_oTextureCache.Insert( uHash, pResult ); // cache misses too, to avoid repeated disk hits
 	return pResult;
 }
 
@@ -1083,6 +1043,7 @@ void remaster::RenderDX11::ReleaseRenderTargets()
 	fnRelease( s_pSkyMaskSampler );
 	fnRelease( s_pPointClampSampler );
 	fnRelease( s_pLinearClampSampler );
+
 	remaster::g_pCloudShadowSampler = TNULL; // aliased s_pLinearClampSampler (now released)
 }
 
@@ -1095,6 +1056,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 	// Reset state
 	g_bHasGlowObjectsThisFrame = TFALSE;
+	g_pLightDataPacketAllocator->Reset();
 
 	auto pSwapChainDesc = remaster::g_pRender->GetSwapChainDesc();
 
@@ -2259,14 +2221,6 @@ HOOK(0x006119d0, AModelLoader_CreateMaterial, TMaterial*, TINT a_iOffset, const 
 	return pMaterial;
 }
 
-HOOK(0x00611f50, AModelLoader_DestroyMaterial, void, TMaterial* a_pMaterial)
-{
-	// Destroy the custom params
-	remaster::DetachMaterialParams( a_pMaterial );
-
-	CallOriginal( a_pMaterial );
-}
-
 // Tangent stream layout: float4 per vertex (xyz = tangent, w = handedness sign).
 static constexpr TUINT16 TANGENT_STREAM_SIZE = sizeof( Toshi::TVector4 );
 
@@ -2302,10 +2256,9 @@ void remaster::SetupRenderHooks()
 	InstallHook<AModelLoader_LoadWorldMeshTRB_Tangents>();
 	InstallHook<AGlowViewport_AddGlowObject>();
 	InstallHook<AModelLoader_CreateMaterial>();
-	InstallHook<AModelLoader_DestroyMaterial>();
 
 	// Load per-material params (SSR reflectivity, etc.) before any material is created.
-	remaster::LoadMaterialParamsDB( remaster::MATERIAL_PARAMS_PATH );
+	remaster::LoadMaterialParamsDB( "Data\\MaterialParams.xml" );
 	
 	SetupRenderHooks_GrassShader();
 	SetupRenderHooks_SkinShader();

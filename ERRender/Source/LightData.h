@@ -1,0 +1,11 @@
+#pragma once
+#include "FrameAllocator.h"
+
+#include <Render/TRenderContext.h>
+
+struct LightDataPacket
+{
+	Toshi::TLightIDList oDynamicLights;
+};
+
+extern remaster::FrameAllocator<LightDataPacket, 4096>* g_pLightDataPacketAllocator;

@@ -355,9 +355,9 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	const TFLOAT flPacketAlpha     = a_pRenderPacket->GetAlpha();
 	const TBOOL  bUseBakedLighting = pMaterial->IsHDLighting() && pMaterial->HasLighting1Tex() && pMaterial->HasLighting2Tex();
 	const TBOOL  bIsFOB            = pMesh->IsFOB();
-	const TBOOL  bHasDynLight      = g_bDynamicGlowEnabled && TINT8( a_pRenderPacket->m_ui8Unk1 ) >= 0;
+	const TBOOL  bHasDynLight      = g_bDynamicGlowEnabled && RenderPacketHasDynamicLights( a_pRenderPacket );
 
-	const remaster::MaterialParams* pSpecParams = remaster::GetMaterialParams( pMaterial );
+	const remaster::MaterialParams* pSpecParams = pMaterial->GetMaterialParams();
 	const TBOOL bHasMaps = pSpecParams && ( pSpecParams->pNormalMap || pSpecParams->pRoughnessMap );
 
 	g_pRender->SetShaderPipelineState( GetSkinPipeline( bUseBakedLighting, bIsFOB, bHasDynLight, bIsAnimated, bHasMaps ) );
@@ -477,6 +477,7 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	g_pRender->VSBufferSetVec4( 17, TVector4( flReflectivity, flFresnelPower, flEmissiveIntensity, 0.0f ) );
 
 	if ( bHasDynLight ) UploadDynamicGlowLights( a_pRenderPacket );
+	// UploadSimplePointLightsConstants( a_pRenderPacket, 18 );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );

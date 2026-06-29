@@ -470,12 +470,10 @@ void UploadDynamicGlowLightsCBuffer( Toshi::TRenderPacket* a_pRenderPacket )
 	DynamicGlowLightCBuffer cbData    = {};
 	TINT                    iNumLights = 0;
 
-	// Unpack all light IDs stored in m_pUnk (up to 4, invalid slots are -1).
-	// Fall back to m_ui8Unk1 alone if m_pUnk was never written (e.g. old code paths).
-	TLightID aLightIDs[ TLightIDList::MAX_NUM_LIGHTS ];
+	TLightIDList aLightIDs;
 	if ( a_pRenderPacket->m_pUnk )
 	{
-		UnpackRenderPacketLights( a_pRenderPacket->m_pUnk, aLightIDs );
+		aLightIDs = TREINTERPRETCAST( LightDataPacket*, a_pRenderPacket->m_pUnk )->oDynamicLights;
 	}
 	else
 	{

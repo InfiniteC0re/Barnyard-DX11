@@ -218,7 +218,7 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		TMatrix44 mShadowMVP;
 		mShadowMVP.Multiply( g_pCSMManager->GetCurrentLightProjection(), a_pRenderPacket->GetModelViewMatrix() );
 		g_pRender->VSBufferSetMat4( 0, mShadowMVP );
-		g_pRender->VSBufferSetVec4( 4, TVector4( TINT( g_pCSMManager->GetCurrentCascade() ), 0.0f, 0.0f ) );
+		g_pRender->VSBufferSetVec4( 4, TVector4( TFLOAT( g_pCSMManager->GetCurrentCascade() ), 0.0f, 0.0f ) );
 
 		TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
 		TIndexPoolResource*  pIndexPool  = TSTATICCAST( TIndexPoolResource, pMesh->GetSubMesh( 0 )->pIndexPool );
@@ -246,7 +246,7 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		return;
 	}
 
-	const TBOOL bHasDynLight = g_bDynamicGlowEnabled && TINT8( a_pRenderPacket->m_ui8Unk1 ) >= 0;
+	const TBOOL bHasDynLight = g_bDynamicGlowEnabled && RenderPacketHasDynamicLights( a_pRenderPacket );
 
 	TUINT uiComboFlags = 0;
 	if ( !g_bCSMEnabled || !g_pCSMManager || g_flShadowIntensity <= 0.0f )

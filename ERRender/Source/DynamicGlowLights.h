@@ -1,39 +1,14 @@
 #pragma once
+#include "LightData.h"
+
 #include <Render/TRenderContext.h>
+#include <Render/TRenderPacket.h>
 
 #include <d3d11.h>
 
-namespace Toshi { class TRenderPacket; }
-
-// ---------------------------------------------------------------------------
-// TRenderPacket::m_pUnk light-ID pack / unpack
-//
-// m_pUnk is a 32-bit void* that the game never uses.  We repurpose it to
-// carry up to 4 TLightID values (one per byte) so a mesh can be lit by
-// multiple dynamic glow lights in the same frame.  Invalid slots hold -1.
-// ---------------------------------------------------------------------------
-
-inline void* PackRenderPacketLights( const Toshi::TLightIDList& a_rList )
+inline TBOOL RenderPacketHasDynamicLights( Toshi::TRenderPacket* a_pRenderPacket )
 {
-	static_assert( sizeof( void* ) == 4 && Toshi::TLightIDList::MAX_NUM_LIGHTS == 4,
-	               "Pack assumes 32-bit pointer and 4 light ID slots" );
-	TUINT32 packed;
-	Toshi::TLightID* p = reinterpret_cast<Toshi::TLightID*>( &packed );
-	p[ 0 ] = a_rList.aIDs[ 0 ];
-	p[ 1 ] = a_rList.aIDs[ 1 ];
-	p[ 2 ] = a_rList.aIDs[ 2 ];
-	p[ 3 ] = a_rList.aIDs[ 3 ];
-	return reinterpret_cast<void*>( static_cast<uintptr_t>( packed ) );
-}
-
-inline void UnpackRenderPacketLights( void* a_pPacked, Toshi::TLightID a_aOut[ Toshi::TLightIDList::MAX_NUM_LIGHTS ] )
-{
-	const TUINT32          packed = static_cast<TUINT32>( reinterpret_cast<uintptr_t>( a_pPacked ) );
-	const Toshi::TLightID* p      = reinterpret_cast<const Toshi::TLightID*>( &packed );
-	a_aOut[ 0 ] = p[ 0 ];
-	a_aOut[ 1 ] = p[ 1 ];
-	a_aOut[ 2 ] = p[ 2 ];
-	a_aOut[ 3 ] = p[ 3 ];
+	return a_pRenderPacket->m_pUnk && TREINTERPRETCAST( LightDataPacket*, a_pRenderPacket->m_pUnk )->oDynamicLights.aIDs[ 0 ] >= 0;
 }
 
 namespace remaster

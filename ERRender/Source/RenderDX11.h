@@ -105,7 +105,7 @@ public:
 
 	static constexpr TUINT MSAA_SAMPLE_COUNT            = 4;
 	static constexpr TSIZE HEAPSIZE                     = 0x10000;
-	static constexpr TSIZE VERTEX_CONSTANT_BUFFER_SIZE  = 320; // 20 vec4 slots (16-19 spare for material extras)
+	static constexpr TSIZE VERTEX_CONSTANT_BUFFER_SIZE  = 512; // 32 vec4 slots, bound to VS/PS b0 per draw
 	static constexpr TSIZE PIXEL_CONSTANT_BUFFER_SIZE   = 256;
 	static constexpr TSIZE SHADOW_CONSTANT_BUFFER_SIZE  = sizeof( ShadowCBufferData );
 	static constexpr TSIZE NUMBUFFERS                   = 1;

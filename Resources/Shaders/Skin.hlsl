@@ -54,6 +54,9 @@ cbuffer ConstantBuffer : register(b0)
     float4   cb_CameraPos;      // 15: xyz = camera world position
     float4   cb_MapParams;      // 16: x = normal strength, y = roughness strength, z = roughness, w = map flags (1=normal,2=rough,3=both)
     float4   cb_SSRParams;      // 17: x = SSR reflectivity, y = fresnel power, z = emissive intensity (1 = neutral)
+    float4   cb_simplePointLightPositionIntensity[4]; // 18-21: xyz = world position, w = intensity
+    float4   cb_simplePointLightColor[4];             // 22-25: xyz = RGB
+    float4   cb_simplePointLightParams;               // 26: x = count
 };
 
 #ifdef ANIMATED
@@ -76,6 +79,7 @@ cbuffer BoneCBuffer : register(b1)
 #include "DynamicLights.hlsli"
 #endif
 
+#include "SimplePointLights.hlsli"
 #include "ShaderUtils.hlsli" // PerturbNormalDeriv (derivative TBN normal mapping)
 #include "GBuffer.hlsli"     // OctEncodeNormal / PackFresnelRoughness for SSR
 
@@ -284,6 +288,9 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 	texColor.rgb   = ApplyDynamicGlowLighting(texColor.rgb, glow);
 	specular      += dynSpec;
 #endif
+
+	float3 pointLight = SampleSimplePointLights(In.WorldPos, worldN);
+	texColor.rgb *= 1.0f + pointLight;
 
 #if !NO_CSM
 	float shadowStrength = cb_ShadowParams.w;

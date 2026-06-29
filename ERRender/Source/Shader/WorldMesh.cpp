@@ -4,6 +4,7 @@
 #include "DynamicGlowLights.h"
 #include "Resource/ClassPatcher.h"
 #include "RenderDX11.h"
+#include "LightData.h"
 
 #include <Platform/DX8/TRenderInterface_DX8.h>
 #include <Platform/DX8/TRenderContext_DX8.h>
@@ -48,11 +49,19 @@ TBOOL remaster::WorldMesh::Render()
 		pMaterial = TSTATICCAST( AWorldMaterialHAL, m_pMaterial )->GetAlphaBlendMaterial();
 	}*/
 
+	TBOOL bHasDynamicLights = pCurrentContext->m_oLightIds[ 0 ] >= 0;
+	TBOOL bHasLightData     = bHasDynamicLights;
+	auto  pLightData        = bHasLightData ? g_pLightDataPacketAllocator->Allocate() : TNULL;
+
+	if ( bHasDynamicLights && pLightData )
+	{
+		pLightData->oDynamicLights = pCurrentContext->m_oLightIds;
+	}
+
 	auto pRenderPacket = pMaterial->AddRenderPacket( this );
 	pRenderPacket->SetModelViewMatrix( pCurrentContext->GetModelViewMatrix() );
 	pRenderPacket->SetAlpha( 1.0f );
-	pRenderPacket->m_ui8Unk1 = pCurrentContext->m_oLightIds[ 0 ];
-	pRenderPacket->m_pUnk    = PackRenderPacketLights( pCurrentContext->m_oLightIds );
+	pRenderPacket->m_pUnk = pLightData;
 
 	return TTRUE;
 }

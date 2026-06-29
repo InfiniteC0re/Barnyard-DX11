@@ -1,5 +1,6 @@
 #pragma once
 #include "Ref/ASkinShader/ASkinMaterial_DX8.h"
+#include "MaterialParams.h"
 
 namespace remaster
 {
@@ -42,6 +43,9 @@ public:
 
 	Toshi::TTextureResourceHAL* GetSomeTexture() const;
 
+	void             SetMaterialParams( MaterialParams* a_pParams ) { m_pMatParams = a_pParams; }
+	MaterialParams*& GetMaterialParams() { return m_pMatParams; }
+
 public:
 	void SetOrderTable( Toshi::TOrderTable* a_pOrderTable );
 	
@@ -52,6 +56,8 @@ private:
 	TBOOL               m_bHasLighting1Tex;
 	TBOOL               m_bHasLighting2Tex;
 	Toshi::TTexture*    m_pSomeTexture;
+
+	MaterialParams* m_pMatParams = TNULL;
 };
 
 }; // namespace remaster

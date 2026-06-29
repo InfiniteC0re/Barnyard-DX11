@@ -240,7 +240,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
 	AWorldMeshHAL*      pMesh           = TSTATICCAST( AWorldMeshHAL, a_pRenderPacket->GetMesh() );
-	AWorldMaterialHAL*  pMaterial       = TSTATICCAST( AWorldMaterialHAL, pMesh->GetMaterial() );
+	WorldMaterial*      pMaterial       = TSTATICCAST( WorldMaterial, pMesh->GetMaterial() );
 
 	if ( g_pCSMManager && g_pCSMManager->IsRenderingShadowPass() )
 	{
@@ -291,10 +291,10 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	const TFLOAT flPacketAlpha = a_pRenderPacket->GetAlpha();
 	const TBOOL  bIsBlending   = pMaterial->GetBlendMode() != 0 || flPacketAlpha < 1.0f || pMaterial->IsBlending();
-	const TBOOL  bHasDynLight  = g_bDynamicGlowEnabled && TINT8( a_pRenderPacket->m_ui8Unk1 ) >= 0 && !bIsGlowing;
+	const TBOOL  bHasDynLight  = g_bDynamicGlowEnabled && RenderPacketHasDynamicLights( a_pRenderPacket ) && !bIsGlowing;
 	g_pRender->SetBlendEnabled( bIsBlending );
 
-	const remaster::MaterialParams* pSSRParams = remaster::GetMaterialParams( pMaterial );
+	const remaster::MaterialParams* pSSRParams = pMaterial->GetMaterialParams();
 
 	// Use either blending shader or alpharef shader
 	// The only used alpharef value is 128, so no need to dynamically change it
@@ -402,6 +402,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	g_pRender->VSBufferSetVec4( 16, TVector4( flNormalStrength, flRoughnessStrength, flParallaxScale, flEmissiveIntensity ) );
 
 	if ( bHasDynLight ) UploadDynamicGlowLights( a_pRenderPacket );
+	// UploadSimplePointLightsConstants( a_pRenderPacket, 17 );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
