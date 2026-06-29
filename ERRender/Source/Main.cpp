@@ -1,10 +1,14 @@
 #include "pch.h"
 
 #include "RenderDX11.h"
+#include "RenderContentDX11.h"
+#include "LightManager.h"
 #include "MaterialParams.h"
 #include "Editor.h"
 #include "Settings.h"
 #include "CSM/CSMManager.h"
+
+#include <StaticLights.h>
 
 #include "UI/FontRenderer.h"
 
@@ -44,18 +48,18 @@ extern TINT   g_iHDRBloomKawaseLevels;
 extern TFLOAT g_flHDRBloomKawaseOffset;
 extern TFLOAT g_flHDRBloomThreshold;
 extern TFLOAT g_flHDRBloomIntensity;
-extern TBOOL  g_bDynamicGlowEnabled;
-extern TFLOAT g_flDynamicGlowIntensity;
-extern TFLOAT g_flDynamicGlowVolumetricIntensity;
-extern TFLOAT g_flDynamicGlowColor[ 3 ];
-extern TBOOL  g_bDynamicGlowShadowsEnabled;
-extern TFLOAT g_flDynamicGlowShadowDistance;
-extern TFLOAT g_flDynamicGlowShadowIntensity;
-extern TFLOAT g_flDynamicGlowShadowBias;
-extern TFLOAT g_flDynamicGlowBumpScale;
-extern TBOOL  g_bDynamicGlowFlickerEnabled;
-extern TFLOAT g_flDynamicGlowFlickerSpeed;
-extern TFLOAT g_flDynamicGlowFlickerStrength;
+extern TBOOL  g_bDynamicLightEnabled;
+extern TFLOAT g_flDynamicLightIntensity;
+extern TFLOAT g_flDynamicLightVolumetricIntensity;
+extern TFLOAT g_flDynamicLightColor[ 3 ];
+extern TBOOL  g_bDynamicLightShadowsEnabled;
+extern TFLOAT g_flDynamicLightShadowDistance;
+extern TFLOAT g_flDynamicLightShadowIntensity;
+extern TFLOAT g_flDynamicLightShadowBias;
+extern TFLOAT g_flDynamicLightBumpScale;
+extern TBOOL  g_bDynamicLightFlickerEnabled;
+extern TFLOAT g_flDynamicLightFlickerSpeed;
+extern TFLOAT g_flDynamicLightFlickerStrength;
 extern TBOOL  g_bHBAOEnabled;
 extern TBOOL  g_bHBAODebug;
 extern TINT   g_iAOAlgorithm;
@@ -91,6 +95,28 @@ extern TFLOAT g_flVolumetricFogColor[ 3 ];
 
 } // namespace remaster
 
+static void Bridge_GatherStaticLights( const TSphere& a_rcBounds, TLightIDList& a_rOutList )
+{
+	if ( remaster::g_pLightManager )
+		remaster::g_pLightManager->GetInfluencingStaticLightIDs( a_rcBounds, a_rOutList );
+	else
+		a_rOutList.Reset();
+}
+
+static void Bridge_AddStaticLights( TRenderContext* a_pContext, const TLightIDList& a_rIDs )
+{
+	auto pContext = TSTATICCAST( remaster::RenderContextD3D11, a_pContext );
+	if ( a_rIDs.aIDs[ 0 ] >= 0 ) pContext->AddStaticLight( a_rIDs.aIDs[ 0 ] );
+	if ( a_rIDs.aIDs[ 1 ] >= 0 ) pContext->AddStaticLight( a_rIDs.aIDs[ 1 ] );
+	if ( a_rIDs.aIDs[ 2 ] >= 0 ) pContext->AddStaticLight( a_rIDs.aIDs[ 2 ] );
+	if ( a_rIDs.aIDs[ 3 ] >= 0 ) pContext->AddStaticLight( a_rIDs.aIDs[ 3 ] );
+}
+
+static void Bridge_ClearStaticLights( TRenderContext* a_pContext )
+{
+	TSTATICCAST( remaster::RenderContextD3D11, a_pContext )->ClearStaticLightIDs();
+}
+
 class ERRenderMod : public AModInstance
 {
 	TBOOL m_bDebugFontAtlas = TFALSE;
@@ -100,6 +126,8 @@ public:
 	{
 		editor::SetupHooks();
 		remaster::SetupRenderHooks();
+
+		SetStaticLightCallbacks( Bridge_GatherStaticLights, Bridge_AddStaticLights, Bridge_ClearStaticLights );
 
 		return TTRUE;
 	}
@@ -315,26 +343,26 @@ public:
 		}
 
 		ImGui::Separator();
-		ImGui::TextUnformatted( "Dynamic Glow Lights" );
-		ImGui::Checkbox( "Enable Dynamic Glow Lights", &remaster::g_bDynamicGlowEnabled );
-		if ( remaster::g_bDynamicGlowEnabled )
+		ImGui::TextUnformatted( "Dynamic Lights" );
+		ImGui::Checkbox( "Enable Dynamic Lights", &remaster::g_bDynamicLightEnabled );
+		if ( remaster::g_bDynamicLightEnabled )
 		{
-			ImGui::SliderFloat( "Glow Intensity", &remaster::g_flDynamicGlowIntensity, 0.0f, 3.0f, "%.2f" );
-			ImGui::SliderFloat( "Glow Volumetric Intensity", &remaster::g_flDynamicGlowVolumetricIntensity, 0.0f, 1.0f, "%.3f" );
-			ImGui::SliderFloat( "Glow Bump Scale", &remaster::g_flDynamicGlowBumpScale, 0.0f, 10.0f, "%.2f" );
-			ImGui::ColorEdit3( "Glow Color", remaster::g_flDynamicGlowColor );
-			ImGui::Checkbox( "Enable Dynamic Glow Shadows", &remaster::g_bDynamicGlowShadowsEnabled );
-			if ( remaster::g_bDynamicGlowShadowsEnabled )
+			ImGui::SliderFloat( "Light Intensity", &remaster::g_flDynamicLightIntensity, 0.0f, 3.0f, "%.2f" );
+			ImGui::SliderFloat( "Volumetric Intensity", &remaster::g_flDynamicLightVolumetricIntensity, 0.0f, 1.0f, "%.3f" );
+			ImGui::SliderFloat( "Bump Scale", &remaster::g_flDynamicLightBumpScale, 0.0f, 10.0f, "%.2f" );
+			ImGui::ColorEdit3( "Light Color", remaster::g_flDynamicLightColor );
+			ImGui::Checkbox( "Enable Dynamic Shadows", &remaster::g_bDynamicLightShadowsEnabled );
+			if ( remaster::g_bDynamicLightShadowsEnabled )
 			{
-				ImGui::DragFloat( "Glow Shadow Distance", &remaster::g_flDynamicGlowShadowDistance, 1.0f, 1.0f, 150.0f, "%.0f m" );
-				ImGui::SliderFloat( "Glow Shadow Intensity", &remaster::g_flDynamicGlowShadowIntensity, 0.0f, 1.0f, "%.2f" );
-				ImGui::DragFloat( "Glow Shadow Bias", &remaster::g_flDynamicGlowShadowBias, 0.0001f, 0.0f, 0.02f, "%.4f" );
+				ImGui::DragFloat( "Shadow Distance", &remaster::g_flDynamicLightShadowDistance, 1.0f, 1.0f, 150.0f, "%.0f m" );
+				ImGui::SliderFloat( "Shadow Intensity", &remaster::g_flDynamicLightShadowIntensity, 0.0f, 1.0f, "%.2f" );
+				ImGui::DragFloat( "Shadow Bias", &remaster::g_flDynamicLightShadowBias, 0.0001f, 0.0f, 0.02f, "%.4f" );
 			}
-			ImGui::Checkbox( "Enable Flicker", &remaster::g_bDynamicGlowFlickerEnabled );
-			if ( remaster::g_bDynamicGlowFlickerEnabled )
+			ImGui::Checkbox( "Enable Flicker", &remaster::g_bDynamicLightFlickerEnabled );
+			if ( remaster::g_bDynamicLightFlickerEnabled )
 			{
-				ImGui::SliderFloat( "Flicker Speed", &remaster::g_flDynamicGlowFlickerSpeed, 0.5f, 30.0f, "%.1f" );
-				ImGui::SliderFloat( "Flicker Strength", &remaster::g_flDynamicGlowFlickerStrength, 0.0f, 1.0f, "%.2f" );
+				ImGui::SliderFloat( "Flicker Speed", &remaster::g_flDynamicLightFlickerSpeed, 0.5f, 30.0f, "%.1f" );
+				ImGui::SliderFloat( "Flicker Strength", &remaster::g_flDynamicLightFlickerStrength, 0.0f, 1.0f, "%.2f" );
 			}
 		}
 

@@ -78,7 +78,7 @@ public:
 	virtual void* CreateUnknown( void*, void*, void*, void* );
 
 private:
-	void UploadDynamicGlowLights( Toshi::TRenderPacket* a_pRenderPacket );
+	void UploadDynamicLights( Toshi::TRenderPacket* a_pRenderPacket );
 
 public:
 	Toshi::TOrderTable* GetOrderTable( TUINT a_uiIndex )

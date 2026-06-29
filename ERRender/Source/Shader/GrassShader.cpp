@@ -9,7 +9,7 @@
 #include "RenderContentDX11.h"
 #include "WorldShader.h"
 #include "CSM/CSMManager.h"
-#include "DynamicGlowLights.h"
+#include "LightManager.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -246,7 +246,7 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		return;
 	}
 
-	const TBOOL bHasDynLight = g_bDynamicGlowEnabled && RenderPacketHasDynamicLights( a_pRenderPacket );
+	const TBOOL bHasDynLight = g_bDynamicLightEnabled && RenderPacketHasDynamicLights( a_pRenderPacket );
 
 	TUINT uiComboFlags = 0;
 	if ( !g_bCSMEnabled || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
@@ -307,7 +307,10 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	TIndexBlockResource::HALBuffer indexBuffer;
 	CALL_THIS( 0x006d6180, TIndexPoolResource*, TBOOL, pIndexPool, TIndexBlockResource::HALBuffer&, indexBuffer ); // pIndexPool->GetHALBuffer( &indexBuffer );
 
-	if ( bHasDynLight ) UploadDynamicGlowLights( a_pRenderPacket );
+	if ( bHasDynLight ) UploadDynamicLights( a_pRenderPacket );
+
+	// Per-cell static point light indices into the global static-light cbuffer (b3).
+	g_pRender->GetLightManager().UploadCellStaticLightIndices( a_pRenderPacket, 14 );
 
 	// Set grass texture
 	g_pRender->PSSetShaderResource( 0, g_pGrassTexture );
@@ -369,6 +372,8 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 			g_pRender->VSBufferSetVec4( 9, vecOffset );
 			g_pRender->VSBufferSetMat4( 10, mModel );
 
+			g_pRender->GetLightManager().UploadCellStaticLightIndices( a_pRenderPacket, 14 );
+
 			// Draw layer
 			g_pRender->DrawIndexed(
 			    D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
@@ -410,9 +415,9 @@ AGrassMesh* remaster::GrassShaderDX11::CreateMesh( const TCHAR* a_szName )
 	return pMesh;
 }
 
-void remaster::GrassShaderDX11::UploadDynamicGlowLights( Toshi::TRenderPacket* a_pRenderPacket )
+void remaster::GrassShaderDX11::UploadDynamicLights( Toshi::TRenderPacket* a_pRenderPacket )
 {
-	UploadDynamicGlowLightsCBuffer( a_pRenderPacket );
+	g_pRender->GetLightManager().UploadDynamicLightsCBuffer( a_pRenderPacket );
 }
 
 void remaster::GrassShaderDX11::UpdateAnimation()

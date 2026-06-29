@@ -1,9 +1,10 @@
 #include "pch.h"
 #include "WorldMesh.h"
 #include "WorldShader.h"
-#include "DynamicGlowLights.h"
+#include "LightManager.h"
 #include "Resource/ClassPatcher.h"
 #include "RenderDX11.h"
+#include "RenderContentDX11.h"
 #include "LightData.h"
 
 #include <Platform/DX8/TRenderInterface_DX8.h>
@@ -49,13 +50,17 @@ TBOOL remaster::WorldMesh::Render()
 		pMaterial = TSTATICCAST( AWorldMaterialHAL, m_pMaterial )->GetAlphaBlendMaterial();
 	}*/
 
+	auto  pCtxDX11          = TSTATICCAST( remaster::RenderContextD3D11, pRenderInterface->GetCurrentContext() );
 	TBOOL bHasDynamicLights = pCurrentContext->m_oLightIds[ 0 ] >= 0;
-	TBOOL bHasLightData     = bHasDynamicLights;
+	TBOOL bHasStaticLights  = pCtxDX11->GetStaticLightIDs().aIDs[ 0 ] >= 0;
+	TBOOL bHasLightData     = bHasDynamicLights || bHasStaticLights;
 	auto  pLightData        = bHasLightData ? g_pLightDataPacketAllocator->Allocate() : TNULL;
 
-	if ( bHasDynamicLights && pLightData )
+	if ( pLightData )
 	{
+		// Both lists are -1-filled when empty, so copy unconditionally; consumers key off slot 0.
 		pLightData->oDynamicLights = pCurrentContext->m_oLightIds;
+		pLightData->oStaticLights  = pCtxDX11->GetStaticLightIDs();
 	}
 
 	auto pRenderPacket = pMaterial->AddRenderPacket( this );

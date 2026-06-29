@@ -70,7 +70,7 @@ public:
 
 private:
 	void  RenderImmediate( Toshi::TRenderPacket* a_pRenderPacket );
-	void  UploadDynamicGlowLights( Toshi::TRenderPacket* a_pRenderPacket );
+	void  UploadDynamicLights( Toshi::TRenderPacket* a_pRenderPacket );
 	const RenderDX11::ShaderPipelineState& GetSkinPipeline( TBOOL a_bBakedLighting, TBOOL a_bFOB, TBOOL a_bDynLighting, TBOOL a_bIsAnimated, TBOOL a_bHasMaps ) const;
 	const RenderDX11::ShaderPipelineState& GetShadowPipeline( TBOOL a_bIsAnimated ) const;
 

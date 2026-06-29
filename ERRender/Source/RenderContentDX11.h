@@ -20,8 +20,13 @@ public:
 
 	const Toshi::TMatrix44& GetProjectionMatrix() const { return m_Projection; }
 
+	void                       ClearStaticLightIDs() { m_oStaticLightIds.Reset(); }
+	void                       AddStaticLight( Toshi::TLightID a_iLightId ) { m_oStaticLightIds.Add( a_iLightId ); }
+	const Toshi::TLightIDList& GetStaticLightIDs() const { return m_oStaticLightIds; }
+
 private:
-	Toshi::TMatrix44 m_Projection;
+	Toshi::TMatrix44    m_Projection;
+	Toshi::TLightIDList m_oStaticLightIds;
 };
 
 }

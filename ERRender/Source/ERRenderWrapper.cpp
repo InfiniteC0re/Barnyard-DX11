@@ -36,7 +36,7 @@
 #include "Generated/VolumetricFogCompositeShaderCombos.h"
 #include "Generated/CloudShadowShaderCombos.h"
 #include "RenderContentDX11.h"
-#include "DynamicGlowLights.h"
+#include "LightManager.h"
 
 #include <Toshi/TTask.h>
 #include <Render/TTMDWin.h>
@@ -46,14 +46,14 @@
 #include <BYardSDK/ACamera.h>
 #include <BYardSDK/ARenderer.h>
 #include <BYardSDK/AGlowViewport.h>
+#include <BYardSDK/AModel.h>
+#include <Render/TModel.h>
 
 #include <Platform/DX8/TRenderInterface_DX8.h>
 #include <Render/TVertexFactoryResourceInterface.h>
 #include <Platform/DX8/TVertexPoolResource_DX8.h>
 #include <Platform/DX8/TIndexPoolResource_DX8.h>
-#include "Ref/AWorld.h"
 #include "Ref/AWorldShader/AWorldMesh.h"
-#include "MaterialParams.h"
 #include "DirectXTex/DirectXTex.h"
 #include <File/TTRB.h>
 
@@ -300,7 +300,7 @@ HOOK( 0x005e83e0, RenderCellMeshWin, void, CellMeshSphere* a_pMeshSphere, Render
 		}
 	}
 
-	auto pContext = g_pRender->GetCurrentContext();
+	auto pContext = TSTATICCAST( remaster::RenderContextD3D11, g_pRender->GetCurrentContext() );
 
 	if ( bNormalPass )
 	{
@@ -319,6 +319,19 @@ HOOK( 0x005e83e0, RenderCellMeshWin, void, CellMeshSphere* a_pMeshSphere, Render
 		if ( oLightIdList[ 1 ] >= 0 ) pContext->AddLight( oLightIdList[ 1 ] );
 		if ( oLightIdList[ 2 ] >= 0 ) pContext->AddLight( oLightIdList[ 2 ] );
 		if ( oLightIdList[ 3 ] >= 0 ) pContext->AddLight( oLightIdList[ 3 ] );
+
+		// Same per-cell influence gather, but for the LightManager's static lights.
+		TLightIDList oStaticLightIdList;
+		if ( remaster::g_pLightManager )
+			remaster::g_pLightManager->GetInfluencingStaticLightIDs( oBounding, oStaticLightIdList );
+		else
+			oStaticLightIdList.Reset();
+
+		pContext->ClearStaticLightIDs();
+		if ( oStaticLightIdList[ 0 ] >= 0 ) pContext->AddStaticLight( oStaticLightIdList[ 0 ] );
+		if ( oStaticLightIdList[ 1 ] >= 0 ) pContext->AddStaticLight( oStaticLightIdList[ 1 ] );
+		if ( oStaticLightIdList[ 2 ] >= 0 ) pContext->AddStaticLight( oStaticLightIdList[ 2 ] );
+		if ( oStaticLightIdList[ 3 ] >= 0 ) pContext->AddStaticLight( oStaticLightIdList[ 3 ] );
 	}
 
 	TVector4 vecColour{ 0.3f, 0.3f, 0.1952941f, 1.0f };
@@ -327,7 +340,11 @@ HOOK( 0x005e83e0, RenderCellMeshWin, void, CellMeshSphere* a_pMeshSphere, Render
 	TSTATICCAST( remaster::WorldShaderDX11, remaster::WorldShaderDX11::GetSingleton() )->SetColours( vecColour, vecColour );
 	pMesh->Render();
 
-	if ( bNormalPass ) pContext->ClearLightIDs();
+	if ( bNormalPass )
+	{
+		pContext->ClearLightIDs();
+		pContext->ClearStaticLightIDs();
+	}
 }
 
 HOOK( 0x005e7d10, RenderCellMeshDefault, void, CellMeshSphere* a_pMeshSphere, RenderData* a_pRenderData )
@@ -338,7 +355,7 @@ HOOK( 0x005e7d10, RenderCellMeshDefault, void, CellMeshSphere* a_pMeshSphere, Re
 
 	const TBOOL bNormalPass = !remaster::g_pRender->GetCSMManager().IsRenderingShadowPass();
 
-	auto pContext = g_pRender->GetCurrentContext();
+	auto pContext = TSTATICCAST( remaster::RenderContextD3D11, g_pRender->GetCurrentContext() );
 
 	if ( bNormalPass )
 	{
@@ -357,11 +374,72 @@ HOOK( 0x005e7d10, RenderCellMeshDefault, void, CellMeshSphere* a_pMeshSphere, Re
 		if ( oLightIdList[ 1 ] >= 0 ) pContext->AddLight( oLightIdList[ 1 ] );
 		if ( oLightIdList[ 2 ] >= 0 ) pContext->AddLight( oLightIdList[ 2 ] );
 		if ( oLightIdList[ 3 ] >= 0 ) pContext->AddLight( oLightIdList[ 3 ] );
+
+		// Same per-cell influence gather, but for the LightManager's static lights.
+		TLightIDList oStaticLightIdList;
+		if ( remaster::g_pLightManager )
+			remaster::g_pLightManager->GetInfluencingStaticLightIDs( oBounding, oStaticLightIdList );
+		else
+			oStaticLightIdList.Reset();
+
+		pContext->ClearStaticLightIDs();
+		if ( oStaticLightIdList[ 0 ] >= 0 ) pContext->AddStaticLight( oStaticLightIdList[ 0 ] );
+		if ( oStaticLightIdList[ 1 ] >= 0 ) pContext->AddStaticLight( oStaticLightIdList[ 1 ] );
+		if ( oStaticLightIdList[ 2 ] >= 0 ) pContext->AddStaticLight( oStaticLightIdList[ 2 ] );
+		if ( oStaticLightIdList[ 3 ] >= 0 ) pContext->AddStaticLight( oStaticLightIdList[ 3 ] );
 	}
 
 	a_pMeshSphere->m_pCellMesh->pMesh->Render();
 
-	if ( bNormalPass ) pContext->ClearLightIDs();
+	if ( bNormalPass )
+	{
+		pContext->ClearLightIDs();
+		pContext->ClearStaticLightIDs();
+	}
+}
+
+HOOK( 0x006108c0, AModelInstance_RenderInstanceCallback, void, Toshi::TModelInstance* a_pInstance, void* a_pUserData )
+{
+	const TBOOL bNormalPass = remaster::g_pLightManager && a_pInstance && a_pUserData &&
+	    !remaster::g_pRender->GetCSMManager().IsRenderingShadowPass();
+
+	if ( bNormalPass )
+	{
+		auto pContext = TSTATICCAST( remaster::RenderContextD3D11, remaster::g_pRender->GetCurrentContext() );
+		pContext->ClearStaticLightIDs();
+
+		AModelInstance* pGameModelInstance = TSTATICCAST( AModelInstance, a_pUserData );
+		TModel*         pModel             = a_pInstance->GetModel();
+
+		if ( pModel && pGameModelInstance->GetSceneObject() )
+		{
+			TModelLOD& rLOD = pModel->GetLOD( a_pInstance->GetLOD() );
+			if ( rLOD.iNumMeshes > 0 && pGameModelInstance->ReceivesLight() )
+			{
+				// World-space bounding sphere: the LOD sphere transformed by the instance.
+				TMatrix44 matTransform;
+				pGameModelInstance->GetTransform().GetLocalMatrixImp( matTransform );
+
+				TSphere oBounding = rLOD.BoundingSphere;
+				TMatrix44::TransformVector( oBounding.GetOrigin(), matTransform, oBounding.GetOrigin() );
+
+				TLightIDList oStaticLightIdList;
+				remaster::g_pLightManager->GetInfluencingStaticLightIDs( oBounding, oStaticLightIdList );
+				if ( oStaticLightIdList[ 0 ] >= 0 ) pContext->AddStaticLight( oStaticLightIdList[ 0 ] );
+				if ( oStaticLightIdList[ 1 ] >= 0 ) pContext->AddStaticLight( oStaticLightIdList[ 1 ] );
+				if ( oStaticLightIdList[ 2 ] >= 0 ) pContext->AddStaticLight( oStaticLightIdList[ 2 ] );
+				if ( oStaticLightIdList[ 3 ] >= 0 ) pContext->AddStaticLight( oStaticLightIdList[ 3 ] );
+			}
+		}
+	}
+
+	CallOriginal( a_pInstance, a_pUserData );
+
+	if ( bNormalPass )
+	{
+		auto pContext = TSTATICCAST( remaster::RenderContextD3D11, remaster::g_pRender->GetCurrentContext() );
+		pContext->ClearStaticLightIDs();
+	}
 }
 
 // Per-vertex accumulator for the tangent solve.
@@ -1071,7 +1149,10 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	if ( remaster::g_bCSMEnabled )
 		csmManager.RenderShadowMaps();
 
-	remaster::RenderDynamicGlowShadowMaps();
+	remaster::g_pRender->GetLightManager().RenderDynamicLightShadowMaps();
+
+	// Static lights don't move, so upload them once per frame before the scene pass.
+	remaster::g_pRender->GetLightManager().UploadStaticLightsGlobalCBuffer();
 
 	//-----------------------------------------------------------------------------
 	// 1b. Cloud shadow bake (animated top-down sun-amount map, sampled in SampleShadow)
@@ -1633,7 +1714,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->PSSetSamplerState( 1, csmManager.GetShadowSampler() );
 		remaster::g_pRender->PSSetConstantBuffer( 1, s_pVolumetricFogConstantBuffer );
 		TUINT uiVolumetricFogComboFlags = 0;
-		if ( !remaster::g_bDynamicGlowEnabled ||
+		if ( !remaster::g_bDynamicLightEnabled ||
 		     remaster::g_iVolumetricFogCompositeMode == 1
 			// TODO: check if any light is actually visible rn
 			)
@@ -1642,7 +1723,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		}
 		else
 		{
-			remaster::UploadVolumetricDynamicGlowLightsCBuffer();
+			remaster::g_pRender->GetLightManager().UploadVolumetricDynamicLightsCBuffer();
 		}
 		// Cloud shadows in the fog are an independent toggle (the per-step tap is the
 		// priciest cloud consumer); bind + compile them in only when both are on.
@@ -2253,6 +2334,7 @@ void remaster::SetupRenderHooks()
 	InstallHook<ARenderer_RenderMainScene>();
 	InstallHook<RenderCellMeshWin>();
 	InstallHook<RenderCellMeshDefault>();
+	InstallHook<AModelInstance_RenderInstanceCallback>();
 	InstallHook<AModelLoader_LoadWorldMeshTRB_Tangents>();
 	InstallHook<AGlowViewport_AddGlowObject>();
 	InstallHook<AModelLoader_CreateMaterial>();

@@ -32,6 +32,8 @@ cbuffer ConstantBuffer : register(b0)
 	float4   cb_FogColor;
 	float4   cb_WorldOffset;
     float4x4 cb_matModel;
+    float4   cb_cellStaticLightIndices; // 14: xyzw = up to 4 static light indices into the global buffer (-1 = none)
+    float4   cb_cellStaticLightParams;  // 15: x = count
 };
 
 #if !NO_CSM
@@ -41,6 +43,8 @@ cbuffer ConstantBuffer : register(b0)
 #if !NO_DYN_LIGHT
 #include "DynamicLights.hlsli"
 #endif
+
+#include "StaticPointLights.hlsli"
 
 PS_IN vs_main(VS_IN In)
 {
@@ -91,6 +95,9 @@ PS_OUT ps_main(PS_IN In)
 	float3 glow = SampleDynamicGlowLights(In.WorldPos, In.WorldNormal);
 	texColor.rgb = ApplyDynamicGlowLighting(texColor.rgb, glow);
 #endif
+
+	float3 staticLight = SampleStaticPointLights(In.WorldPos, In.WorldNormal, cb_cellStaticLightIndices, (int)cb_cellStaticLightParams.x);
+	texColor.rgb *= 1.0f + staticLight;
 
 #if !NO_CSM
     float shadow = SampleShadow(In.WorldPos, In.WorldNormal, In.ViewDepth);

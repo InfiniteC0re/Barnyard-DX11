@@ -15,6 +15,7 @@ namespace remaster
 RenderContextD3D11::RenderContextD3D11( TRenderInterface* a_pRenderer )
     : Toshi::TRenderContext( a_pRenderer )
 {
+	m_oStaticLightIds.Reset();
 }
 
 RenderContextD3D11::~RenderContextD3D11()

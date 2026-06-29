@@ -12,7 +12,7 @@
 #include "RenderDX11Utils.h"
 #include "RenderContentDX11.h"
 #include "CSM/CSMManager.h"
-#include "DynamicGlowLights.h"
+#include "LightManager.h"
 
 #include <Render/TRenderPacket.h>
 #include <Platform/DX8/TRenderInterface_DX8.h>
@@ -133,9 +133,9 @@ void remaster::WorldShaderDX11::EndFlush()
 	g_pRender->SetBlendEnabled( TFALSE );
 }
 
-void remaster::WorldShaderDX11::UploadDynamicGlowLights( Toshi::TRenderPacket* a_pRenderPacket )
+void remaster::WorldShaderDX11::UploadDynamicLights( Toshi::TRenderPacket* a_pRenderPacket )
 {
-	UploadDynamicGlowLightsCBuffer( a_pRenderPacket );
+	g_pRender->GetLightManager().UploadDynamicLightsCBuffer( a_pRenderPacket );
 }
 
 TBOOL remaster::WorldShaderDX11::Create()
@@ -291,7 +291,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	const TFLOAT flPacketAlpha = a_pRenderPacket->GetAlpha();
 	const TBOOL  bIsBlending   = pMaterial->GetBlendMode() != 0 || flPacketAlpha < 1.0f || pMaterial->IsBlending();
-	const TBOOL  bHasDynLight  = g_bDynamicGlowEnabled && RenderPacketHasDynamicLights( a_pRenderPacket ) && !bIsGlowing;
+	const TBOOL  bHasDynLight  = g_bDynamicLightEnabled && RenderPacketHasDynamicLights( a_pRenderPacket ) && !bIsGlowing;
 	g_pRender->SetBlendEnabled( bIsBlending );
 
 	const remaster::MaterialParams* pSSRParams = pMaterial->GetMaterialParams();
@@ -303,7 +303,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		uiComboFlags |= shadercombos::World_NO_CSM;
 	if ( bIsGlowing || !pCurrentContext->IsFogEnabled() || s_flFogDensity <= 0.0f )
 		uiComboFlags |= shadercombos::World_NO_FOG;
-	if ( !g_bDynamicGlowEnabled )
+	if ( !g_bDynamicLightEnabled )
 		uiComboFlags |= shadercombos::World_NO_DYN_LIGHT;
 	if ( bIsGlowing )
 		uiComboFlags |= shadercombos::World_GLOW;
@@ -401,8 +401,11 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	const TFLOAT flEmissiveIntensity = pSSRParams ? pSSRParams->fEmissiveIntensity : 1.0f;
 	g_pRender->VSBufferSetVec4( 16, TVector4( flNormalStrength, flRoughnessStrength, flParallaxScale, flEmissiveIntensity ) );
 
-	if ( bHasDynLight ) UploadDynamicGlowLights( a_pRenderPacket );
-	// UploadSimplePointLightsConstants( a_pRenderPacket, 17 );
+	if ( bHasDynLight ) UploadDynamicLights( a_pRenderPacket );
+
+	// Always upload so the shader's static-light count is never stale. Glow meshes receive no
+	// light, so pass null for a zero count (dynamic is already gated off for them above).
+	g_pRender->GetLightManager().UploadCellStaticLightIndices( bIsGlowing ? TNULL : a_pRenderPacket, 17 );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );

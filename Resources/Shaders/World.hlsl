@@ -43,9 +43,8 @@ cbuffer ConstantBuffer : register(b0)
     float4   cb_SunDirection; // xyz = direction toward the sun (world), w = SSR roughness (slot 14)
     float4   cb_CameraPos;    // xyz = camera world position, w = map flags (slot 15)
     float4   cb_MapParams;    // x = normal-map strength, y = roughness-map strength, z = parallax scale, w = emissive intensity (slot 16)
-    float4   cb_simplePointLightPositionIntensity[4]; // xyz = world position, w = intensity (slots 17-20)
-    float4   cb_simplePointLightColor[4];             // xyz = RGB (slots 21-24)
-    float4   cb_simplePointLightParams;               // x = count (slot 25)
+    float4   cb_cellStaticLightIndices; // 17: xyzw = up to 4 static light indices into the global buffer (-1 = none)
+    float4   cb_cellStaticLightParams;  // 18: x = count
 };
 
 struct PS_OUT
@@ -62,7 +61,7 @@ struct PS_OUT
 #include "DynamicLights.hlsli"
 #endif
 
-#include "SimplePointLights.hlsli"
+#include "StaticPointLights.hlsli"
 #include "Tonemap.hlsli"
 #include "GBuffer.hlsli"
 
@@ -318,8 +317,8 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 	specular      += dynSpec;
 #endif
 
-    float3 pointLight = SampleSimplePointLights(In.WorldPos, worldN);
-    texColor.rgb *= 1.0f + pointLight;
+    float3 staticLight = SampleStaticPointLights(In.WorldPos, worldN, cb_cellStaticLightIndices, (int)cb_cellStaticLightParams.x);
+    texColor.rgb *= 1.0f + staticLight;
 
 #if !NO_CSM
     float shadow = SampleShadow(In.WorldPos, In.WorldNormal, In.ViewDepth);

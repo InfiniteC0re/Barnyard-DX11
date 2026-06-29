@@ -42,7 +42,7 @@ public:
 
 private:
 	void UpdateAnimation();
-	void UploadDynamicGlowLights( Toshi::TRenderPacket* a_pRenderPacket );
+	void UploadDynamicLights( Toshi::TRenderPacket* a_pRenderPacket );
 
 private:
 	Toshi::TOrderTable m_oOrderTable;

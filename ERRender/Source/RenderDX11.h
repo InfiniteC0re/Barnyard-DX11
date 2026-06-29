@@ -2,6 +2,7 @@
 #include "UI/FontAtlas.h"
 #include "SDLWindow.h"
 #include "CSM/CSMManager.h"
+#include "LightManager.h"
 
 #include <Toshi/TDList.h>
 #include <Toshi/T2Pair.h>
@@ -702,7 +703,8 @@ public:
 
 	FontAtlas* GetFontAtlas( FONT a_eFontIndex ) const { return m_pFontAtlases[ a_eFontIndex ]; }
 
-	CSMManager& GetCSMManager() { return m_oCSMManager; }
+	CSMManager&   GetCSMManager() { return m_oCSMManager; }
+	LightManager& GetLightManager() { return m_oLightManager; }
 
 private:
 	void BuildAdapterDatabase();
@@ -810,6 +812,7 @@ private:
 	TFLOAT              m_aClearColor[ 4 ];
 	ID3D11SamplerState* m_aSamplerStates[ SAMPLER_COUNT ];
 	CSMManager          m_oCSMManager;
+	LightManager        m_oLightManager;
 
 	// Depth states
 	Toshi::T2Map<DepthState, ID3D11DepthStencilState*, DepthStateComparator> m_DepthStatesTree;

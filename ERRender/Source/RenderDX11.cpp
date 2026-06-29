@@ -1142,6 +1142,7 @@ void RenderDX11::CreateRenderObjects()
 	m_pCurrentVertexBuffer = TNULL;
 
 	m_oCSMManager.Create();
+	m_oLightManager.Create();
 }
 
 TUINT RenderDX11::GetSupportedMSAASampleCount( TUINT a_uiDesired ) const

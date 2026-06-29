@@ -6,6 +6,7 @@
 struct LightDataPacket
 {
 	Toshi::TLightIDList oDynamicLights;
+	Toshi::TLightIDList oStaticLights;
 };
 
 extern remaster::FrameAllocator<LightDataPacket, 4096>* g_pLightDataPacketAllocator;

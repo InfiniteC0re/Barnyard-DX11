@@ -24,7 +24,7 @@
 
 #include <BYardSDK/AGlowViewport.h>
 
-#include "DynamicGlowLights.h"
+#include "LightManager.h"
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -252,7 +252,7 @@ const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetSk
 	if ( !pCurrentContext->IsFogEnabled() || s_flFogDensity <= 0.0f )
 		uiComboFlags |= shadercombos::Skin_NO_FOG;
 
-	if ( !g_bDynamicGlowEnabled || !a_bDynLighting )
+	if ( !g_bDynamicLightEnabled || !a_bDynLighting )
 		uiComboFlags |= shadercombos::Skin_NO_DYN_LIGHT;
 
 	return m_vecSkinPipelines[ shadercombos::GetSkinComboIndex( uiComboFlags ) ];
@@ -355,7 +355,7 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	const TFLOAT flPacketAlpha     = a_pRenderPacket->GetAlpha();
 	const TBOOL  bUseBakedLighting = pMaterial->IsHDLighting() && pMaterial->HasLighting1Tex() && pMaterial->HasLighting2Tex();
 	const TBOOL  bIsFOB            = pMesh->IsFOB();
-	const TBOOL  bHasDynLight      = g_bDynamicGlowEnabled && RenderPacketHasDynamicLights( a_pRenderPacket );
+	const TBOOL  bHasDynLight      = g_bDynamicLightEnabled && RenderPacketHasDynamicLights( a_pRenderPacket );
 
 	const remaster::MaterialParams* pSpecParams = pMaterial->GetMaterialParams();
 	const TBOOL bHasMaps = pSpecParams && ( pSpecParams->pNormalMap || pSpecParams->pRoughnessMap );
@@ -476,8 +476,10 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	const TFLOAT flEmissiveIntensity = pSpecParams ? pSpecParams->fEmissiveIntensity : 1.0f;
 	g_pRender->VSBufferSetVec4( 17, TVector4( flReflectivity, flFresnelPower, flEmissiveIntensity, 0.0f ) );
 
-	if ( bHasDynLight ) UploadDynamicGlowLights( a_pRenderPacket );
-	// UploadSimplePointLightsConstants( a_pRenderPacket, 18 );
+	if ( bHasDynLight ) UploadDynamicLights( a_pRenderPacket );
+
+	// Per-cell static point light indices into the global static-light cbuffer (b3).
+	g_pRender->GetLightManager().UploadCellStaticLightIndices( a_pRenderPacket, 18 );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
@@ -524,9 +526,9 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	}
 }
 
-void remaster::SkinShaderDX11::UploadDynamicGlowLights( Toshi::TRenderPacket* a_pRenderPacket )
+void remaster::SkinShaderDX11::UploadDynamicLights( Toshi::TRenderPacket* a_pRenderPacket )
 {
-	UploadDynamicGlowLightsCBuffer( a_pRenderPacket );
+	g_pRender->GetLightManager().UploadDynamicLightsCBuffer( a_pRenderPacket );
 }
 
 void remaster::SkinShaderDX11::EnableRenderEnvMap( TBOOL a_bEnable )

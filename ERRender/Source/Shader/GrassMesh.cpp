@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "GrassMesh.h"
-#include "DynamicGlowLights.h"
+#include "LightManager.h"
+#include "RenderContentDX11.h"
 #include "Resource/ClassPatcher.h"
 #include "LightData.h"
 
@@ -30,13 +31,16 @@ TBOOL remaster::GrassMesh::Render()
 	TRenderD3DInterface* pRenderInterface = TRenderD3DInterface::Interface();
 	auto                 pCurrentContext  = TRenderContextD3D::Upcast( pRenderInterface->GetCurrentContext() );
 
+	auto  pCtxDX11          = TSTATICCAST( remaster::RenderContextD3D11, pRenderInterface->GetCurrentContext() );
 	TBOOL bHasDynamicLights = pCurrentContext->m_oLightIds[ 0 ] >= 0;
-	TBOOL bHasLightData     = bHasDynamicLights;
+	TBOOL bHasStaticLights  = pCtxDX11->GetStaticLightIDs().aIDs[ 0 ] >= 0;
+	TBOOL bHasLightData     = bHasDynamicLights || bHasStaticLights;
 	auto  pLightData        = bHasLightData ? g_pLightDataPacketAllocator->Allocate() : TNULL;
 
-	if ( bHasDynamicLights && pLightData )
+	if ( pLightData )
 	{
 		pLightData->oDynamicLights = pCurrentContext->m_oLightIds;
+		pLightData->oStaticLights  = pCtxDX11->GetStaticLightIDs();
 	}
 
 	TRenderPacket* pRenderPacket = GetMaterial()->GetRegMaterial()->AddRenderPacket( this );

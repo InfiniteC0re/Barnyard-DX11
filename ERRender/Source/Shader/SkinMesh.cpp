@@ -1,7 +1,8 @@
 #include "pch.h"
 #include "SkinMesh.h"
-#include "DynamicGlowLights.h"
+#include "LightManager.h"
 #include "Resource/ClassPatcher.h"
+#include "RenderContentDX11.h"
 #include "LightData.h"
 
 #include <Platform/DX8/TRenderContext_DX8.h>
@@ -46,13 +47,16 @@ TBOOL remaster::SkinMesh::Render()
 			pMaterial = TDYNAMICCAST( ASkinMaterialHAL, m_pMaterial )->GetAlphaBlendMaterial();
 		}*/
 
+		auto  pCtxDX11          = TSTATICCAST( remaster::RenderContextD3D11, pRenderInterface->GetCurrentContext() );
 		TBOOL bHasDynamicLights = pCurrentContext->m_oLightIds[ 0 ] >= 0;
-		TBOOL bHasLightData     = bHasDynamicLights;
+		TBOOL bHasStaticLights  = pCtxDX11->GetStaticLightIDs().aIDs[ 0 ] >= 0;
+		TBOOL bHasLightData     = bHasDynamicLights || bHasStaticLights;
 		auto  pLightData        = bHasLightData ? g_pLightDataPacketAllocator->Allocate() : TNULL;
 
-		if ( bHasDynamicLights && pLightData )
+		if ( pLightData )
 		{
 			pLightData->oDynamicLights = pCurrentContext->m_oLightIds;
+			pLightData->oStaticLights  = pCtxDX11->GetStaticLightIDs();
 		}
 
 		auto pRenderPacket = pMaterial->AddRenderPacket( this );
