@@ -19,23 +19,23 @@ struct VS_IN
 
 struct PS_IN
 {
-	float4 ProjPos	: SV_POSITION;		// Projected space position 
+	float4 ProjPos	: SV_POSITION;		// Projected space position
 	// float3 Normal	: NORMAL;
-	float2 UV0		: TEXCOORD0;		// UV
+	centroid float2 UV0		: TEXCOORD0;		// UV
 	// float4 ViewPos	: TEXCOORD3;	// View space position
 	// float FogFactor	: FOG;
 #if BAKED_LIGHTING
-	float2 UV1		: TEXCOORD1;		// UV for baked lighting
-	float4 LightingLerp1 : TEXCOORD5;
-	float4 LightingLerp2 : TEXCOORD6;
+	centroid float2 UV1		: TEXCOORD1;		// UV for baked lighting
+	centroid float4 LightingLerp1 : TEXCOORD5;
+	centroid float4 LightingLerp2 : TEXCOORD6;
 #else // BAKED_LIGHTING
-	float4 Color	: COLOR;        // xyz = ambient, w = alpha
-	float3 DirectLight : TEXCOORD8; // NdotL * lightColor -- the sun term, gated by shadow in the PS
+	centroid float4 Color	: COLOR;        // xyz = ambient, w = alpha
+	centroid float3 DirectLight : TEXCOORD8; // NdotL * lightColor -- the sun term, gated by shadow in the PS
 #endif // !BAKED_LIGHTING
-	float3 WorldPos    : TEXCOORD2;
-	float ViewDepth    : TEXCOORD3;
-	float AlphaRef     : TEXCOORD4;
-	float3 WorldNormal : TEXCOORD7;
+	centroid float3 WorldPos    : TEXCOORD2;
+	centroid float ViewDepth    : TEXCOORD3;
+	centroid float AlphaRef     : TEXCOORD4;
+	centroid float3 WorldNormal : TEXCOORD7;
 };
 
 // Per-draw constants. Per-pass values live in PerPass.hlsli (b4); static per-material in

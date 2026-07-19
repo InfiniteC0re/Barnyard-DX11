@@ -21,12 +21,12 @@ struct VS_IN
 struct PS_IN
 {
     float4 ProjPos : SV_POSITION;
-    float4 Color : Color;
-    float2 UV0 : TEXCOORD0;
-    float3 WorldPos : TEXCOORD1;
-    float ViewDepth : TEXCOORD2;
-    float3 WorldNormal : TEXCOORD3;
-    float4 WorldTangent : TEXCOORD4; // xyz = world-space tangent, w = handedness
+    centroid float4 Color : Color;
+    centroid float2 UV0 : TEXCOORD0;
+    centroid float3 WorldPos : TEXCOORD1;
+    centroid float ViewDepth : TEXCOORD2;
+    centroid float3 WorldNormal : TEXCOORD3;
+    centroid float4 WorldTangent : TEXCOORD4; // xyz = world-space tangent, w = handedness
 };
 
 // Per-draw constants. Per-pass values live in PerPass.hlsli (b4); static per-material in
