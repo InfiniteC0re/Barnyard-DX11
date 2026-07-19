@@ -7,6 +7,7 @@
 #include <Toshi/TDList.h>
 #include <Toshi/T2Pair.h>
 #include <Toshi/T2Map.h>
+#include <ToshiTools/T2DynamicVector.h>
 #include <Math/TMatrix44.h>
 #include <Render/TRenderInterface.h>
 #include <Render/TRenderContext.h>
@@ -778,6 +779,16 @@ public:
 	TFLOAT GetSurfaceWidth() const { return TFLOAT( m_oSwapChainDesc.BufferDesc.Width ); }
 	TFLOAT GetSurfaceHeight() const { return TFLOAT( m_oSwapChainDesc.BufferDesc.Height ); }
 
+	struct Resolution
+	{
+		TUINT uiWidth;
+		TUINT uiHeight;
+
+		TBOOL operator==( const Resolution& a_rc ) const { return uiWidth == a_rc.uiWidth && uiHeight == a_rc.uiHeight; }
+	};
+
+	const Toshi::T2DynamicVector<Resolution>& GetAvailableResolutions() const { return m_vecAvailableResolutions; }
+
 	FontAtlas* GetFontAtlas( FONT a_eFontIndex ) const { return m_pFontAtlases[ a_eFontIndex ]; }
 
 	CSMManager&   GetCSMManager() { return m_oCSMManager; }
@@ -791,6 +802,7 @@ private:
 
 	void CreatePostAAStaticResources();
 	void UpdateAAConstants();
+	void RefreshAvailableResolutions();
 
 private:
 	ID3D11Device*         m_pDevice         = TNULL; // NOTE: DUE TO COMPATIBILITY, IT NEEDS TO BE AT THIS OFFSET!!!
@@ -871,6 +883,8 @@ private:
 	GraphicsSettings m_oPendingSettings;
 	TUINT            m_uiGraphicsDirty = GFX_DIRTY_NONE;
 	TUINT            m_uiSyncInterval  = 0; // Present sync interval (0 = no vsync)
+
+	Toshi::T2DynamicVector<Resolution> m_vecAvailableResolutions;
 
 	ID3D11DeviceContext1* m_pDeviceContext1 = TNULL; // D3D11.1 context
 

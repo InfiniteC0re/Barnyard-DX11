@@ -91,9 +91,25 @@ void SDLWindow::Update()
 	} while ( !bFocused );
 }
 
-void SDLWindow::SetFullscreen( TBOOL a_bFullScreen )
+void SDLWindow::SetFullscreen( TBOOL a_bFullscreen, TBOOL a_bBorderless )
 {
-	SDL_SetWindowFullscreen( m_pWindow, a_bFullScreen ? SDL_WINDOW_FULLSCREEN : 0 );
+	TUINT32 uiFlags = 0;
+	if ( a_bFullscreen )
+		uiFlags = a_bBorderless ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_FULLSCREEN;
+
+	SDL_SetWindowFullscreen( m_pWindow, uiFlags );
+}
+
+void SDLWindow::SetExclusiveDisplayMode( TINT a_iWidth, TINT a_iHeight )
+{
+	SDL_DisplayMode oWant = {};
+	oWant.w               = a_iWidth;
+	oWant.h               = a_iHeight;
+
+	SDL_DisplayMode oClosest;
+	const TINT      iDisplayIndex = SDL_GetWindowDisplayIndex( m_pWindow );
+	if ( SDL_GetClosestDisplayMode( iDisplayIndex, &oWant, &oClosest ) )
+		SDL_SetWindowDisplayMode( m_pWindow, &oClosest );
 }
 
 void SDLWindow::SetPosition( TINT a_iX, TINT a_iY, TINT a_iWidth, TINT a_iHeight )

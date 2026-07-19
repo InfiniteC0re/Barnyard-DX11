@@ -4,6 +4,8 @@
 
 #include <BYardSDK/AGUI2.h>
 
+#include <Toshi/T2String8.h>
+
 #include <imgui.h>
 
 //-----------------------------------------------------------------------------
@@ -22,22 +24,6 @@ namespace settings
 bool g_bEnabled = TFALSE;
 
 static GraphicsSettings s_oWorking;
-
-struct ResolutionOption
-{
-	TUINT       uiWidth;
-	TUINT       uiHeight;
-	const char* szLabel;
-};
-
-static const ResolutionOption s_aResolutions[] = {
-	{ 1280, 720,  "1280 x 720"  },
-	{ 1366, 768,  "1366 x 768"  },
-	{ 1600, 900,  "1600 x 900"  },
-	{ 1920, 1080, "1920 x 1080" },
-	{ 2560, 1440, "2560 x 1440" },
-	{ 3840, 2160, "3840 x 2160" },
-};
 
 static const TUINT s_aMSAASamples[] = { 1, 2, 4, 8 };
 
@@ -74,32 +60,37 @@ void Render()
 
 	// Resolution
 	{
-		// TODO: query from SDL
+		const Toshi::T2DynamicVector<RenderDX11::Resolution>& rcResolutions = pRender->GetAvailableResolutions();
+
 		TINT iResIndex = -1;
-		for ( TINT i = 0; i < TARRAYSIZE( s_aResolutions ); i++ )
+		for ( TINT i = 0; i < rcResolutions.Size(); i++ )
 		{
-			if ( s_aResolutions[ i ].uiWidth == s_oWorking.uiWidth && s_aResolutions[ i ].uiHeight == s_oWorking.uiHeight )
+			if ( rcResolutions[ i ].uiWidth == s_oWorking.uiWidth && rcResolutions[ i ].uiHeight == s_oWorking.uiHeight )
 			{
 				iResIndex = i;
 				break;
 			}
 		}
 
-		const char* szPreview = ( iResIndex >= 0 ) ? s_aResolutions[ iResIndex ].szLabel : "(custom)";
+		TCHAR szPreview[ 32 ];
+		T2String8::Format( szPreview, sizeof( szPreview ), "%u x %u", s_oWorking.uiWidth, s_oWorking.uiHeight );
 
-		const bool bBorderless = ( s_oWorking.eDisplayMode != DISPLAY_WINDOWED );
-		if ( bBorderless )
-			ImGui::BeginDisabled(); // borderless/fullscreen tracks the desktop resolution
+		const bool bResolutionLocked = ( s_oWorking.eDisplayMode == DISPLAY_BORDERLESS );
+		if ( bResolutionLocked )
+			ImGui::BeginDisabled(); // borderless always uses the native desktop resolution
 
 		if ( ImGui::BeginCombo( "Resolution", szPreview ) )
 		{
-			for ( TINT i = 0; i < TARRAYSIZE( s_aResolutions ); i++ )
+			for ( TINT i = 0; i < rcResolutions.Size(); i++ )
 			{
+				TCHAR szLabel[ 32 ];
+				T2String8::Format( szLabel, sizeof( szLabel ), "%u x %u", rcResolutions[ i ].uiWidth, rcResolutions[ i ].uiHeight );
+
 				const bool bSelected = ( i == iResIndex );
-				if ( ImGui::Selectable( s_aResolutions[ i ].szLabel, bSelected ) )
+				if ( ImGui::Selectable( szLabel, bSelected ) )
 				{
-					s_oWorking.uiWidth  = s_aResolutions[ i ].uiWidth;
-					s_oWorking.uiHeight = s_aResolutions[ i ].uiHeight;
+					s_oWorking.uiWidth  = rcResolutions[ i ].uiWidth;
+					s_oWorking.uiHeight = rcResolutions[ i ].uiHeight;
 				}
 				if ( bSelected )
 					ImGui::SetItemDefaultFocus();
@@ -107,7 +98,7 @@ void Render()
 			ImGui::EndCombo();
 		}
 
-		if ( bBorderless )
+		if ( bResolutionLocked )
 			ImGui::EndDisabled();
 	}
 

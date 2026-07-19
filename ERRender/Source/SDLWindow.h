@@ -19,7 +19,8 @@ public:
 	TBOOL Create( RenderDX11* a_pRender, const TCHAR* a_szTitle );
 	void  Update();
 
-	void SetFullscreen( TBOOL a_bFullScreen );
+	void SetFullscreen( TBOOL a_bFullscreen, TBOOL a_bBorderless );
+	void SetExclusiveDisplayMode( TINT a_iWidth, TINT a_iHeight );
 	void SetPosition( TINT a_iX, TINT a_iY, TINT a_iWidth, TINT a_iHeight );
 	void Show();
 

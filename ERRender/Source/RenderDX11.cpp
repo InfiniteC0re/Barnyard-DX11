@@ -20,6 +20,7 @@
 
 #include <Toshi/TTask.h>
 #include <BYardSDK/ARenderer.h>
+#include <BYardSDK/AGUISystem.h>
 
 #include <Render/TShader.h>
 #include <Render/TViewport.h>
@@ -267,8 +268,11 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		m_Window.SetPosition( SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, a_rParams.uiWidth, a_rParams.uiHeight );
 
 		// Set window mode
-		m_Window.SetFullscreen( !pDisplayParams->bWindowed );
+		m_Window.SetFullscreen( !pDisplayParams->bWindowed, TTRUE );
 		m_Window.Show();
+
+		// Cache the display's supported modes now the window is on its final monitor
+		RefreshAvailableResolutions();
 
 		// Create invalid texture pattern
 		TUINT invalidTextureData[ 32 ];
@@ -410,6 +414,19 @@ TBOOL RenderDX11::EndScene()
 
 	{
 		TracyD3D11Zone( m_pTracyD3D11Ctx, "Resolve + Postprocess" );
+
+		// These passes draw fullscreen quads into full-res targets and inherit whatever
+		// viewport the scene/UI left bound; after a resolution change that inherited rect
+		// is stale, so the present quad only covers part of the new backbuffer. Bind the
+		// full backbuffer explicitly (all passes here share this size, none change it).
+		D3D11_VIEWPORT presentViewport;
+		presentViewport.TopLeftX = 0.0f;
+		presentViewport.TopLeftY = 0.0f;
+		presentViewport.MinDepth = 0.0f;
+		presentViewport.MaxDepth = 1.0f;
+		presentViewport.Width    = TFLOAT( m_oSwapChainDesc.BufferDesc.Width );
+		presentViewport.Height   = TFLOAT( m_oSwapChainDesc.BufferDesc.Height );
+		m_pDeviceContext->RSSetViewports( 1, &presentViewport );
 
 		if ( m_uiMSAASampleCount > 1 )
 			m_pDeviceContext->ResolveSubresource( m_pPresentResolveTexture, 0, m_pRenderTargetTexture, 0, DXGI_FORMAT_R11G11B10_FLOAT );
@@ -624,21 +641,62 @@ void RenderDX11::DestroyDebugText()
 // viewport's render-context params (see TViewport_BeginSKU).
 static void UpdateGameViewports( TUINT a_uiWidth, TUINT a_uiHeight )
 {
-	ARenderer* pRenderer = ARenderer::GetSingleton();
-	if ( !pRenderer )
-		return;
-
 	const TFLOAT fWidth  = TFLOAT( a_uiWidth );
 	const TFLOAT fHeight = TFLOAT( a_uiHeight );
 
-	Toshi::TViewport* apViewports[] = { pRenderer->m_pViewport, pRenderer->m_pHALViewport1, pRenderer->m_pHALViewport2 };
-	for ( Toshi::TViewport* pViewport : apViewports )
+	if ( ARenderer* pRenderer = ARenderer::GetSingleton() )
 	{
-		if ( !pViewport )
+		Toshi::TViewport* apViewports[] = { pRenderer->m_pViewport, pRenderer->m_pHALViewport1, pRenderer->m_pHALViewport2 };
+		for ( Toshi::TViewport* pViewport : apViewports )
+		{
+			if ( !pViewport )
+				continue;
+
+			pViewport->SetWidth( fWidth );
+			pViewport->SetHeight( fHeight );
+		}
+	}
+
+	// AGUISystem keeps its own pair of full-screen viewports (sized once from the startup
+	// display params in its OnCreate); ARenderer::RenderGUI binds render-object 0's viewport,
+	// so without resizing these the HUD/menus keep drawing into the old-resolution rectangle.
+	if ( AGUISystem::IsSingletonCreated() )
+	{
+		AGUISystem* pGUISystem = AGUISystem::GetSingleton();
+		for ( TUINT i = 0; i < AGUISystem::NUM_RENDER_OBJECTS; i++ )
+		{
+			PGUITRRenderObject* pRenderObject = pGUISystem->GetRenderObject( i );
+			if ( !pRenderObject )
+				continue;
+
+			Toshi::TViewport* pViewport = pRenderObject->GetViewport();
+			if ( !pViewport )
+				continue;
+
+			pViewport->SetWidth( fWidth );
+			pViewport->SetHeight( fHeight );
+		}
+	}
+}
+
+void RenderDX11::RefreshAvailableResolutions()
+{
+	m_vecAvailableResolutions.Clear();
+
+	const TINT iDisplayIndex = SDL_GetWindowDisplayIndex( m_Window.GetSDLHandle() );
+	if ( iDisplayIndex < 0 )
+		return;
+
+	const TINT iNumModes = SDL_GetNumDisplayModes( iDisplayIndex );
+	for ( TINT i = 0; i < iNumModes; i++ )
+	{
+		SDL_DisplayMode oMode;
+		if ( SDL_GetDisplayMode( iDisplayIndex, i, &oMode ) != 0 )
 			continue;
 
-		pViewport->SetWidth( fWidth );
-		pViewport->SetHeight( fHeight );
+		const Resolution oRes = { TUINT( oMode.w ), TUINT( oMode.h ) };
+		if ( m_vecAvailableResolutions.Find( oRes ) == m_vecAvailableResolutions.End() )
+			m_vecAvailableResolutions.PushBack( oRes );
 	}
 }
 
@@ -683,10 +741,35 @@ TBOOL RenderDX11::RecreateDisplay( const DISPLAYPARAMS& a_rDisplayParams )
 	m_oDisplayParams.uiWidth   = m_oSwapChainDesc.BufferDesc.Width;
 	m_oDisplayParams.uiHeight  = m_oSwapChainDesc.BufferDesc.Height;
 
-	// Apply the window mode/size to the SDL window.
-	m_Window.SetFullscreen( !a_rDisplayParams.bWindowed );
-	if ( a_rDisplayParams.bWindowed )
-		m_Window.SetPosition( SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, m_oSwapChainDesc.BufferDesc.Width, m_oSwapChainDesc.BufferDesc.Height );
+	// Apply the window mode/size to the SDL window. DISPLAYPARAMS only carries windowed vs
+	// not, so the borderless/fullscreen split comes from the pending setting that drove this.
+	const TBOOL bWindowed   = a_rDisplayParams.bWindowed;
+	const TBOOL bBorderless = ( m_oPendingSettings.eDisplayMode == DISPLAY_BORDERLESS );
+	const TUINT uiWidth     = m_oSwapChainDesc.BufferDesc.Width;
+	const TUINT uiHeight    = m_oSwapChainDesc.BufferDesc.Height;
+
+	if ( bWindowed )
+	{
+		m_Window.SetFullscreen( TFALSE, TFALSE );
+		m_Window.SetPosition( SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, uiWidth, uiHeight );
+	}
+	else if ( bBorderless )
+	{
+		m_Window.SetFullscreen( TTRUE, TTRUE );
+	}
+	else
+	{
+		// Exclusive fullscreen changes the actual video mode. Pick the target mode, then
+		// toggle fullscreen off/on: SDL_SetWindowFullscreen no-ops when the flag is unchanged,
+		// so an already-fullscreen window keeps the old mode and shows as a small window over
+		// the desktop until a focus change re-applies it (the alt-tab "fix").
+		m_Window.SetExclusiveDisplayMode( uiWidth, uiHeight );
+		m_Window.SetFullscreen( TFALSE, TFALSE );
+		m_Window.SetFullscreen( TTRUE, TFALSE );
+	}
+
+	// The window may now sit on a different monitor (fullscreen/borderless), so re-cache its modes
+	RefreshAvailableResolutions();
 
 	// ClearState() unbound everything on the device; fully reset our binding cache so the
 	// next frame rebinds it all (a partial reset would leave e.g. the skin bone cbuffer
@@ -788,14 +871,13 @@ void RenderDX11::ApplyGraphicsSettings()
 		if ( m_uiGraphicsDirty & GFX_DIRTY_MSAA )
 			m_uiMSAASampleCount = GetSupportedMSAASampleCount( m_oPendingSettings.uiMSAASamples );
 
-		const TBOOL bWindowed = ( m_oPendingSettings.eDisplayMode == DISPLAY_WINDOWED );
+		const DisplayMode eMode = m_oPendingSettings.eDisplayMode;
 
-		// Borderless/fullscreen tracks the current desktop resolution.
-		if ( !bWindowed )
+		if ( eMode == DISPLAY_BORDERLESS )
 		{
 			const TINT      iDisplayIndex = SDL_GetWindowDisplayIndex( m_Window.GetSDLHandle() );
 			SDL_DisplayMode oSDLMode;
-			if ( SDL_GetCurrentDisplayMode( iDisplayIndex, &oSDLMode ) == 0 )
+			if ( SDL_GetDesktopDisplayMode( iDisplayIndex, &oSDLMode ) == 0 )
 			{
 				m_oPendingSettings.uiWidth  = TUINT( oSDLMode.w );
 				m_oPendingSettings.uiHeight = TUINT( oSDLMode.h );
@@ -805,7 +887,7 @@ void RenderDX11::ApplyGraphicsSettings()
 		DISPLAYPARAMS oParams     = m_oDisplayParams;
 		oParams.uiWidth           = m_oPendingSettings.uiWidth;
 		oParams.uiHeight          = m_oPendingSettings.uiHeight;
-		oParams.bWindowed         = bWindowed;
+		oParams.bWindowed         = ( eMode == DISPLAY_WINDOWED );
 
 		RecreateDisplay( oParams );
 	}
