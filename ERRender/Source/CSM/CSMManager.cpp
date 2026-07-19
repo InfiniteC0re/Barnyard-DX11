@@ -2,6 +2,7 @@
 #include "CSM/CSMManager.h"
 
 #include "RenderDX11.h"
+#include "RenderParams.h"
 #include "Shader/WorldShader.h"
 
 #include <HookHelpers.h>
@@ -25,23 +26,27 @@ namespace remaster
 
 CSMManager* g_pCSMManager                     = TNULL;
 TBOOL       g_bCSMEnabled                     = TTRUE;
+TBOOL       g_bInMainScenePass                = TFALSE;
+TBOOL       g_bReflectionCaptureActive        = TFALSE;
+TBOOL       g_bEnvSpecular                    = TTRUE;
 TINT        g_iCSMDebugCascade                = -1;
 TBOOL       g_bCSMDebugFullRange              = TTRUE;
 TBOOL       g_bCSMDebugMaskBySplit            = TTRUE;
 TBOOL       g_bOverrideSunDirection           = TTRUE;
+TBOOL       g_bCSMDelayedCascadeUpdate        = TTRUE; // stagger far-cascade rebuilds (1: /4 frames, 2: /8); off = all cascades every frame
 TFLOAT      g_flSunAzimuth                    = 9.0f;
 TFLOAT      g_flSunElevation                  = 139.0f;
 TFLOAT      g_flShadowIntensity               = 0.185f;
 TFLOAT      g_flShadowDistance                = 56.0f;
-TFLOAT      g_flShadowSplitLambda             = CSM_SPLIT_LAMBDA;
-TFLOAT      g_flShadowCascadeBlend            = CSM_CASCADE_BLEND;
-TFLOAT      g_flShadowMinSlopeScaledDepthBias = CSM_MIN_SLOPE_DEPTH_BIAS;
+TFLOAT      g_flShadowSplitLambda             = 0.1f;
+TFLOAT      g_flShadowCascadeBlend            = 0.1f;
+TFLOAT      g_flShadowMinSlopeScaledDepthBias = 0.25f;
 TFLOAT      g_flShadowReceiverPlaneBias       = CSM_RECEIVER_PLANE_BIAS;
 TFLOAT      g_flShadowNormalOffsetScale       = 2.0f;
 TFLOAT      g_flShadowGrazingScale            = 1.0f;
 
 TBOOL       g_bCloudShadowsEnabled            = TTRUE;
-TBOOL       g_bCloudShadowsVolumetrics        = TFALSE;
+TBOOL       g_bCloudShadowsVolumetrics        = TTRUE;
 TFLOAT      g_flCloudShadowStrength           = 0.8f;
 TFLOAT      g_flCloudShadowRegionSize         = 150.0f;
 TFLOAT      g_flCloudShadowFeatureScale       = 0.032f;
@@ -256,11 +261,16 @@ void CSMManager::UpdateCascades( TRenderContext* a_pRenderContext )
 		// Debug view: only the inspected cascade is rendered, every frame.
 		m_uiCascadeRenderMask = 1u << TMath::Max( 0, TMath::Min( g_iCSMDebugCascade, CSM_CASCADE_COUNT - 1 ) );
 	}
-	else
+	else if ( g_bCSMDelayedCascadeUpdate )
 	{
 		m_uiCascadeRenderMask = 1u << 0; // cascade 0: every frame
 		if ( m_bForceAllCascades || ( m_uiFrameCounter % 4 ) == 0 ) m_uiCascadeRenderMask |= 1u << 1; // cascade 1: every 4 frames
 		if ( m_bForceAllCascades || ( m_uiFrameCounter % 8 ) == 2 ) m_uiCascadeRenderMask |= 1u << 2; // cascade 2: every 8 frames (offset to avoid colliding with cascade 1)
+	}
+	else
+	{
+		// Delayed updates off: rebuild every cascade every frame -- costlier, but far shadows track moving objects and sun changes with no latency
+		m_uiCascadeRenderMask = ( 1u << CSM_CASCADE_COUNT ) - 1;
 	}
 	m_bForceAllCascades = TFALSE;
 

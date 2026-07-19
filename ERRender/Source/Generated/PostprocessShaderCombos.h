@@ -96,12 +96,48 @@ TINLINE TBOOL CreatePostprocessPixelShader_ps_main( ID3D11PixelShader** a_ppShad
 	return TTRUE;
 }
 
+inline dx11::ShaderCombo g_oPostprocessPixelShaderCombo_ps_main_aa;
+inline TBOOL g_bPostprocessPixelShaderComboCompiled_ps_main_aa = TFALSE;
+
+TINLINE TBOOL EnsurePostprocessPixelShaderCombo_ps_main_aa()
+{
+	if ( !g_bPostprocessPixelShaderComboCompiled_ps_main_aa )
+		g_bPostprocessPixelShaderComboCompiled_ps_main_aa = g_oPostprocessPixelShaderCombo_ps_main_aa.CompileFromFile( "Data\\Shaders\\Postprocess.hlsl", "ps_main_aa", "ps_5_0", PostprocessCombos, PostprocessNumCombos, PostprocessNumPermutations );
+
+	return g_bPostprocessPixelShaderComboCompiled_ps_main_aa;
+}
+
+TINLINE dx11::ShaderCombo& GetPostprocessPixelShaderCombo_ps_main_aa()
+{
+	TASSERT( g_bPostprocessPixelShaderComboCompiled_ps_main_aa );
+	return g_oPostprocessPixelShaderCombo_ps_main_aa;
+}
+
+TINLINE TBOOL CreatePostprocessPixelShader_ps_main_aa( ID3D11PixelShader** a_ppShader )
+{
+	if ( !g_bPostprocessPixelShaderComboCompiled_ps_main_aa )
+		return TFALSE;
+
+	dx11::ShaderCombo& rCombo = g_oPostprocessPixelShaderCombo_ps_main_aa;
+	ID3D11PixelShader** ppShader = rCombo.GetPixelShaderPtr( 0 );
+	TVALIDPTR( ppShader );
+	if ( !ppShader || !*ppShader )
+		return TFALSE;
+	*a_ppShader = *ppShader;
+	return TTRUE;
+}
+
 TINLINE TBOOL CompilePostprocessShaderCombos()
 {
 	if ( !EnsurePostprocessPixelShaderCombo_ps_main() )
 		return TFALSE;
 
 	if ( !g_oPostprocessPixelShaderCombo_ps_main.CreatePixelShaders() )
+		return TFALSE;
+	if ( !EnsurePostprocessPixelShaderCombo_ps_main_aa() )
+		return TFALSE;
+
+	if ( !g_oPostprocessPixelShaderCombo_ps_main_aa.CreatePixelShaders() )
 		return TFALSE;
 
 	return TTRUE;

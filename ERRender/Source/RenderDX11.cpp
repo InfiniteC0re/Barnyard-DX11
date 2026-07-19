@@ -1,10 +1,15 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include "RenderDX11.h"
 #include "RenderAdapterDX11.h"
 #include "RenderContentDX11.h"
 #include "RenderDX11Utils.h"
+#include "MaterialParams.h"
 #include "UI/FontRenderer.h"
 #include "Generated/ShaderCombos.h"
+
+// Precomputed SMAA lookup tables (iryoku/SMAA, MIT)
+#include "SMAA/AreaTex.h"
+#include "SMAA/SearchTex.h"
 
 #include <dxgi1_5.h>
 
@@ -95,10 +100,6 @@ RenderDX11::RenderDX11()
 	m_IsVertexConstantBufferUpdated = TFALSE;
 	m_VertexBufferNewSize           = 0;
 	m_VertexBufferCurSize           = 0;
-	TUtil::MemClear( m_PixelBuffers, sizeof( m_PixelBuffers ) );
-
-	m_pPixelConstantBuffer     = TNULL;
-	m_IsPixelConstantBufferSet = TFALSE;
 	TUtil::MemClear( m_VertexBuffers, sizeof( m_VertexBuffers ) );
 
 	m_MainVertexBuffer              = TNULL;
@@ -410,22 +411,96 @@ TBOOL RenderDX11::EndScene()
 	{
 		TracyD3D11Zone( m_pTracyD3D11Ctx, "Resolve + Postprocess" );
 
-		// Resolve/copy HDR main into a non-MSAA pad, then saturate to the LDR back buffer.
 		if ( m_uiMSAASampleCount > 1 )
 			m_pDeviceContext->ResolveSubresource( m_pPresentResolveTexture, 0, m_pRenderTargetTexture, 0, DXGI_FORMAT_R11G11B10_FLOAT );
 		else
 			m_pDeviceContext->CopyResource( m_pPresentResolveTexture, m_pRenderTargetTexture );
 
-		SetRenderTargetView( m_pSwapChainBackBufferRTV, TNULL );
 		SetCullMode( D3D11_CULL_NONE );
 		SetDepthEnabled( TFALSE );
 		SetBlendEnabled( TFALSE );
-		PSSetShaderResource( 0, m_pPresentResolveSRV );
-		PSSetSamplerState( 0, SAMPLER_POINT_CLAMP );
-		DrawScreenRectangle(
-		    remaster::shadercombos::GetPostprocessPixelShaderCombo_ps_main().GetPixelShader( remaster::shadercombos::Postprocess_NoCombos )
-		);
-		PSSetShaderResource( 0, TNULL );
+
+		const AAMode eAA     = m_oActiveSettings.eAAMode;
+		const TBOOL  bPostAA = ( eAA != AA_NONE ) && ( m_pAALDRTexture != TNULL );
+
+		if ( !bPostAA )
+		{
+			SetRenderTargetView( m_pSwapChainBackBufferRTV, TNULL );
+			PSSetShaderResource( 0, m_pPresentResolveSRV );
+			PSSetSamplerState( 0, SAMPLER_POINT_CLAMP );
+			DrawScreenRectangle(
+			    remaster::shadercombos::GetPostprocessPixelShaderCombo_ps_main().GetPixelShader( remaster::shadercombos::Postprocess_NoCombos )
+			);
+			PSSetShaderResource( 0, TNULL );
+		}
+		else
+		{
+			UpdateAAConstants();
+
+			SetRenderTargetView( m_pAALDRRTV, TNULL );
+			PSSetShaderResource( 0, m_pPresentResolveSRV );
+			PSSetSamplerState( 0, SAMPLER_POINT_CLAMP );
+			DrawScreenRectangle(
+			    remaster::shadercombos::GetPostprocessPixelShaderCombo_ps_main_aa().GetPixelShader( remaster::shadercombos::Postprocess_NoCombos )
+			);
+			PSSetShaderResource( 0, TNULL );
+
+			PSSetConstantBuffer( 1, m_pAAConstantBuffer );
+
+			if ( eAA == AA_FXAA )
+			{
+				TracyD3D11Zone( m_pTracyD3D11Ctx, "FXAA" );
+
+				SetRenderTargetView( m_pSwapChainBackBufferRTV, TNULL );
+				PSSetShaderResource( 0, m_pAALDRSRV );
+				PSSetSamplerState( 0, SAMPLER_LINEAR_CLAMP );
+				DrawScreenRectangle(
+				    remaster::shadercombos::GetFXAAPixelShaderCombo_ps_main().GetPixelShader( remaster::shadercombos::FXAA_NoCombos )
+				);
+				PSSetShaderResource( 0, TNULL );
+			}
+			else
+			{
+				TracyD3D11Zone( m_pTracyD3D11Ctx, "SMAA" );
+
+				PSSetSamplerState( 0, SAMPLER_LINEAR_CLAMP ); // SMAA "LinearSampler"
+				PSSetSamplerState( 1, SAMPLER_POINT_CLAMP );  // SMAA "PointSampler"
+
+				static constexpr TFLOAT aflZero[ 4 ] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+				ClearRenderTarget( m_pSMAAEdgesRTV, aflZero );
+				SetRenderTargetView( m_pSMAAEdgesRTV, TNULL );
+				PSSetShaderResource( 0, m_pAALDRSRV );
+				DrawScreenRectangle(
+				    remaster::shadercombos::GetSMAAEdgeDetectionPixelShaderCombo_ps_main().GetPixelShader( remaster::shadercombos::SMAAEdgeDetection_NoCombos )
+				);
+				PSSetShaderResource( 0, TNULL );
+
+				ClearRenderTarget( m_pSMAABlendRTV, aflZero );
+				SetRenderTargetView( m_pSMAABlendRTV, TNULL );
+				PSSetShaderResource( 0, m_pSMAAEdgesSRV );
+				PSSetShaderResource( 1, m_pSMAAAreaSRV );
+				PSSetShaderResource( 2, m_pSMAASearchSRV );
+				DrawScreenRectangle(
+				    remaster::shadercombos::GetSMAABlendWeightPixelShaderCombo_ps_main().GetPixelShader( remaster::shadercombos::SMAABlendWeight_NoCombos )
+				);
+				PSSetShaderResource( 0, TNULL );
+				PSSetShaderResource( 1, TNULL );
+				PSSetShaderResource( 2, TNULL );
+
+				SetRenderTargetView( m_pSwapChainBackBufferRTV, TNULL );
+				PSSetShaderResource( 0, m_pAALDRSRV );
+				PSSetShaderResource( 1, m_pSMAABlendSRV );
+				DrawScreenRectangle(
+				    remaster::shadercombos::GetSMAANeighborhoodPixelShaderCombo_ps_main().GetPixelShader( remaster::shadercombos::SMAANeighborhood_NoCombos )
+				);
+				PSSetShaderResource( 0, TNULL );
+				PSSetShaderResource( 1, TNULL );
+			}
+
+			PSSetConstantBuffer( 1, TNULL );
+		}
+
 		ClearStateCache();
 	}
 
@@ -681,6 +756,16 @@ void RenderDX11::RequestCSMPreset( CSMPreset a_ePreset )
 	m_uiGraphicsDirty |= GFX_DIRTY_CSM;
 }
 
+void RenderDX11::RequestAAMode( AAMode a_eMode )
+{
+	if ( m_oPendingSettings.eAAMode == a_eMode )
+		return;
+
+	// No resource rebuild needed: the targets always exist, only the EndScene shader path changes
+	m_oPendingSettings.eAAMode = a_eMode;
+	m_uiGraphicsDirty |= GFX_DIRTY_AA;
+}
+
 void RenderDX11::ApplyGraphicsSettings()
 {
 	if ( m_uiGraphicsDirty == GFX_DIRTY_NONE )
@@ -888,6 +973,37 @@ void RenderDX11::CreateSwapchainSizedResources()
 		DX11_API_VALIDATE( m_pDevice->CreateShaderResourceView( m_pPresentResolveTexture, TNULL, &m_pPresentResolveSRV ) );
 	}
 
+	// Post-process AA targets; always allocated so the AA mode can toggle without a swapchain rebuild
+	{
+		D3D11_TEXTURE2D_DESC aaDesc = {};
+		aaDesc.ArraySize          = 1;
+		aaDesc.BindFlags          = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+		aaDesc.CPUAccessFlags     = 0;
+		aaDesc.Width              = m_oSwapChainDesc.BufferDesc.Width;
+		aaDesc.Height             = m_oSwapChainDesc.BufferDesc.Height;
+		aaDesc.MipLevels          = 1;
+		aaDesc.MiscFlags          = 0;
+		aaDesc.SampleDesc.Count   = 1; // post-AA runs on the already-resolved image
+		aaDesc.SampleDesc.Quality = 0;
+		aaDesc.Usage              = D3D11_USAGE_DEFAULT;
+
+		// LDR tone-map landing buffer: rgb = display color, a = luma (for FXAA)
+		aaDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		DX11_API_VALIDATE( m_pDevice->CreateTexture2D( &aaDesc, TNULL, &m_pAALDRTexture ) );
+		DX11_API_VALIDATE( m_pDevice->CreateRenderTargetView( m_pAALDRTexture, TNULL, &m_pAALDRRTV ) );
+		DX11_API_VALIDATE( m_pDevice->CreateShaderResourceView( m_pAALDRTexture, TNULL, &m_pAALDRSRV ) );
+
+		aaDesc.Format = DXGI_FORMAT_R8G8_UNORM;
+		DX11_API_VALIDATE( m_pDevice->CreateTexture2D( &aaDesc, TNULL, &m_pSMAAEdgesTexture ) );
+		DX11_API_VALIDATE( m_pDevice->CreateRenderTargetView( m_pSMAAEdgesTexture, TNULL, &m_pSMAAEdgesRTV ) );
+		DX11_API_VALIDATE( m_pDevice->CreateShaderResourceView( m_pSMAAEdgesTexture, TNULL, &m_pSMAAEdgesSRV ) );
+
+		aaDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		DX11_API_VALIDATE( m_pDevice->CreateTexture2D( &aaDesc, TNULL, &m_pSMAABlendTexture ) );
+		DX11_API_VALIDATE( m_pDevice->CreateRenderTargetView( m_pSMAABlendTexture, TNULL, &m_pSMAABlendRTV ) );
+		DX11_API_VALIDATE( m_pDevice->CreateShaderResourceView( m_pSMAABlendTexture, TNULL, &m_pSMAABlendSRV ) );
+	}
+
 	// Create depth stencil view
 	D3D11_TEXTURE2D_DESC depthBufferDesc = {};
 	depthBufferDesc.ArraySize            = 1;
@@ -949,6 +1065,15 @@ void RenderDX11::ReleaseSwapchainSizedResources()
 	fnRelease( m_pDepthStencilTexture );
 	fnRelease( m_pPresentResolveSRV );
 	fnRelease( m_pPresentResolveTexture );
+	fnRelease( m_pAALDRSRV );
+	fnRelease( m_pAALDRRTV );
+	fnRelease( m_pAALDRTexture );
+	fnRelease( m_pSMAAEdgesSRV );
+	fnRelease( m_pSMAAEdgesRTV );
+	fnRelease( m_pSMAAEdgesTexture );
+	fnRelease( m_pSMAABlendSRV );
+	fnRelease( m_pSMAABlendRTV );
+	fnRelease( m_pSMAABlendTexture );
 	fnRelease( m_pSwapChainBackBufferRTV );
 	fnRelease( m_pSwapChainBackBuffer );
 }
@@ -994,22 +1119,35 @@ void RenderDX11::CreateRenderObjects()
 	m_IsVertexConstantBufferUpdated = TFALSE;
 	m_VertexBufferIndex             = 0;
 
-	// Pixel buffers
-	for ( size_t i = 0; i < NUMBUFFERS; i++ )
+	// Per-pass constant buffer (b4): zero the shadow copy so the first compare-and-set of every slot triggers the initial upload
 	{
 		D3D11_BUFFER_DESC bufferDesc;
-		bufferDesc.ByteWidth           = PIXEL_CONSTANT_BUFFER_SIZE;
+		bufferDesc.ByteWidth           = PASS_CONSTANT_BUFFER_SIZE;
 		bufferDesc.Usage               = D3D11_USAGE_DYNAMIC;
 		bufferDesc.BindFlags           = D3D11_BIND_CONSTANT_BUFFER;
 		bufferDesc.CPUAccessFlags      = D3D11_CPU_ACCESS_WRITE;
 		bufferDesc.MiscFlags           = 0;
 		bufferDesc.StructureByteStride = 0;
 
-		DX11_API_VALIDATE( m_pDevice->CreateBuffer( &bufferDesc, NULL, &m_PixelBuffers[ i ] ) );
+		DX11_API_VALIDATE( m_pDevice->CreateBuffer( &bufferDesc, NULL, &m_pPassBuffer ) );
 	}
 
-	m_pPixelConstantBuffer     = TMalloc( PIXEL_CONSTANT_BUFFER_SIZE, s_pRenderHeap );
-	m_IsPixelConstantBufferSet = TFALSE;
+	m_pPassConstantBuffer = TMemalign( 16, PASS_CONSTANT_BUFFER_SIZE, s_pRenderHeap );
+	TUtil::MemClear( m_pPassConstantBuffer, PASS_CONSTANT_BUFFER_SIZE );
+	m_bPassBufferDirty = TTRUE;
+
+	// D3D11.1 CB offset binding (*SetConstantBuffers1): the material constants buffer selects a 256-byte page per draw without any upload
+	{
+		D3D11_FEATURE_DATA_D3D11_OPTIONS oOptions = {};
+		if ( m_pDeviceContext1 && SUCCEEDED( m_pDevice->CheckFeatureSupport( D3D11_FEATURE_D3D11_OPTIONS, &oOptions, sizeof( oOptions ) ) ) )
+			m_bCBOffsettingSupported = oOptions.ConstantBufferOffsetting;
+
+		if ( !m_bCBOffsettingSupported )
+			TINFO( "Constant buffer offsetting unavailable, material constants use per-material buffers\n" );
+
+		// Build the material constants buffer now, while nothing is streaming -- a lazy first-use build could land mid-frame during a level load
+		remaster::PrebuildMaterialConstants();
+	}
 
 	// Shadow constant buffer
 	{
@@ -1036,8 +1174,6 @@ void RenderDX11::CreateRenderObjects()
 
 		DX11_API_VALIDATE( m_pDevice->CreateBuffer( &bufferDesc, NULL, &m_pDepthPassConstantBuffer ) );
 	}
-
-	m_PixelBufferIndex = 0;
 
 	// Main vertex buffer
 	{
@@ -1141,8 +1277,79 @@ void RenderDX11::CreateRenderObjects()
 	m_eCurrentTopology     = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
 	m_pCurrentVertexBuffer = TNULL;
 
+	CreatePostAAStaticResources();
+
 	m_oCSMManager.Create();
 	m_oLightManager.Create();
+}
+
+void RenderDX11::CreatePostAAStaticResources()
+{
+	// AA RT-metrics constant buffer (PS slot b1): float4( 1/w, 1/h, w, h ), refreshed per frame
+	{
+		D3D11_BUFFER_DESC bufferDesc   = {};
+		bufferDesc.ByteWidth           = sizeof( TFLOAT ) * 4;
+		bufferDesc.Usage               = D3D11_USAGE_DYNAMIC;
+		bufferDesc.BindFlags           = D3D11_BIND_CONSTANT_BUFFER;
+		bufferDesc.CPUAccessFlags      = D3D11_CPU_ACCESS_WRITE;
+		bufferDesc.MiscFlags           = 0;
+		bufferDesc.StructureByteStride = 0;
+
+		DX11_API_VALIDATE( m_pDevice->CreateBuffer( &bufferDesc, TNULL, &m_pAAConstantBuffer ) );
+	}
+
+	{
+		D3D11_TEXTURE2D_DESC texDesc = {};
+		texDesc.ArraySize          = 1;
+		texDesc.BindFlags          = D3D11_BIND_SHADER_RESOURCE;
+		texDesc.CPUAccessFlags     = 0;
+		texDesc.MipLevels          = 1;
+		texDesc.MiscFlags          = 0;
+		texDesc.SampleDesc.Count   = 1;
+		texDesc.SampleDesc.Quality = 0;
+		texDesc.Usage              = D3D11_USAGE_IMMUTABLE;
+
+		texDesc.Width  = AREATEX_WIDTH;
+		texDesc.Height = AREATEX_HEIGHT;
+		texDesc.Format = DXGI_FORMAT_R8G8_UNORM;
+
+		D3D11_SUBRESOURCE_DATA areaData = {};
+		areaData.pSysMem     = areaTexBytes;
+		areaData.SysMemPitch = AREATEX_PITCH;
+
+		ID3D11Texture2D* pAreaTex = TNULL;
+		DX11_API_VALIDATE( m_pDevice->CreateTexture2D( &texDesc, &areaData, &pAreaTex ) );
+		DX11_API_VALIDATE( m_pDevice->CreateShaderResourceView( pAreaTex, TNULL, &m_pSMAAAreaSRV ) );
+		pAreaTex->Release();
+
+		texDesc.Width  = SEARCHTEX_WIDTH;
+		texDesc.Height = SEARCHTEX_HEIGHT;
+		texDesc.Format = DXGI_FORMAT_R8_UNORM;
+
+		D3D11_SUBRESOURCE_DATA searchData = {};
+		searchData.pSysMem     = searchTexBytes;
+		searchData.SysMemPitch = SEARCHTEX_PITCH;
+
+		ID3D11Texture2D* pSearchTex = TNULL;
+		DX11_API_VALIDATE( m_pDevice->CreateTexture2D( &texDesc, &searchData, &pSearchTex ) );
+		DX11_API_VALIDATE( m_pDevice->CreateShaderResourceView( pSearchTex, TNULL, &m_pSMAASearchSRV ) );
+		pSearchTex->Release();
+	}
+}
+
+void RenderDX11::UpdateAAConstants()
+{
+	if ( !m_pAAConstantBuffer )
+		return;
+
+	const TFLOAT fWidth  = GetSurfaceWidth();
+	const TFLOAT fHeight = GetSurfaceHeight();
+	const TFLOAT aMetrics[ 4 ] = { 1.0f / fWidth, 1.0f / fHeight, fWidth, fHeight };
+
+	D3D11_MAPPED_SUBRESOURCE mapped;
+	m_pDeviceContext->Map( m_pAAConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped );
+	TUtil::MemCopy( mapped.pData, aMetrics, sizeof( aMetrics ) );
+	m_pDeviceContext->Unmap( m_pAAConstantBuffer, 0 );
 }
 
 TUINT RenderDX11::GetSupportedMSAASampleCount( TUINT a_uiDesired ) const
@@ -1269,16 +1476,36 @@ void RenderDX11::VSBufferSetVec4( VSBufferOffset a_uiOffset, __m128 a_vData )
 	}
 }
 
-void RenderDX11::PSBufferSetVec4( PSBufferOffset a_uiOffset, __m128 a_vData )
+void RenderDX11::PassBufferSetVec4( PassBufferOffset a_uiOffset, __m128 a_vData )
 {
-	TASSERT( TFALSE );
+	TASSERT( a_uiOffset < PASSBUF_NUMOF, "Pass buffer slot out of range" );
 
-	// 	const TUINT offset = a_uiOffset * sizeof( TVector4 );
-	// 	const TUINT size   = a_iCount * sizeof( TVector4 );
-	//
-	// 	TASSERT( offset + size <= PIXEL_CONSTANT_BUFFER_SIZE, "Buffer size exceeded" );
-	// 	TUtil::MemCopy( (TCHAR*)m_pPixelConstantBuffer + offset, a_pData, size );
-	// 	m_IsPixelConstantBufferSet = TTRUE;
+	// These change only at pass boundaries: mark dirty on a real change so FlushConstantBuffers skips the upload for most draws
+	__m128* pCurrent = TCAST( __m128*, m_pPassConstantBuffer ) + a_uiOffset;
+	__m128  mask     = _mm_cmpeq_ps( *pCurrent, a_vData );
+
+	if ( _mm_movemask_epi8( _mm_castps_si128( mask ) ) != 0xFFFF )
+	{
+		_mm_store_ps( TREINTERPRETCAST( TFLOAT*, pCurrent ), a_vData );
+		m_bPassBufferDirty = TTRUE;
+	}
+}
+
+void RenderDX11::UpdatePassViewProj( const TMatrix44& a_rProjection, const TMatrix44& a_rWorldView )
+{
+	// Recompute only at pass boundaries: per draw this is two matrix compares instead of the old per-draw MVP multiply
+	if ( m_bPassViewProjValid &&
+	     memcmp( &m_oPassProjection, &a_rProjection, sizeof( TMatrix44 ) ) == 0 &&
+	     memcmp( &m_oPassWorldView, &a_rWorldView, sizeof( TMatrix44 ) ) == 0 )
+		return;
+
+	m_oPassProjection    = a_rProjection;
+	m_oPassWorldView     = a_rWorldView;
+	m_bPassViewProjValid = TTRUE;
+
+	TMatrix44 matViewProj;
+	matViewProj.Multiply( a_rProjection, a_rWorldView );
+	PassBufferSetMat4( PASSBUF_VIEWPROJ, matViewProj );
 }
 
 void RenderDX11::UpdateShadowCBuffer( const ShadowCBufferData& a_rData )
@@ -1753,7 +1980,7 @@ void RenderDX11::FlushConstantBuffers()
 	{
 		// Ping-pong buffers
 		m_VertexBufferIndex = ( m_VertexBufferIndex + 1 ) % NUMBUFFERS;
-		
+
 		// Copy buffers data
 		m_pDeviceContext->Map( m_VertexBuffers[ m_VertexBufferIndex ], 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubresources );
 		memcpy( mappedSubresources.pData, m_pVertexConstantBuffer, m_VertexBufferNewSize );
@@ -1763,22 +1990,21 @@ void RenderDX11::FlushConstantBuffers()
 		m_VertexBufferCurSize           = m_VertexBufferNewSize;
 	}
 
-	// 	if ( m_IsPixelConstantBufferSet )
-	// 	{
-	// 		m_PixelBufferIndex = ( m_PixelBufferIndex + 1 ) % NUMBUFFERS;
-	// 		m_pDeviceContext->Map( m_PixelBuffers[ m_PixelBufferIndex ], 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubresources );
-	// 		memcpy( mappedSubresources.pData, m_pPixelConstantBuffer, PIXEL_CONSTANT_BUFFER_SIZE );
-	// 		m_pDeviceContext->Unmap( m_PixelBuffers[ m_PixelBufferIndex ], 0 );
-	// 		m_IsPixelConstantBufferSet = TFALSE;
-	// 	}
-
-	// [1/24/2026 InfiniteC0re]
-	// I doubt there is a reason to use separate pixel buffer, at least for now
-	TASSERT( m_IsPixelConstantBufferSet == TFALSE );
 	m_VertexBufferNewSize = 0;
+
+	if ( m_bPassBufferDirty )
+	{
+		m_pDeviceContext->Map( m_pPassBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubresources );
+		memcpy( mappedSubresources.pData, m_pPassConstantBuffer, PASS_CONSTANT_BUFFER_SIZE );
+		m_pDeviceContext->Unmap( m_pPassBuffer, 0 );
+
+		m_bPassBufferDirty = TFALSE;
+	}
 
 	VSSetConstantBuffer( 0, m_VertexBuffers[ m_VertexBufferIndex ] );
 	PSSetConstantBuffer( 0, m_VertexBuffers[ m_VertexBufferIndex ] );
+	VSSetConstantBuffer( 4, m_pPassBuffer );
+	PSSetConstantBuffer( 4, m_pPassBuffer );
 }
 
 void RenderDX11::BuildAdapterDatabase()

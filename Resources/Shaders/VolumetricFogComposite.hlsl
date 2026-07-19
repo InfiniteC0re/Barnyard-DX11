@@ -1,4 +1,5 @@
 #include "ScreenSpace.hlsl"
+#include "ShaderUtils.hlsli"
 
 Texture2D    fogTexture   : register( t0 );
 Texture2D    sceneTexture : register( t1 );
@@ -116,12 +117,12 @@ float4 ps_additive( PS_IN i ) : SV_TARGET
 {
     float3 fog = SampleDepthAwareFog( i.UV );
     float4 scene = sceneTexture.SampleLevel( sceneSampler, i.UV, 0 );
-    return float4( scene.rgb + fog, scene.a );
+    return float4( DitherR11G11B10( scene.rgb + fog, i.Position.xy ), scene.a );
 }
 
 float4 ps_darken( PS_IN i ) : SV_TARGET
 {
     float darken = SampleDepthAwareFog( i.UV ).r;
     float4 scene = sceneTexture.SampleLevel( sceneSampler, i.UV, 0 );
-    return float4( scene.rgb * darken, scene.a );
+    return float4( DitherR11G11B10( scene.rgb * darken, i.Position.xy ), scene.a );
 }

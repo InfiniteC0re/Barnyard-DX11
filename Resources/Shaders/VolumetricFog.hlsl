@@ -10,6 +10,8 @@ SamplerComparisonState shadowSampler : register( s1 );
 Texture2D              cloudShadowTex : register( t2 );
 SamplerState           cloudSampler  : register( s2 );
 #endif
+Texture3D              fogNoiseVolume  : register( t3 ); // baked tileable fBm density noise
+SamplerState           fogNoiseSampler : register( s3 ); // linear WRAP
 
 #if !NO_DYN_LIGHT
 // Single-tap glow-light shadow per march step -- the 3x3 PCF the surface shaders use is wasted
@@ -30,8 +32,10 @@ cbuffer VolumetricFogCBuffer : register( b1 )
     float4   cb_LightDirVS;   // view-space direction toward sun
     float4   cb_FogColor;
     float4   cb_FogParams;    // density, anisotropy, max distance, intensity/darkening
-    float4   cb_FrameParams;  // temporal frame index
+    float4   cb_FrameParams;  // x = temporal frame index, y = wind time (seconds)
     float4   cb_CloudParams;  // xy = cloud region min (X,Z), z = 1/region size, w = strength (0 = off)
+    float4   cb_FogNoiseParams; // x = scale (frequency), y = strength (0 = uniform), zw = wind velocity (world XZ)
+    float4   cb_FogHeightParams; // x = bottom height (full at/below), y = top height (0 at/above; <= bottom disables)
 };
 
 static const float PI                    = 3.14159265f;
@@ -81,6 +85,54 @@ float RayJitter( float2 pixel )
 {
     float frame = frac( cb_FrameParams.x * ( 1.0f / 8.0f ) ) * 8.0f;
     return InterleavedGradientNoise( pixel + float2( frame * 19.0f, frame * 47.0f ) );
+}
+
+// Two-octave density: a single tap slides rigidly with the wind (blobby); a finer second tap
+// scrolls differently and is domain-warped by the base so density churns as it advects. Added
+// zero-mean to preserve the base mean (~0.5)/range the density mapping expects; non-integer freq
+// ratio + WRAP tiling keep the octaves from beating into a visible repeat
+float SampleFogNoise( float3 worldPos )
+{
+    static const float DETAIL_FREQ   = 2.9f;
+    static const float DETAIL_WARP   = 0.10f;
+    static const float DETAIL_WEIGHT = 0.7f;
+
+    float  scale = cb_FogNoiseParams.x;
+    float2 wind  = cb_FogNoiseParams.zw * cb_FrameParams.y;
+
+    float3 pBase = float3( worldPos.x + wind.x, worldPos.y, worldPos.z + wind.y ) * scale;
+    float  nBase = fogNoiseVolume.SampleLevel( fogNoiseSampler, pBase, 0 ).r;
+
+    float3 pDetail = float3( worldPos.x - wind.x * 1.7f,
+                             worldPos.y + cb_FrameParams.y * 0.6f,
+                             worldPos.z - wind.y * 1.7f ) * ( scale * DETAIL_FREQ );
+    pDetail += ( nBase - 0.5f ) * DETAIL_WARP;
+    float nDetail = fogNoiseVolume.SampleLevel( fogNoiseSampler, pDetail, 0 ).r;
+
+    return saturate( nBase + ( nDetail - 0.5f ) * DETAIL_WEIGHT );
+}
+
+// Base fog density modulated by the baked fBm volume (strength 0 = uniform, 1 = 0..2x)
+float FogDensityAt( float3 worldPos )
+{
+    float base = max( cb_FogParams.x, 0.0f );
+
+    // Height band: full at/below bottom, smoothly to 0 at top; top <= bottom disables it
+    float fogBottom = cb_FogHeightParams.x;
+    float fogTop    = cb_FogHeightParams.y;
+    if ( fogTop > fogBottom )
+    {
+        float h = saturate( ( fogTop - worldPos.y ) / ( fogTop - fogBottom ) );
+        base *= h * h * ( 3.0f - 2.0f * h );
+    }
+
+    float strength = cb_FogNoiseParams.y;
+    if ( strength <= 0.0f )
+        return base;
+
+    float n = SampleFogNoise( worldPos );
+
+    return base * lerp( 1.0f, n * 2.0f, strength );
 }
 
 float SampleShadow( float3 worldPos, float viewDepth )
@@ -148,7 +200,6 @@ float3 IntegrateLightRay( float2 uv, float2 pixel )
         return 0.0f;
 
     float3 marchDirVS = rayToSceneVS / max( length( rayToSceneVS ), 0.0001f );
-    float  density  = max( cb_FogParams.x, 0.0f );
     float  g        = clamp( cb_FogParams.y, -0.95f, 0.95f );
 
     int   stepCount = min( MAX_LIGHT_STEPS, max( 8, (int)ceil( rayDistance / LIGHT_STEP_LENGTH ) ) );
@@ -161,10 +212,12 @@ float3 IntegrateLightRay( float2 uv, float2 pixel )
     float cosTheta = dot( cameraForwardVS, normalize( cb_LightDirVS.xyz ) );
     float phase    = HenyeyGreenstein( cosTheta, g ) * ( 4.0f * PI );
 
-    float  extinction    = density * LIGHT_EXTINCTION_SCALE;
-    float  scattering    = density;
     float  transmittance = 1.0f;
     float3 radiance      = 0.0f;
+
+    // Skip steps under 5% of base density -- a noise gap costs a shadow + light sample for ~0. With
+    // noise off density == base, so never skips
+    float minDensity = max( cb_FogParams.x, 0.0f ) * 0.05f;
 
     [loop]
     for ( int step = 0; step < MAX_LIGHT_STEPS; step++ )
@@ -174,6 +227,13 @@ float3 IntegrateLightRay( float2 uv, float2 pixel )
         float rayT = ( (float)step + jitter ) * stepSize;
         float3 viewPos = marchDirVS * rayT;
         float3 worldPos = mul( float4( viewPos, 1.0f ), cb_matViewWorld ).xyz;
+
+        float density = FogDensityAt( worldPos );
+        if ( density < minDensity )
+            continue;
+
+        float extinction = density * LIGHT_EXTINCTION_SCALE;
+        float scattering = density;
 #if CLOUD_SHADOWS
         float visibility = SampleShadow( worldPos, viewPos.z ) * SampleCloudLight( worldPos.xz );
 #else
@@ -216,7 +276,6 @@ float4 ps_visibility( PS_IN i ) : SV_TARGET
         return float4( 1.0f, 1.0f, 1.0f, 1.0f );
 
     float3 marchDirVS = rayToSceneVS / max( length( rayToSceneVS ), 0.0001f );
-    float  density  = max( cb_FogParams.x, 0.0f );
     float  amount   = saturate( cb_FogParams.w );
 
     int   stepCount = min( MAX_TRANSMITTANCE_STEPS, max( 8, (int)ceil( rayDistance / TRANSMITTANCE_STEP_LENGTH ) ) );
@@ -224,6 +283,8 @@ float4 ps_visibility( PS_IN i ) : SV_TARGET
     float jitter    = RayJitter( i.Position.xy );
 
     float shadowedOpticalDepth = 0.0f;
+
+    float minDensity = max( cb_FogParams.x, 0.0f ) * 0.05f;
 
     [loop]
     for ( int step = 0; step < MAX_TRANSMITTANCE_STEPS; step++ )
@@ -233,6 +294,11 @@ float4 ps_visibility( PS_IN i ) : SV_TARGET
         float rayT = ( (float)step + jitter ) * stepSize;
         float3 viewPos = marchDirVS * rayT;
         float3 worldPos = mul( float4( viewPos, 1.0f ), cb_matViewWorld ).xyz;
+
+        float density = FogDensityAt( worldPos );
+        if ( density < minDensity )
+            continue;
+
 #if CLOUD_SHADOWS
         float visibility = SampleShadow( worldPos, viewPos.z ) * SampleCloudLight( worldPos.xz );
 #else

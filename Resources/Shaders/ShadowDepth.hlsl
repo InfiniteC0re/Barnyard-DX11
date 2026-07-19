@@ -1,16 +1,44 @@
 // STATIC: "ANIMATED" "0..1"
 // STATIC: "ALPHATEST" "0..1"
+// STATIC: "WIND" "0..1"
 
 cbuffer ShadowPassBuffer : register(b0)
 {
     float4x4 cb_matShadowMVP;
-    float cb_CurrentCascade;
+    float    cb_CurrentCascade;
+    float3   cb_ShadowPad0;
+    float4   cb_WindParams; // 5: xy = wind direction (world XZ), z = strength, w = time (phase)
+    float4   cb_WindRemap;  // 6: x = windMin, y = windMax (remap the wind-strength channel into [0,1])
 };
 
+// Packed bone palette: 3 registers per bone, matching Skin.hlsl. Explicit column_major (shaders
+// compile /Zpr): register j = column j of the bone transform, transposed on the CPU (48 bytes/bone)
 cbuffer BoneCBuffer : register(b1)
 {
-    float4x4 cb_bones[28];
+    column_major float4x3 cb_bones[28];
 };
+
+// Declared up front (not just in the ALPHATEST block) so the skin wind path can sample in the VS
+Texture2D    texture0 : register(t0); // alpha-test diffuse (PS)
+SamplerState sampler0 : register(s0); // shared by the PS alpha test and the VS wind sample
+
+#if WIND
+// Skin meshes carry no vertex color, so wind strength is the roughness map's blue channel (mip 0);
+// World meshes use the blue vertex-color channel instead
+Texture2D windRoughnessMap : register(t8);
+
+// Shared with World/Skin: remap strength through [windMin, windMax], offset along wind dir by two
+// summed sines whose phase drifts with world XZ. Must match the main-pass deformation or shadows
+// won't align
+float3 ApplyWind(float3 a_pos, float a_strengthRaw)
+{
+    float mask  = saturate((a_strengthRaw - cb_WindRemap.x) / max(cb_WindRemap.y - cb_WindRemap.x, 1e-4f));
+    float phase = cb_WindParams.w + dot(a_pos.xz, float2(0.35f, 0.35f));
+    float sway  = sin(phase) + 0.5f * sin(phase * 2.7f + 1.3f);
+    a_pos.xz   += cb_WindParams.xy * (sway * cb_WindParams.z * mask);
+    return a_pos;
+}
+#endif
 
 struct VS_IN_SKIN
 {
@@ -47,8 +75,12 @@ struct PS_IN
 
 VS_OUT vs_main_world(VS_IN_WORLD In)
 {
-    float4 proj = mul(float4(In.ObjPos, 1.0), cb_matShadowMVP);
-    
+    float3 objPos = In.ObjPos;
+#if WIND
+    objPos = ApplyWind(objPos, In.Color.z); // blue vertex-color channel = wind strength
+#endif
+    float4 proj = mul(float4(objPos, 1.0), cb_matShadowMVP);
+
 #ifdef ALPHATEST
 
     VS_OUT result;
@@ -84,7 +116,7 @@ VS_OUT vs_main_skin(VS_IN_SKIN In)
     float3 vertex = 0;
     for (int i = 0; i < 4; ++i)
     {
-        float4x3 BoneMatrix = (float4x3)cb_bones[BoneIndices[i]];
+        float4x3 BoneMatrix = cb_bones[BoneIndices[i]];
         vertex += mul(float4(In.ObjPos, 1.0), BoneMatrix) * BoneWeights[i];
     }
 	
@@ -94,8 +126,13 @@ VS_OUT vs_main_skin(VS_IN_SKIN In)
 
 #endif // !ANIMATED
 
+#if WIND
+    float windBlue = windRoughnessMap.SampleLevel(sampler0, In.UV, 0).b; // roughness blue = strength
+    vertex = ApplyWind(vertex, windBlue);
+#endif
+
     float4 proj = mul(float4(vertex, 1.0), cb_matShadowMVP);
-    
+
 #ifdef ALPHATEST
 
     VS_OUT result;
@@ -112,9 +149,6 @@ VS_OUT vs_main_skin(VS_IN_SKIN In)
 }
 
 #ifdef ALPHATEST
-
-Texture2D texture0 : register(t0);
-SamplerState sampler0 : register(s0);
 
 float4 ps_main(VS_OUT In) : SV_TARGET
 {

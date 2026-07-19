@@ -11,7 +11,12 @@
 #include "SunShaftsShaderCombos.h"
 #include "CopyTextureShaderCombos.h"
 #include "PostprocessShaderCombos.h"
+#include "FXAAShaderCombos.h"
+#include "SMAAEdgeDetectionShaderCombos.h"
+#include "SMAABlendWeightShaderCombos.h"
+#include "SMAANeighborhoodShaderCombos.h"
 #include "ResolveDepthShaderCombos.h"
+#include "DownsampleDepthMinShaderCombos.h"
 #include "DualKawaseDownShaderCombos.h"
 #include "DualKawaseUpShaderCombos.h"
 #include "HDRBloomThresholdShaderCombos.h"
@@ -54,7 +59,17 @@ TINLINE TBOOL CompileAllShaderCombos()
 		return TFALSE;
 	if ( !CompilePostprocessShaderCombos() )
 		return TFALSE;
+	if ( !CompileFXAAShaderCombos() )
+		return TFALSE;
+	if ( !CompileSMAAEdgeDetectionShaderCombos() )
+		return TFALSE;
+	if ( !CompileSMAABlendWeightShaderCombos() )
+		return TFALSE;
+	if ( !CompileSMAANeighborhoodShaderCombos() )
+		return TFALSE;
 	if ( !CompileResolveDepthShaderCombos() )
+		return TFALSE;
+	if ( !CompileDownsampleDepthMinShaderCombos() )
 		return TFALSE;
 	if ( !CompileDualKawaseDownShaderCombos() )
 		return TFALSE;

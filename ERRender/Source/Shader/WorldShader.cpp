@@ -13,6 +13,9 @@
 #include "RenderContentDX11.h"
 #include "CSM/CSMManager.h"
 #include "LightManager.h"
+#include "CubemapAnchors.h"
+#include "SkyCube.h"
+#include "RenderParams.h"
 
 #include <Render/TRenderPacket.h>
 #include <Platform/DX8/TRenderInterface_DX8.h>
@@ -93,7 +96,7 @@ void remaster::WorldShaderDX11::StartFlush()
 
 	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
 
-	if ( g_bCSMEnabled && g_pCSMManager && g_flShadowIntensity > 0.0f )
+	if ( g_bInMainScenePass && g_bCSMEnabled && g_pCSMManager && g_flShadowIntensity > 0.0f )
 	{
 		g_pRender->PSSetShaderResource( 2, g_pCSMManager->GetShadowSRV() );
 		g_pRender->PSSetSamplerState( 2, g_pCSMManager->GetShadowSampler() );
@@ -105,6 +108,15 @@ void remaster::WorldShaderDX11::StartFlush()
 			g_pRender->PSSetShaderResource( 9, g_pCloudShadowSRV );
 			g_pRender->PSSetSamplerState( 3, g_pCloudShadowSampler );
 		}
+	}
+
+	// bind the reflection cube (last frame) + linear-clamp sampler for env specular; skipped during
+	// the capture (the cube is an RTV then -- RTV/SRV conflict, and no recursive reflections)
+	if ( !g_bReflectionCaptureActive && g_oSkyCubeBlend.pSRVTo )
+	{
+		g_pRender->PSSetShaderResource( 5, g_oSkyCubeBlend.pSRVTo );   // active ("to") cube
+		g_pRender->PSSetShaderResource( 7, g_oSkyCubeBlend.pSRVFrom ); // outgoing ("from") cube (t6 = glow shadows)
+		g_pRender->PSSetSamplerState( 1, SAMPLER_LINEAR_CLAMP );
 	}
 
 	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
@@ -122,7 +134,9 @@ void remaster::WorldShaderDX11::EndFlush()
 	g_pRender->PSSetShaderResource( 0, TNULL );
 	g_pRender->PSSetShaderResource( 1, TNULL );
 	g_pRender->PSSetShaderResource( 2, TNULL );
+	g_pRender->PSSetShaderResource( 5, TNULL );
 	g_pRender->PSSetShaderResource( 6, TNULL );
+	g_pRender->PSSetShaderResource( 7, TNULL );
 	g_pRender->PSSetShaderResource( 9, TNULL );
 	g_pRender->PSSetConstantBuffer( 2, TNULL );
 
@@ -230,8 +244,6 @@ TBOOL remaster::WorldShaderDX11::TryValidate()
 extern TBOOL g_bHasGlowObjectsThisFrame;
 extern TBOOL g_bEnableWaterReflections;
 
-namespace remaster { extern TBOOL g_bDebugTangents; }
-
 void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 {
 	if ( !a_pRenderPacket || !a_pRenderPacket->GetMesh() ) return;
@@ -244,12 +256,26 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	if ( g_pCSMManager && g_pCSMManager->IsRenderingShadowPass() )
 	{
-		g_pRender->SetShaderPipelineState( m_vecShadowDepthPipelines[ shadercombos::GetShadowDepthComboIndex( shadercombos::ShadowDepth_ALPHATEST ) ] );
+		// Match the main pass's wind so the shadow silhouette sways with the geometry
+		const remaster::MaterialParams* pShadowParams = pMaterial->GetMaterialParams();
+		const TBOOL bShadowWind = g_bWindEnabled && pShadowParams && pShadowParams->bWind;
+
+		TUINT uiShadowFlags = shadercombos::ShadowDepth_ALPHATEST;
+		if ( bShadowWind )
+			uiShadowFlags |= shadercombos::ShadowDepth_WIND;
+		g_pRender->SetShaderPipelineState( m_vecShadowDepthPipelines[ shadercombos::GetShadowDepthComboIndex( uiShadowFlags ) ] );
 
 		TMatrix44 mShadowMVP;
 		mShadowMVP.Multiply( g_pCSMManager->GetCurrentLightProjection(), a_pRenderPacket->GetModelViewMatrix() );
 		g_pRender->VSBufferSetMat4( 0, mShadowMVP );
 		g_pRender->VSBufferSetVec4( 4, TVector4( TFLOAT( g_pCSMManager->GetCurrentCascade() ), 0.0f, 0.0f ) );
+
+		// Wind params (slots 5/6) mirror the main-pass upload so the deformation is identical
+		if ( bShadowWind )
+		{
+			g_pRender->VSBufferSetVec4( 5, TVector4( g_flWindDir[ 0 ], g_flWindDir[ 1 ], g_flWindStrength, g_flWindTime ) );
+			g_pRender->VSBufferSetVec4( 6, TVector4( pShadowParams->fWindMin, pShadowParams->fWindMax, 0.0f, 0.0f ) );
+		}
 
 		TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
 		TIndexPoolResource*  pIndexPool  = TSTATICCAST( TIndexPoolResource, pMesh->GetSubMesh( 0 )->pIndexPool );
@@ -283,9 +309,13 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	ID3D11DepthStencilView* pOldDepthStencilView;
 	if ( bIsGlowing )
 	{
-		g_bHasGlowObjectsThisFrame = TTRUE;
-		g_pRender->GetRenderTargetView( pOldRenderTargetView, pOldDepthStencilView );
-		g_pRender->SetRenderTargetView( g_pRender->GetD3D11GlowRenderTargetView(), pOldDepthStencilView );
+		if ( !remaster::g_bReflectionCaptureActive )
+		{
+			g_bHasGlowObjectsThisFrame = TTRUE;
+			g_pRender->GetRenderTargetView( pOldRenderTargetView, pOldDepthStencilView );
+			g_pRender->SetRenderTargetView( g_pRender->GetD3D11GlowRenderTargetView(), pOldDepthStencilView );
+		}
+
 		g_pRender->SetDepthBias( -10 );
 	}
 
@@ -299,7 +329,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	// Use either blending shader or alpharef shader
 	// The only used alpharef value is 128, so no need to dynamically change it
 	TUINT uiComboFlags = bIsBlending ? 0 : shadercombos::World_ALPHAREF;
-	if ( bIsGlowing || pMesh->IsWater() || !g_bCSMEnabled || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
+	if ( !g_bInMainScenePass || bIsGlowing || pMesh->IsWater() || !g_bCSMEnabled || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
 		uiComboFlags |= shadercombos::World_NO_CSM;
 	if ( bIsGlowing || !pCurrentContext->IsFogEnabled() || s_flFogDensity <= 0.0f )
 		uiComboFlags |= shadercombos::World_NO_FOG;
@@ -310,25 +340,33 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	if ( !bHasDynLight )
 		uiComboFlags |= shadercombos::World_NO_DYN_LIGHT;
 	// Per-material map sampling and POM compile out for meshes that don't use them.
-	if ( pSSRParams && ( pSSRParams->pNormalMap || pSSRParams->pRoughnessMap ) )
+	if ( pSSRParams && ( pSSRParams->pNormalMap || pSSRParams->pRoughnessMap || pSSRParams->pMetallicMap ) )
 		uiComboFlags |= shadercombos::World_MATERIAL_MAPS;
 	if ( pSSRParams && pSSRParams->pHeightMap )
 		uiComboFlags |= shadercombos::World_PARALLAX;
 	if ( g_bCloudShadowsEnabled )
 		uiComboFlags |= shadercombos::World_CLOUD_SHADOWS;
+	// Wind vertex deformation (blue vertex-color channel = strength); opt-in via the XML "wind"
+	// flag + global master toggle. Glow meshes opt out so their geometry stays put
+	const TBOOL bWind = g_bWindEnabled && !bIsGlowing && pSSRParams && pSSRParams->bWind;
+	if ( bWind )
+		uiComboFlags |= shadercombos::World_WIND;
+
+	// Wii-style FOB tree billboards, opt-in via the XML "fob" flag; the per-instance selector
+	// arrives through light-colour row 0 (see WorldMesh)
+	const TBOOL bFOB = pSSRParams && pSSRParams->bFOB;
+	if ( bFOB )
+		uiComboFlags |= shadercombos::World_FOB;
 
 	g_pRender->SetShaderPipelineState( m_vecWorldPipelines[ shadercombos::GetWorldComboIndex( uiComboFlags ) ] );
 
-	// Fill vertex constant buffer
-	// Setup model view projection matrix
-	TMatrix44 mMVP;
-	mMVP.Multiply( pCurrentContext->GetProjectionMatrix(), a_pRenderPacket->GetModelViewMatrix() );
-	g_pRender->VSBufferSetMat4( 0, mMVP );
+	// Only the model matrix ships per draw; the clip transform (world * pp_matViewProj) is refreshed at pass boundaries
+	g_pRender->UpdatePassViewProj( pCurrentContext->GetProjectionMatrix(), pCurrentContext->GetWorldViewMatrix() );
 
 	TMatrix44 mModel;
 	mModel.Multiply( pCurrentContext->GetViewWorldMatrix(), a_pRenderPacket->GetModelViewMatrix() );
-	g_pRender->VSBufferSetMat4( 9, mModel );
-	
+	g_pRender->VSBufferSetMat4( 0, mModel );
+
 	// Setup UV offset and alpha
 	TVector4 vecUVOffsetAndAlpha;
 	vecUVOffsetAndAlpha.x = pMaterial->GetUVOffsetX( 0 );
@@ -337,75 +375,94 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	g_pRender->VSBufferSetVec4( 4, vecUVOffsetAndAlpha );
 
 	// Setup colors
-	g_pRender->VSBufferSetVec4( 5, m_AmbientColour );
-	g_pRender->VSBufferSetVec4( 6, m_ShadowColour );
-
-	// Setup material settings
-	TVector4 vMiscSettings;
-	vMiscSettings.x = 0.0f; // isWater
-	vMiscSettings.y = 1.0f; // isLit
-
-	if ( pMesh->IsWater() )
+	if ( bFOB )
 	{
-		vMiscSettings.x = 1.0f; // isWater
-		vMiscSettings.y = 0.0f; // isLit
+		// Reproduce the Wii FOB TEV colours: lit colour = per-tree-type tint * shadow->sun blend at
+		// the tree's baked sun exposure; the vertex colour then blends shadow->lit in the VS. Tints
+		// match the Wii ATreeManager table (s_vecUnused1-3 in the decomp); type 3 is untinted
+		static const TVector4 s_aTreeTints[ 4 ] = {
+			TVector4( 0.7372549f, 0.8156863f, 0.5254902f, 1.0f ),
+			TVector4( 0.54509807f, 0.60784316f, 0.47058824f, 1.0f ),
+			TVector4( 0.9529412f, 0.75686276f, 0.54509807f, 1.0f ),
+			TVector4( 1.0f, 1.0f, 1.0f, 1.0f ),
+		};
 
-		if ( g_bEnableWaterReflections ) g_pRender->SetBlendEnabled( TFALSE );
+		// No valid selector (not from ATreeManager2) -> fully lit, untinted
+		const Toshi::TVector3& vFOBSelector   = a_pRenderPacket->GetLightColour();
+		const TBOOL            bValidSelector = vFOBSelector.z < -0.5f;
+
+		TFLOAT flExposure = bValidSelector ? vFOBSelector.x : 1.0f;
+		TMath::Clip( flExposure, 0.0f, 1.0f );
+		const TVector4& vecTint = s_aTreeTints[ bValidSelector ? ( TINT( vFOBSelector.y ) & 3 ) : 3 ];
+
+		TVector4 vecLitColour;
+		vecLitColour.x = ( m_ShadowColour.x + ( m_AmbientColour.x - m_ShadowColour.x ) * flExposure ) * vecTint.x;
+		vecLitColour.y = ( m_ShadowColour.y + ( m_AmbientColour.y - m_ShadowColour.y ) * flExposure ) * vecTint.y;
+		vecLitColour.z = ( m_ShadowColour.z + ( m_AmbientColour.z - m_ShadowColour.z ) * flExposure ) * vecTint.z;
+		vecLitColour.w = 1.0f;
+
+		g_pRender->VSBufferSetVec4( 5, vecLitColour );
 	}
 
-	// Fog settings
-	vMiscSettings.z = pCurrentContext->m_fFogDistanceStart;
-	vMiscSettings.w = pCurrentContext->m_fFogDistanceEnd;
+	// Ambient/shadow colours are per-pass (b4); the FOB combo reads its per-draw lit colour from slot 5 instead
+	g_pRender->PassBufferSetVec4( PASSBUF_AMBIENT_COLOR, m_AmbientColour );
+	g_pRender->PassBufferSetVec4( PASSBUF_SHADOW_COLOR, m_ShadowColour );
+
+	if ( pMesh->IsWater() && g_bEnableWaterReflections )
+		g_pRender->SetBlendEnabled( TFALSE );
 
 	TVector4 vFogColor = pCurrentContext->m_FogColor;
 	vFogColor.w        = s_flFogDensity;
+	g_pRender->PassBufferSetVec4( PASSBUF_FOG_PARAMS, TVector4( pCurrentContext->m_fFogDistanceStart, pCurrentContext->m_fFogDistanceEnd, 0.0f, 0.0f ) );
+	g_pRender->PassBufferSetVec4( PASSBUF_FOG_COLOR, vFogColor );
 
-	g_pRender->VSBufferSetVec4( 7, vMiscSettings );
-	g_pRender->VSBufferSetVec4( 8, vFogColor );
-
-	const TFLOAT flReflectivity  = pSSRParams ? pSSRParams->fReflectivity : 0.0f;
-	const TFLOAT flFresnelPower  = pSSRParams ? TMath::Max( pSSRParams->fFresnelPower, 0.1f ) : 0.0f;
-	const TFLOAT flSpecIntensity = pSSRParams ? pSSRParams->fSpecularIntensity : 0.05f;
-	const TFLOAT flSpecPower     = pSSRParams ? TMath::Max( pSSRParams->fSpecularPower, 1.0f ) : 26.0f;
-	g_pRender->VSBufferSetVec4( 13, TVector4( flReflectivity, flFresnelPower, flSpecIntensity, flSpecPower ) );
-
-	const TFLOAT   flRoughness = pSSRParams ? pSSRParams->fRoughness : 0.0f;
-	const TVector3 sunDir      = g_pCSMManager ? g_pCSMManager->GetLightDirection() : TVector3( 0.0f, -1.0f, 0.0f );
-	// Negative roughness sentinel puts the world PS into tangent visualisation mode.
-	const TFLOAT flRoughnessOrDebug = remaster::g_bDebugTangents ? -1.0f : flRoughness;
-	g_pRender->VSBufferSetVec4( 14, TVector4( -sunDir.x, sunDir.y, -sunDir.z, flRoughnessOrDebug ) );
+	const TVector3 sunDir = g_pCSMManager ? g_pCSMManager->GetLightDirection() : TVector3( 0.0f, -1.0f, 0.0f );
+	g_pRender->PassBufferSetVec4( PASSBUF_SUN_DIRECTION, TVector4( -sunDir.x, sunDir.y, -sunDir.z, 0.0f ) );
 	const TVector3 camPos = pCurrentContext->GetViewWorldMatrix().GetTranslation3();
+	g_pRender->PassBufferSetVec4( PASSBUF_CAMERA_POS, TVector4( camPos.x, camPos.y, camPos.z, 0.0f ) );
 
-	// Per-material normal/roughness maps. camera.w packs a presence flag (1 = normal,
-	// 2 = roughness, 3 = both, 0 = none); the maps reuse the albedo sampler at s0.
-	TFLOAT flMapFlags = 0.0f;
+	// Per-material normal/roughness/height/metallic map SRVs; presence flags live in the material
+	// record (b5), maps reuse the albedo sampler at s0
 	if ( pSSRParams && pSSRParams->pNormalMap )
-	{
 		g_pRender->PSSetShaderResource( 1, (ID3D11ShaderResourceView*)pSSRParams->pNormalMap );
-		flMapFlags += 1.0f;
-	}
 	if ( pSSRParams && pSSRParams->pRoughnessMap )
-	{
 		g_pRender->PSSetShaderResource( 3, (ID3D11ShaderResourceView*)pSSRParams->pRoughnessMap );
-		flMapFlags += 2.0f;
-	}
+	if ( pSSRParams && pSSRParams->pMetallicMap )
+		g_pRender->PSSetShaderResource( 8, (ID3D11ShaderResourceView*)pSSRParams->pMetallicMap );
 	if ( pSSRParams && pSSRParams->pHeightMap )
 		g_pRender->PSSetShaderResource( 4, (ID3D11ShaderResourceView*)pSSRParams->pHeightMap );
-	g_pRender->VSBufferSetVec4( 15, TVector4( camPos.x, camPos.y, camPos.z, flMapFlags ) );
 
-	// Per-material map strengths (slot 16): x = normal strength, y = roughness multiplier,
-	// z = parallax scale (0 unless a height map is present), w = emissive intensity (1 = neutral).
-	const TFLOAT flNormalStrength    = pSSRParams ? pSSRParams->fNormalStrength    : 1.0f;
-	const TFLOAT flRoughnessStrength = pSSRParams ? pSSRParams->fRoughnessStrength : 1.0f;
-	const TFLOAT flParallaxScale     = ( pSSRParams && pSSRParams->pHeightMap ) ? pSSRParams->fParallaxScale : 0.0f;
-	const TFLOAT flEmissiveIntensity = pSSRParams ? pSSRParams->fEmissiveIntensity : 1.0f;
-	g_pRender->VSBufferSetVec4( 16, TVector4( flNormalStrength, flRoughnessStrength, flParallaxScale, flEmissiveIntensity ) );
+	// Misc params (slot 6): x = isWater, y = isLit
+	const TBOOL bIsWater = pMesh->IsWater();
+	g_pRender->VSBufferSetVec4( 6, TVector4( bIsWater ? 1.0f : 0.0f, bIsWater ? 0.0f : 1.0f, 0.0f, 0.0f ) );
+
+	// All static material values come from the immutable material buffer (b5)
+	remaster::BindMaterialConstants( pSSRParams, remaster::MATBUF_DEFAULT_WORLD );
+
+	// Per-pass env-specular vec4: [intensity (0 while capturing/off), cube max mip (roughness->LOD),
+	// capture-active mask (kills metallic/parallax so metals' darkened diffuse doesn't bake into the
+	// cube they'll later reflect), tangent-debug]
+	const TFLOAT flEnvIntensity = ( g_bReflectionCaptureActive || !g_bEnvSpecular ) ? 0.0f : 1.0f;
+	g_pRender->PassBufferSetVec4( PASSBUF_ENV_SPECULAR,
+	    TVector4( flEnvIntensity, TFLOAT( g_iSkyCubeMaxMip ), g_bReflectionCaptureActive ? 1.0f : 0.0f, remaster::g_bDebugTangents ? 1.0f : 0.0f ) );
+
+	// Env-specular cross-fade (per-pass): "to" cube (box+probe, w=blend) + outgoing "from" cube,
+	// from the capture blend state so each probe centre matches where its cube was rendered
+	// (mismatch makes the reflection swim). Steady state: blend = 1
+	const remaster::SkyCubeBlendState& rBlend = remaster::g_oSkyCubeBlend;
+	g_pRender->PassBufferSetVec4( PASSBUF_ENV_PARALLAX, TVector4( rBlend.vBoxTo.x, rBlend.vBoxTo.y, rBlend.vBoxTo.z, 0.0f ) );
+	g_pRender->PassBufferSetVec4( PASSBUF_ENV_PROBE_POS, TVector4( rBlend.vProbeTo.x, rBlend.vProbeTo.y, rBlend.vProbeTo.z, rBlend.flBlend ) );
+	g_pRender->PassBufferSetVec4( PASSBUF_ENV_PARALLAX2, TVector4( rBlend.vBoxFrom.x, rBlend.vBoxFrom.y, rBlend.vBoxFrom.z, 0.0f ) );
+	g_pRender->PassBufferSetVec4( PASSBUF_ENV_PROBE_POS2, TVector4( rBlend.vProbeFrom.x, rBlend.vProbeFrom.y, rBlend.vProbeFrom.z, 0.0f ) );
+
+	// Wind: direction/strength/time are per-pass; [windMin,windMax] remap rides in the material record
+	g_pRender->PassBufferSetVec4( PASSBUF_WIND_PARAMS, TVector4( g_flWindDir[ 0 ], g_flWindDir[ 1 ], g_flWindStrength, g_flWindTime ) );
 
 	if ( bHasDynLight ) UploadDynamicLights( a_pRenderPacket );
 
 	// Always upload so the shader's static-light count is never stale. Glow meshes receive no
-	// light, so pass null for a zero count (dynamic is already gated off for them above).
-	g_pRender->GetLightManager().UploadCellStaticLightIndices( bIsGlowing ? TNULL : a_pRenderPacket, 17 );
+	// light, so pass null for a zero count (dynamic is already gated off for them above)
+	g_pRender->GetLightManager().UploadCellStaticLightIndices( bIsGlowing ? TNULL : a_pRenderPacket, 7, 9 );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
@@ -440,7 +497,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	// Restore usual render target if needed
 	if ( bIsGlowing )
 	{
-		g_pRender->SetRenderTargetView( pOldRenderTargetView, pOldDepthStencilView );
+		if ( !remaster::g_bReflectionCaptureActive ) g_pRender->SetRenderTargetView( pOldRenderTargetView, pOldDepthStencilView );
 		g_pRender->SetDepthBias( 0 );
 	}
 }

@@ -220,6 +220,37 @@ TINLINE TBOOL CreateSSRPixelShader_ps_debug_normal( ID3D11PixelShader** a_ppShad
 	return TTRUE;
 }
 
+inline dx11::ShaderCombo g_oSSRPixelShaderCombo_ps_debug_skycube;
+inline TBOOL g_bSSRPixelShaderComboCompiled_ps_debug_skycube = TFALSE;
+
+TINLINE TBOOL EnsureSSRPixelShaderCombo_ps_debug_skycube()
+{
+	if ( !g_bSSRPixelShaderComboCompiled_ps_debug_skycube )
+		g_bSSRPixelShaderComboCompiled_ps_debug_skycube = g_oSSRPixelShaderCombo_ps_debug_skycube.CompileFromFile( "Data\\Shaders\\SSR.hlsl", "ps_debug_skycube", "ps_5_0", SSRCombos, SSRNumCombos, SSRNumPermutations );
+
+	return g_bSSRPixelShaderComboCompiled_ps_debug_skycube;
+}
+
+TINLINE dx11::ShaderCombo& GetSSRPixelShaderCombo_ps_debug_skycube()
+{
+	TASSERT( g_bSSRPixelShaderComboCompiled_ps_debug_skycube );
+	return g_oSSRPixelShaderCombo_ps_debug_skycube;
+}
+
+TINLINE TBOOL CreateSSRPixelShader_ps_debug_skycube( ID3D11PixelShader** a_ppShader )
+{
+	if ( !g_bSSRPixelShaderComboCompiled_ps_debug_skycube )
+		return TFALSE;
+
+	dx11::ShaderCombo& rCombo = g_oSSRPixelShaderCombo_ps_debug_skycube;
+	ID3D11PixelShader** ppShader = rCombo.GetPixelShaderPtr( 0 );
+	TVALIDPTR( ppShader );
+	if ( !ppShader || !*ppShader )
+		return TFALSE;
+	*a_ppShader = *ppShader;
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileSSRShaderCombos()
 {
 	if ( !EnsureSSRPixelShaderCombo_ps_gather() )
@@ -246,6 +277,11 @@ TINLINE TBOOL CompileSSRShaderCombos()
 		return TFALSE;
 
 	if ( !g_oSSRPixelShaderCombo_ps_debug_normal.CreatePixelShaders() )
+		return TFALSE;
+	if ( !EnsureSSRPixelShaderCombo_ps_debug_skycube() )
+		return TFALSE;
+
+	if ( !g_oSSRPixelShaderCombo_ps_debug_skycube.CreatePixelShaders() )
 		return TFALSE;
 
 	return TTRUE;

@@ -20,7 +20,6 @@ TOSHI_NAMESPACE_USING
 TDEFINE_CLASS_PATCHED( remaster::SkinMesh, 0x0079a678 );
 
 remaster::SkinMesh::SkinMesh()
-    : m_bIsFOB( TFALSE )
 {
 }
 
@@ -49,14 +48,16 @@ TBOOL remaster::SkinMesh::Render()
 
 		auto  pCtxDX11          = TSTATICCAST( remaster::RenderContextD3D11, pRenderInterface->GetCurrentContext() );
 		TBOOL bHasDynamicLights = pCurrentContext->m_oLightIds[ 0 ] >= 0;
-		TBOOL bHasStaticLights  = pCtxDX11->GetStaticLightIDs().aIDs[ 0 ] >= 0;
+		TBOOL bHasStaticLights  = pCtxDX11->GetStaticLightIDs()[ 0 ] >= 0;
 		TBOOL bHasLightData     = bHasDynamicLights || bHasStaticLights;
 		auto  pLightData        = bHasLightData ? g_pLightDataPacketAllocator->Allocate() : TNULL;
 
 		if ( pLightData )
 		{
 			pLightData->oDynamicLights = pCurrentContext->m_oLightIds;
-			pLightData->oStaticLights  = pCtxDX11->GetStaticLightIDs();
+			const TINT8* pStaticIDs = pCtxDX11->GetStaticLightIDs();
+			for ( TINT i = 0; i < MAX_CELL_STATIC_LIGHTS; i++ )
+				pLightData->oStaticLights[ i ] = pStaticIDs[ i ];
 		}
 
 		auto pRenderPacket = pMaterial->AddRenderPacket( this );

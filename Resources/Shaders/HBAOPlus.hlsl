@@ -69,6 +69,16 @@ float InterleavedGradientNoise( float2 pixel )
     return frac( 52.9829189f * frac( dot( pixel, float2( 0.06711056f, 0.00583715f ) ) ) );
 }
 
+// Independent hash for the step jitter. IGN starts with a dot product, so offsetting its input only
+// phase-shifts the same sequence -- deriving the jitter from IGN collapses the pattern into
+// screen-locked patches. Hoskins hash21 shares no structure with IGN
+float Hash21( float2 p )
+{
+    float3 p3 = frac( p.xyx * float3( 0.1031f, 0.1030f, 0.0973f ) );
+    p3 += dot( p3, p3.yzx + 33.33f );
+    return frac( ( p3.x + p3.y ) * p3.z );
+}
+
 float ComputeSampleAO( float3 center, float3 normal, float3 samplePos, float radius, float bias )
 {
     float3 v = samplePos - center;
@@ -91,10 +101,15 @@ float ps_main( PS_IN i ) : SV_TARGET
     float radius = max( cb_Params.x, 0.0001f );
     float bias = cb_Params.y;
     float focalY = max( abs( cb_Projection.y ), 0.0001f );
-    float radiusPixels = clamp( ( radius * focalY ) / max( center.z, 0.0001f ) * cb_BufferSize.y * 0.5f, 2.0f, 384.0f );
+    float idealPixels  = ( radius * focalY ) / max( center.z, 0.0001f ) * cb_BufferSize.y * 0.5f;
+    float radiusPixels = clamp( idealPixels, 2.0f, 384.0f );
+    // The pixel clamp changes how much world space the kernel covers; feed that effective radius into
+    // the falloff so they agree. Using the authored radius made AO strength jump where the clamp
+    // engaged (a band across the ground at fixed camera distance)
+    float effRadius = radius * radiusPixels / max( idealPixels, 0.0001f );
     float stepPixels = radiusPixels / (float)( NUM_STEPS + 1 );
     float rotation   = InterleavedGradientNoise( i.Position.xy ) * 6.28318530718f;
-    float stepJitter = InterleavedGradientNoise( i.Position.xy + float2( 0.0f, 31.41f ) );
+    float stepJitter = Hash21( i.Position.xy );
 
     float sinR, cosR;
     sincos( rotation, sinR, cosR );
@@ -116,7 +131,7 @@ float ps_main( PS_IN i ) : SV_TARGET
 
             sampleUV = clamp( sampleUV, 0.0f, 1.0f );
             float3 samplePos = UVToView( sampleUV );
-            float sampleAO = ComputeSampleAO( center, normal, samplePos, radius, bias );
+            float sampleAO = ComputeSampleAO( center, normal, samplePos, effRadius, bias );
             if ( stepIndex == 1 )
                 smallScaleAO += sampleAO;
             else

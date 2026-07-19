@@ -1,20 +1,68 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 
 <materials>
-	<!--  -->
-	<material name="mudpuddleyard" reflectivity="0.4" roughness="0.3" fresnelPower="4.0" specularIntensity="0.1" specularPower="16" />
-	<material name="pigpenmud" reflectivity="0.8" roughness="0.3" fresnelPower="4.0" specularIntensity="0.1" specularPower="14.5" />
-	<material name="ute_bod" reflectivity="0.4" roughness="0.05" fresnelPower="4.0" specularIntensity="0.2" specularPower="1" />
+	<material name="foliage_tile" fob="true" />
+	<material name="foliage_centre" fob="true" />
+	<material name="foliage_pondt" fob="true" />
+	<material name="foliage_pondc" fob="true" />
+	<material name="FOBwalpha" fob="true" />
+
+	<material name="mudpuddleyard" reflectivity="0.4" roughness="0.3" fresnelPower="2" specularIntensity="0.1" specularPower="16" roughnessMap="mudpuddleyard_roughness.png" normalMap="mudpuddleyard_normal.png" normalStrength="0.4" />
+	<material name="drtrtile" normalMap="drtrtile_normal.png" normalStrength="0.25" roughness="0.4" />
+	<material name="drtrtreadtile" normalMap="drtrtreadtile_normal.png" normalStrength="0.75" roughness="0.4" />
+	<material name="shedside" heightMap="shedside_height.png" parallaxScale="0.015" normalMap="shedside_normal.png" normalStrength="0.8" roughnessMap="shedside_roughness.png" specularIntensity="0.7" specularPower="16" />
+	<material name="shedsidecln" heightMap="shedsidecln_height.png" parallaxScale="0.015" normalMap="shedsidecln_normal.png" normalStrength="0.8" roughnessMap="shedsidecln_roughness.png" specularIntensity="0.7" specularPower="16" />
+	<material name="shedsidevar" heightMap="shedsidevar_height.png" parallaxScale="0.015" normalMap="shedsidevar_normal.png" normalStrength="0.8" roughnessMap="shedsidevar_roughness.png" specularIntensity="0.7" specularPower="16" />
+	<material name="cliffmesa" normalMap="cliffmesa_normal.png" roughnessMap="cliffmesa_roughness.png" heightMap="cliffmesa_height.png" parallaxScale="0.025" specularIntensity="0.1" />
+	<material name="cliffmesatop" normalMap="cliffmesatop_normal.png" roughnessMap="cliffmesatop_roughness.png" heightMap="cliffmesatop_height.png" parallaxScale="0.025" specularIntensity="0.1" />
+	<material name="granite_old" normalMap="granite_old_normal.png" roughnessMap="granite_old_roughness.png" heightMap="granite_old_height.png" parallaxScale="0.05" specularIntensity="0.5" />
+	<material name="beadyhouse2" normalMap="beadyhouse2_normal.png" roughnessMap="beadyhouse2_roughness.png" heightMap="beadyhouse2_height.png" parallaxScale="0.025" specularIntensity="0.2" />
+	<material name="tshedroof" normalMap="tshedroof_normal.png" normalStrength="0.6" roughnessMap="tshedroof_roughness.png" heightMap="tshedroof_height.png" parallaxScale="0.025" specularIntensity="0.8" />
+	<material name="tshedside" normalMap="tshedside_normal.png" roughnessMap="tshedside_roughness.png" normalStrength="0.8" heightMap="tshedside_height.png" parallaxScale="0.03" specularIntensity="0.1" specularPower="16" />
+	<material name="ccwall" normalMap="ccwall_normal.png" roughnessMap="ccwall_roughness.png" heightMap="ccwall_height.png" parallaxScale="0.04" specularIntensity="1" />
+	<material name="ccroof" normalMap="ccroof_normal.png" roughnessMap="ccroof_roughness.png" heightMap="ccroof_height.png" parallaxScale="0.015" specularIntensity="1" />
+	<material name="drtrtire" normalMap="drtrtire_normal.png" roughness="0.4" />
+
+	<!-- Restored texture sets (common params; tune in-game). -->
+	<material name="cratey" normalMap="cratey_normal.png" normalStrength="0.5" roughnessMap="cratey_roughness.png" heightMap="cratey_height.png" parallaxScale="0.015" specularIntensity="0.2" specularPower="24" />
+	<material name="cratechest" normalMap="cratey_normal.png" normalStrength="0.5" roughnessMap="cratey_roughness.png" heightMap="cratey_height.png" parallaxScale="0.015" specularIntensity="0.2" specularPower="24" />
+	<material name="fencewhite" normalMap="fencewhite_normal.png" normalStrength="0.5" heightMap="fencewhite_height.png" parallaxScale="0.01" specularIntensity="0.3" specularPower="24" />
+	<material name="fhporch" normalMap="fhporch_normal.png" normalStrength="0.5" roughnessMap="fhporch_roughness.png" heightMap="fhporch_height.png" parallaxScale="0.015" specularIntensity="0.3" specularPower="24" />
+	<material name="fhwalls" normalMap="fhwalls_normal.png" normalStrength="0.5" roughnessMap="fhwalls_roughness.png" heightMap="fhwalls_height.png" parallaxScale="0.02" specularIntensity="0.3" specularPower="24" />
+	<material name="fhdoors" roughnessMap="fhdoors_roughness.png" specularIntensity="0.8" specularPower="24" reflectivity="0.1" />
+	<material name="trunk_brown" normalMap="trunk_brown_normal.png" normalStrength="0.6" roughnessMap="trunk_brown_roughness.png" heightMap="trunk_brown_height.png" parallaxScale="0.01" specularIntensity="0.7" specularPower="32" />
+	<material name="barnwindows" roughnessMap="barnwindows_roughness.png" specularIntensity="0.8" envSpecularIntensity="1" specularPower="40" />
+
+	<material name="UntexturedSky" reflectivity="1" emissiveIntensity="0.8"/>
+	<material name="starsquad" emissiveIntensity="1.4"/>
+	<material name="exclam" specularIntensity="0.8" />
+	<material name="sleep" specularIntensity="0.8" normalMap="water_normal.jpg" normalStrength="0.1" />
+	<material name="cd_saveicon" specularIntensity="0.8" normalMap="water_normal.jpg" normalStrength="0.1" />
+	<material name="23_-_Default" specularIntensity="0.6" />
+
+	<material name="path2" reflectivity="0.2" normalMap="path_1_normal.png" roughnessMap="path_1_roughness.png" specularIntensity="0.7" specularPower="240" heightMap="path_1_height.png" parallaxScale="0.01" />
+	<material name="asphroad" reflectivity="0.1" normalMap="asphroad_normal.png" roughnessMap="asphroad_roughness.png" normalStrength="0.8" specularIntensity="2" specularPower="180" heightMap="asphroad_height.png" parallaxScale="0.015" />
+	<material name="asphtile" reflectivity="0.1" normalMap="asphtile_normal.png" roughnessMap="asphtile_roughness.png" specularIntensity="2" specularPower="180" heightMap="asphtile_height.png" parallaxScale="0.03" />
+	<material name="cliffsmall" reflectivity="0.1" normalMap="cliffsmall_normal.png" roughnessMap="cliffsmall_roughness.png" specularIntensity="1" specularPower="180" heightMap="cliffsmall_height.png" parallaxScale="0.015" />
+
+	<material name="pigpenmud" reflectivity="0.8" roughness="0.3" fresnelPower="2" specularIntensity="0.1" specularPower="14.5" />
+	<material name="ute_bod" reflectivity="1.0" specularIntensity="1" specularPower="16" metallic="1" metallicMap="truck_metallic.png" />
 	<material name="ute_bod_matte" reflectivity="0.4" roughness="0.05" fresnelPower="4.0" specularIntensity="0.2" specularPower="1" />
 	<material name="utebod_matte" reflectivity="0.4" roughness="0.05" fresnelPower="4.0" specularIntensity="0.2" specularPower="1" />
-
-	<!--  -->
-	<material name="water_env" reflectivity="0" roughness="0.05" fresnelPower="0" specularIntensity="1.5" specularPower="160" />
-
-	<material name="water_tank" reflectivity="0.5" roughness="0.85" fresnelPower="0" specularIntensity="0.8" specularPower="26" />
-	<material name="Trough_Bath_01" reflectivity="0.8" roughness="0.5" fresnelPower="0" specularIntensity="1" specularPower="26" />
-	<material name="sprinkler" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="0.4" specularPower="26" />
+	<material name="BeadyCar" reflectivity="1.0" roughness="0.15" specularIntensity="2.1" specularPower="8" metallic="1" />
+	<material name="BeadyCar_Glass" reflectivity="1" specularIntensity="4" specularPower="16" />
 	
+	<!--  -->
+	<material name="water_env" normalMap="water_normal.tga" normalStrength="0.06" specularIntensity="2" envSpecularIntensity="0.75" specularPower="50" />
+
+	<material name="buck" normalMap="Barn_Buck_normal.bmp" roughnessMap="Barn_Buck_roughness.bmp" heightMap="Barn_Buck_height.bmp" specularIntensity="1" roughnessStrength="0.8" normalStrength="12" specularPower="16" />
+	<material name="bridgelrg" normalMap="bridgelrg_normal.png" roughnessMap="bridgelrg_roughness.png" heightMap="bridgelrg_height.png" parallaxScale="0.015" specularIntensity="0.8" specularPower="24" />
+	<material name="bridgefloor" normalMap="bridgefloor_normal.png" roughnessMap="bridgefloor_roughness.png" heightMap="bridgefloor_height.png" parallaxScale="0.01" specularIntensity="0.2" specularPower="24" />
+
+	<material name="water_tank" normalMap="water_tank_normal.png" roughnessMap="water_tank_roughness.png" heightMap="water_tank_height.png" parallaxScale="0.015" normalStrength="0.5" reflectivity="0.5" specularIntensity="1" specularPower="5" />
+	<material name="Trough_Bath_01" reflectivity="0.8" roughness="0.5" fresnelPower="0" specularIntensity="1" specularPower="26" />
+	<material name="sprinkler" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="4" specularPower="26" />
+
 	<!--  -->
 	<material name="pipemets" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.3" specularPower="26" />
 	<material name="pipemetmat" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.3" specularPower="26" />
@@ -22,12 +70,14 @@
 	<material name="pipesidemat" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.3" specularPower="26" />
 	<material name="piperusty" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.3" specularPower="26" />
 	<material name="pipmbigmat" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.3" specularPower="26" />
+	
+	<material name="TinCan" reflectivity="0" metallic="0.8" roughness="0.9" specularIntensity="9" specularPower="26" />
 
 	<!--  -->
 	<material name="tractor2body" reflectivity="0.15" roughness="0.75" fresnelPower="0" specularIntensity="0.2" specularPower="20" />
 
 	<!--  -->
-	<material name="bucket" reflectivity="0.8" roughness="0.1" fresnelPower="0.5" specularIntensity="1" specularPower="16" />
+	<material name="bucket" reflectivity="0.0" roughness="0.7" specularIntensity="1" specularPower="16" metallic="0.5" />
 
 	<material name="mail_box_01" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.2" specularPower="12"  />
 	<material name="telegraph_pole2" reflectivity="0.5" roughness="0.5" fresnelPower="0" specularIntensity="0.2" specularPower="10" />
@@ -36,23 +86,44 @@
 	<material name="barrier" reflectivity="1" roughness="0.05" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
 	<material name="gridconc" reflectivity="0.2" roughness="0.4" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
 	<material name="garden_light" reflectivity="0.2" roughness="0.5" fresnelPower="0" specularIntensity="0.8" specularPower="10" />
-	<material name="tee_sphere" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="1" specularPower="8" />
-	<material name="tee_sign" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
+	<material name="tee_sphere" roughness="0.9" fresnelPower="0" specularIntensity="2" specularPower="8" />
+	<material name="tee_sign" reflectivity="0.2" roughness="0.5" fresnelPower="0" specularIntensity="1.5" specularPower="26" />
 	<material name="tee_ball_cleaner" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
-	<material name="lawnmower" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
-	<material name="golf_cart" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
+	<material name="lawnmower" reflectivity="0.2" roughness="0.6" fresnelPower="0" specularIntensity="1" specularPower="26" />
+	<material name="golf_cart" reflectivity="0.5" roughness="0.6" fresnelPower="0" specularIntensity="1.2" specularPower="26" />
+
+	<material name="bike_01" reflectivity="0.5" roughness="0.2" fresnelPower="0" specularIntensity="0.4" specularPower="38" roughnessMap="Bike_1_Roughness.png" />
+	<material name="bike_02" reflectivity="0.5" roughness="0.2" fresnelPower="0" specularIntensity="0.4" specularPower="38" roughnessMap="Bike_1_Roughness.png" />
+	<material name="bike_03" reflectivity="0.5" roughness="0.2" fresnelPower="0" specularIntensity="0.4" specularPower="38" roughnessMap="Bike_1_Roughness.png" />
+	<material name="bike_04" reflectivity="0.5" roughness="0.2" fresnelPower="0" specularIntensity="0.4" specularPower="38" roughnessMap="Bike_1_Roughness.png" />
+	<material name="bike_05" reflectivity="0.5" roughness="0.2" fresnelPower="0" specularIntensity="0.4" specularPower="38" roughnessMap="Bike_1_Roughness.png" />
 
 	<!--  -->
 	<material name="lamp" reflectivity="0.5" roughness="0.4" fresnelPower="0" specularIntensity="0.2" specularPower="26" />
 	<!--  -->
-	<material name="barnroof" reflectivity="0.4" roughness="0.8" fresnelPower="4" specularIntensity="0.14" specularPower="120" />
+	<material name="barnroof" reflectivity="1" fresnelPower="2" specularIntensity="1" specularPower="160" normalMap="barnroof_normal.png" roughnessMap="barnroof_roughness.png" heightMap="barnroof_height.png" parallaxScale="0.015" metallic="0.5" />
 	<material name="silosim" reflectivity="0.4" roughness="0.8" fresnelPower="0" specularIntensity="0.35" specularPower="26" />
 	<material name="fence_post" reflectivity="1" roughness="0.05" fresnelPower="0" specularIntensity="10" specularPower="26" />
-	<material name="corrugiron" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="10" specularPower="26" />
+	<material name="corrugiron" reflectivity="0.2" fresnelPower="0" specularIntensity="10" specularPower="26" normalMap="corrugiron_normal.png" normalStrength="0.5" roughnessMap="corrugiron_roughness.png" />
 	<material name="schoolbus" reflectivity="0.5" roughness="0.9" fresnelPower="0" specularIntensity="10" specularPower="26" />
 	<material name="jfireplace" reflectivity="0.5" roughness="0.9" fresnelPower="0" specularIntensity="10" specularPower="26" />
 	<material name="crane" reflectivity="0.2" roughness="0.9" fresnelPower="0" specularIntensity="10" specularPower="26" />
-	<material name="barbedwire" reflectivity="0.5" roughness="0.9" fresnelPower="0" specularIntensity="10" specularPower="26" />
-	<material name="BeadyCar" reflectivity="0.5" roughness="0.9" fresnelPower="0" specularIntensity="10" specularPower="26" />
-	<material name="fencemesh" reflectivity="0.5" roughness="0.9" fresnelPower="0" specularIntensity="10" specularPower="26" />
+	<material name="barbedwire" reflectivity="0.5" roughness="0.9" fresnelPower="0" specularIntensity="3" specularPower="26" />
+	<material name="BeadyCar" reflectivity="0.5" roughness="0.9" fresnelPower="0" specularIntensity="3" specularPower="26" />
+	<material name="fencemesh" reflectivity="0.5" roughness="0.9" fresnelPower="0" specularIntensity="3" specularPower="26" />
+	
+	<material name="floorbarn" reflectivity="0.5" normalMap="floorbarn_normal.png" normalStrength="0.5" roughnessMap="floorbarn_roughness.png" />
+	<material name="floor_1" reflectivity="0.5" normalMap="floorbarn_normal.png" normalStrength="0.5" roughnessMap="floorbarn_roughness.png" />
+	
+	<material name="foliage_tile" wind="true" roughnessMap="tree_wind.png" windMin="0.4" windMax="3.2" />
+	<material name="foliage_centre" wind="true" roughnessMap="tree_wind.png" windMin="0.4" windMax="3.2" />
+
+
+	<material name="ServiceNeon" emissiveIntensity="1.9" />
+	<material name="stage_lights" emissiveIntensity="1.4" />
+	<material name="signal_diffuse" emissiveIntensity="1.2" />
+	<material name="dancefloor3_new" emissiveIntensity="1.8" />
+	<material name="ServiceNeon_coloured" emissiveIntensity="1.7" />
+	<material name="peckringlarge" emissiveIntensity="1.2" />
+	
 </materials>

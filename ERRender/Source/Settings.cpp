@@ -21,11 +21,8 @@ namespace settings
 
 bool g_bEnabled = TFALSE;
 
-// Working copy edited by the UI; pushed to the renderer only when "Apply" is pressed.
-// Re-synced from the live (active) settings each time the window is (re)opened.
 static GraphicsSettings s_oWorking;
 
-// Common windowed resolutions offered by the resolution combo.
 struct ResolutionOption
 {
 	TUINT       uiWidth;
@@ -44,14 +41,8 @@ static const ResolutionOption s_aResolutions[] = {
 
 static const TUINT s_aMSAASamples[] = { 1, 2, 4, 8 };
 
-// ============================================================
-// Render (called from OnImGuiRenderOverlay)
-// ============================================================
-
 void Render()
 {
-	// Re-sync the working copy from the live settings on the rising edge of g_bEnabled
-	// (i.e. each time the window is opened) so it always reflects what is actually active.
 	static bool s_bWasEnabled = false;
 	const bool  bJustOpened    = ( g_bEnabled && !s_bWasEnabled );
 	s_bWasEnabled              = g_bEnabled;
@@ -69,10 +60,6 @@ void Render()
 	ImGui::SetNextWindowSize( ImVec2( 360.0f, 0.0f ), ImGuiCond_FirstUseEver );
 	ImGui::Begin( "Graphics Settings" );
 
-	// --- Live diagnostics ---------------------------------------------------
-	// Shows the actual backbuffer size and the AGUI2 virtual canvas. For a same-aspect
-	// resolution change the canvas must stay constant (e.g. 936x702 for all 16:9); if it
-	// changes here, the UI canvas selection is the cause of any layout shift.
 	{
 		ImGui::Text( "Surface: %.0f x %.0f", pRender->GetSurfaceWidth(), pRender->GetSurfaceHeight() );
 
@@ -85,8 +72,9 @@ void Render()
 		ImGui::Separator();
 	}
 
-	// --- Resolution ---------------------------------------------------------
+	// Resolution
 	{
+		// TODO: query from SDL
 		TINT iResIndex = -1;
 		for ( TINT i = 0; i < TARRAYSIZE( s_aResolutions ); i++ )
 		{
@@ -123,7 +111,7 @@ void Render()
 			ImGui::EndDisabled();
 	}
 
-	// --- Display mode -------------------------------------------------------
+	// Display Mode
 	{
 		static const char* apModes[] = { "Windowed", "Borderless", "Fullscreen" };
 		TINT               iMode     = TINT( s_oWorking.eDisplayMode );
@@ -131,14 +119,14 @@ void Render()
 			s_oWorking.eDisplayMode = DisplayMode( iMode );
 	}
 
-	// --- VSync --------------------------------------------------------------
+	// VSYNC
 	{
 		bool bVSync = (bool)s_oWorking.bVSync;
 		if ( ImGui::Checkbox( "VSync", &bVSync ) )
 			s_oWorking.bVSync = (TBOOL)bVSync;
 	}
 
-	// --- MSAA ---------------------------------------------------------------
+	// MSAA
 	{
 		static const char* apMSAA[] = { "Off", "2x", "4x", "8x" };
 		TINT               iMSAA    = 0;
@@ -154,7 +142,15 @@ void Render()
 			s_oWorking.uiMSAASamples = s_aMSAASamples[ iMSAA ];
 	}
 
-	// --- CSM shadow resolution ---------------------------------------------
+	// FXAA/SMAA
+	{
+		static const char* apPostAA[] = { "Off", "FXAA", "SMAA" };
+		TINT               iPostAA    = TINT( s_oWorking.eAAMode );
+		if ( ImGui::Combo( "Post-Processing AA", &iPostAA, apPostAA, TARRAYSIZE( apPostAA ) ) )
+			s_oWorking.eAAMode = AAMode( iPostAA );
+	}
+
+	// CSM Quality
 	{
 		static const char* apCSM[] = { "Low (1024)", "Medium (2048)", "High (4096)" };
 		TINT               iCSM    = TINT( s_oWorking.eCSMPreset );
@@ -171,18 +167,12 @@ void Render()
 		pRender->RequestVSync( s_oWorking.bVSync );
 		pRender->RequestMSAA( s_oWorking.uiMSAASamples );
 		pRender->RequestCSMPreset( s_oWorking.eCSMPreset );
+		pRender->RequestAAMode( s_oWorking.eAAMode );
 	}
 
 	ImGui::SameLine();
 	if ( ImGui::Button( "Revert" ) )
 		s_oWorking = pRender->GetGraphicsSettings();
-
-	// -----------------------------------------------------------------------
-	// Future: game-texture preview panel. Bind any game ID3D11ShaderResourceView
-	// and display it here, e.g.:
-	//   ImGui::Image( (ImTextureID)pSomeGameSRV, ImVec2( 256.0f, 256.0f ) );
-	// (see the font-atlas preview in Main.cpp's OnImGuiRenderOverlay for the pattern)
-	// -----------------------------------------------------------------------
 
 	ImGui::End();
 }

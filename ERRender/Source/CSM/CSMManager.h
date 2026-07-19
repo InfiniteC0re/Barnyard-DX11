@@ -25,7 +25,7 @@ enum CSMPreset : TUINT
 
 	CSM_PRESET_COUNT,
 };
-static constexpr TFLOAT CSM_SPLIT_LAMBDA                            = 0.5f;
+static constexpr TFLOAT CSM_SPLIT_LAMBDA                            = 0.1f;
 static constexpr TFLOAT CSM_DEPTH_BIAS_SLOPE                        = 2.0f;
 static constexpr TINT   CSM_DEPTH_BIAS_UNITS                        = 5;
 static constexpr TFLOAT CSM_RECEIVER_BIAS                           = 0.0007f;
@@ -128,10 +128,13 @@ private:
 
 extern CSMManager* g_pCSMManager;
 extern TBOOL       g_bCSMEnabled;
+extern TBOOL       g_bInMainScenePass;
+extern TBOOL       g_bReflectionCaptureActive;
 extern TINT        g_iCSMDebugCascade;
 extern TBOOL       g_bCSMDebugFullRange;
 extern TBOOL       g_bCSMDebugMaskBySplit;
 extern TBOOL       g_bOverrideSunDirection;
+extern TBOOL       g_bCSMDelayedCascadeUpdate;
 extern TFLOAT      g_flSunAzimuth;
 extern TFLOAT      g_flSunElevation;
 
@@ -159,6 +162,10 @@ extern TFLOAT      g_flCloudShadowSpeed;        // wind scroll speed
 extern TFLOAT      g_flCloudShadowWindDir[ 2 ]; // wind direction (XZ)
 extern ID3D11ShaderResourceView* g_pCloudShadowSRV;
 extern ID3D11SamplerState*       g_pCloudShadowSampler;
+
+// Reflection cubemap captured each frame; world shader samples it for environment specular
+extern ID3D11ShaderResourceView* g_pSkyCubeSRV;
+extern TINT                      g_iSkyCubeMaxMip;
 
 // Per-cascade shadow tunables.
 extern TFLOAT      g_aflShadowCasterPadding[ CSM_CASCADE_COUNT ];

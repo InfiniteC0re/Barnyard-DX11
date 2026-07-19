@@ -1,11 +1,12 @@
 // STATIC: "BAKED_LIGHTING" "0..1"
-// STATIC: "FOB" "0..1"
 // STATIC: "NO_CSM" "0..1"
 // STATIC: "NO_FOG" "0..1"
 // STATIC: "NO_DYN_LIGHT" "0..1"
 // STATIC: "ANIMATED" "0..1"
 // STATIC: "MATERIAL_MAPS" "0..1"
 // STATIC: "CLOUD_SHADOWS" "0..1"
+// STATIC: "WIND" "0..1"
+// STATIC: "PARALLAX" "0..1"
 
 struct VS_IN
 {
@@ -28,7 +29,7 @@ struct PS_IN
 	float4 LightingLerp1 : TEXCOORD5;
 	float4 LightingLerp2 : TEXCOORD6;
 #else // BAKED_LIGHTING
-	float4 Color	: COLOR;        // xyz = ambient (FOB: full hardcoded colour), w = alpha
+	float4 Color	: COLOR;        // xyz = ambient, w = alpha
 	float3 DirectLight : TEXCOORD8; // NdotL * lightColor -- the sun term, gated by shadow in the PS
 #endif // !BAKED_LIGHTING
 	float3 WorldPos    : TEXCOORD2;
@@ -37,32 +38,31 @@ struct PS_IN
 	float3 WorldNormal : TEXCOORD7;
 };
 
+// Per-draw constants. Per-pass values live in PerPass.hlsli (b4); static per-material in
+// MaterialCB.hlsli (b5)
 cbuffer ConstantBuffer : register(b0)
 {
-    float4x4 cb_matWVP;
-	float4	 cb_ambientColor;
-	float4	 cb_lightColor;		// xyz = light color, w = alpha ref
-	float4	 cb_lightDirection;
-	float4	 cb_upAxis;
-	float4	 cb_lightingLerp;
-	float    cb_FogStart;
-	float    cb_FogEnd;
-	float    cb_SpecPower;      // 9.z: specular shininess exponent
-	float    cb_SpecIntensity;  // 9.w: specular strength
-	float4   cb_FogColor;
-    float4x4 cb_matModel;
-    float4   cb_CameraPos;      // 15: xyz = camera world position
-    float4   cb_MapParams;      // 16: x = normal strength, y = roughness strength, z = roughness, w = map flags (1=normal,2=rough,3=both)
-    float4   cb_SSRParams;      // 17: x = SSR reflectivity, y = fresnel power, z = emissive intensity (1 = neutral)
-    float4   cb_cellStaticLightIndices; // 18: xyzw = up to 4 static light indices into the global buffer (-1 = none)
-    float4   cb_cellStaticLightParams;  // 19: x = count
+    float4x4 cb_matModel;                // 0-3 (clip position = world * pp_matViewProj)
+    float4   cb_ambientColor;            // 4:  per-packet ambient, w = packet alpha
+    float4   cb_lightColor;              // 5:  xyz = light color, w = alpha ref
+    float4   cb_lightDirection;          // 6:  per-packet light dir (inverse-model space)
+    float4   cb_upAxis;                  // 7
+    float4   cb_lightingLerp;            // 8
+    float4   cb_cellStaticLightIndices;  // 9:  xyzw = up to 4 static light indices into the global buffer (-1 = none)
+    float4   cb_cellStaticLightParams;   // 10: x = count
+    float4   cb_cellStaticLightIndices2; // 11: xyzw = static light indices 4..7 (-1 = none)
 };
+
+#include "PerPass.hlsli"
+#include "MaterialCB.hlsli"
 
 #ifdef ANIMATED
 
+// Packed bone palette: 3 registers per bone. Explicit column_major (under /Zpr a row_major float4x3
+// takes 4 registers): register j = column j of the bone transform, transposed on the CPU (48 bytes/bone)
 cbuffer BoneCBuffer : register(b1)
 {
-    float4x4 cb_bones[28];
+    column_major float4x3 cb_bones[28];
 };
 
 #endif // ANIMATED
@@ -81,6 +81,17 @@ cbuffer BoneCBuffer : register(b1)
 #include "StaticPointLights.hlsli"
 #include "ShaderUtils.hlsli" // PerturbNormalDeriv (derivative TBN normal mapping)
 #include "GBuffer.hlsli"     // OctEncodeNormal / PackFresnelRoughness for SSR
+
+// Declared before vs_main so the wind path can sample the roughness map in the vertex stage
+Texture2D texture0 : register(t0);
+SamplerState sampler0 : register(s0);
+Texture2D normalMap    : register(t7); // per-material normal map (t1-t4 are baked lighting)
+Texture2D roughnessMap : register(t8); // per-material roughness (R = roughness, B = wind strength)
+Texture2D heightMap    : register(t10); // per-material height map (white = raised) for parallax
+Texture2D metallicMap  : register(t13); // per-material metallic (R channel), scaled by mat_Params2.x
+TextureCube skyCube     : register(t11); // active ("to") reflection cube for environment specular
+TextureCube skyCube2    : register(t12); // outgoing ("from") cube, blended in during a probe switch
+SamplerState envSampler : register(s4);  // linear-clamp sampler for the cubes
 
 PS_IN vs_main(VS_IN In)
 {
@@ -105,7 +116,7 @@ PS_IN vs_main(VS_IN In)
 	float3 normal = 0;
 	for (int i = 0; i < 4; ++i)
 	{
-		float4x3 BoneMatrix = (float4x3)cb_bones[BoneIndices[i]];
+		float4x3 BoneMatrix = cb_bones[BoneIndices[i]];
 		vertex += mul(float4(In.ObjPos, 1.0), BoneMatrix) * BoneWeights[i];
 
 		float3x3 BoneNormal = (float3x3)BoneMatrix;
@@ -119,14 +130,20 @@ PS_IN vs_main(VS_IN In)
 
 #endif // !ANIMATED
 
-	Out.ProjPos = mul(float4(vertex, 1.0), cb_matWVP);
+#if WIND
+    // Skin has no vertex color, so wind strength is the roughness map's blue channel (mip 0 -- no
+    // gradients in the VS), remapped through [windMin, windMax] and driven by the same two-sine sway
+    float  windBlue  = roughnessMap.SampleLevel(sampler0, In.UV, 0).b;
+    float  windMask  = saturate((windBlue - mat_Wind.x) / max(mat_Wind.y - mat_Wind.x, 1e-4f));
+    float  windPhase = pp_WindParams.w + dot(vertex.xz, float2(0.35f, 0.35f));
+    float  sway      = sin(windPhase) + 0.5f * sin(windPhase * 2.7f + 1.3f);
+    vertex.xz += pp_WindParams.xy * (sway * pp_WindParams.z * windMask);
+#endif
+
+	Out.WorldPos = mul(float4(vertex, 1.0), cb_matModel).xyz;
+	Out.ProjPos = mul(float4(Out.WorldPos, 1.0), pp_matViewProj);
 	Out.ViewDepth = Out.ProjPos.w;
 	Out.AlphaRef = cb_lightColor.w;
-
-	// cb_matWVP = ModelView * Proj; strip Proj to get view-space, then apply ViewWorld to get world-space.
-	// For skinned meshes, bones may already be world-space -- use cb_matModel only if it's truly model->world.
-	// If shadows still drift with camera position, switch to: Out.WorldPos = vertex;
-	Out.WorldPos = mul(float4(vertex, 1.0), cb_matModel).xyz;
 	Out.WorldNormal = normalize(mul(normal, (float3x3)cb_matModel));
     Out.UV0 = In.UV;
 
@@ -145,37 +162,7 @@ PS_IN vs_main(VS_IN In)
 	Out.LightingLerp1 = cb_lightingLerp;
 	Out.LightingLerp2 = float4(1.0f, 1.0f, 1.0f, 0.0f) - cb_lightingLerp;
 
-#elif FOB // BAKED_LIGHTING
-
-	// FOB Lighting
-	// NdotL = abs(NdotL);
-	NdotL = clamp(NdotL, 0.0f, 1.0f);
-
-	// float3 lightColor = cb_ambientColor.xyz;
-	// lightColor.r *= 0.9f;
-	// lightColor.z *= 0.5f;
-
-	// lightColor += NdotL * 1.2f * cb_lightColor.xyz;
-
-	// Out.Color.xyz = lightColor;
-
-	const float3 baseColor = float3(0.54509807f, 0.60784316f, 0.47058824f);
-	const float3 lightColor = float3(0.7372549f, 0.8156863f, 0.5254902f);
-	// float3(0.54509807f, 0.60784316f, 0.47058824f) - usual
-	// float3(0.9529412f, 0.75686276f, 0.54509807f) - yellow
-	// float3(0.7372549f, 0.8156863f, 0.5254902f) - lighted
-
-	float3 colorA = float3(188, 201, 103) / 255.0f;
-	float3 colorB = float3(111, 114, 143) / 255.0f;
-
-	// Out.Color.xyz = NdotL * cb_lightColor.xyz + cb_ambientColor.xyz;
-	// Out.Color.xyz = float3(1.0f, 1.0f, 1.0f) * (NdotL * lightColor + (1.0f - NdotL) * baseColor);
-	Out.Color.xyz = colorB + (colorA - colorB) * 1;
-	Out.Color.w = cb_ambientColor.a;
-	Out.DirectLight = float3(0.0f, 0.0f, 0.0f); // FOB is a flat hardcoded look, no directional term
-	// Out.Color.xyz = lerp(float3(0.54509807f, 0.60784316f, 0.47058824f), cb_lightColor.xyz + float3(0.7372549f, 0.8156863f, 0.5254902f), NdotL);
-
-#else // !FOB && !BAKED_LIGHTING
+#else // !BAKED_LIGHTING
 
 	// Runtime lighting calculation
 
@@ -207,11 +194,6 @@ float CalculateExponentialSquaredFog(float distance, float fogStart, float densi
     return exp(-pow(density * (distance - fogStart), 2));
 }
 
-Texture2D texture0 : register(t0);
-SamplerState sampler0 : register(s0);
-Texture2D normalMap    : register(t7); // per-material normal map (t1-t4 are baked lighting)
-Texture2D roughnessMap : register(t8); // per-material roughness (R channel)
-
 #if BAKED_LIGHTING
 Texture2D lighting1 : register(t1);
 Texture2D lighting2 : register(t2);
@@ -226,9 +208,120 @@ struct PS_OUT
     float4 GBuffer : SV_Target1; // rgb = world-space normal, a = reflectivity (0; skin is non-reflective)
 };
 
+// Only the parallax path shifts UV per-pixel, so only it needs SampleGrad to keep mips stable
+// across the POM march. Without parallax it's a plain Sample
+#if PARALLAX
+#define SAMPLE_SKIN(tex, texcoord) tex.SampleGrad(sampler0, (texcoord), dUVdx, dUVdy)
+#else
+#define SAMPLE_SKIN(tex, texcoord) tex.Sample(sampler0, (texcoord))
+#endif
+
+#if PARALLAX
+// Parallax occlusion mapping: march the height field along the tangent-space view dir, return the
+// offset UV. SampleGrad with original-UV derivatives keeps mips stable. Height map: white = raised.
+// Ported from World.hlsl
+float2 ParallaxOcclusionUV(float2 a_uv, float3 a_viewTS, float a_scale, float2 a_dx, float2 a_dy)
+{
+    const int   iMaxSteps  = 24;
+    const float fMinLayers = 12.0f;
+
+    float numLayers  = lerp((float)iMaxSteps, fMinLayers, saturate(abs(a_viewTS.z)));
+    float layerDepth = 1.0f / numLayers;
+
+    float2 P    = (a_viewTS.xy / max(a_viewTS.z, 0.001f)) * a_scale;
+    float  pLen = length(P);
+    float  pMax = a_scale * 2.0f;
+    if (pLen > pMax) P *= pMax / pLen;
+    float2 deltaUV = P / numLayers;
+
+    float2 curUV    = a_uv;
+    float  curDepth = 1.0f - heightMap.SampleGrad(sampler0, curUV, a_dx, a_dy).r;
+    float  curLayer = 0.0f;
+
+    [loop]
+    for (int i = 0; i < iMaxSteps; i++)
+    {
+        if (curLayer >= curDepth) break;
+        curUV   -= deltaUV;
+        curDepth = 1.0f - heightMap.SampleGrad(sampler0, curUV, a_dx, a_dy).r;
+        curLayer += layerDepth;
+    }
+
+    float2 prevUV = curUV + deltaUV;
+    float  after  = curDepth - curLayer;
+    float  before = (1.0f - heightMap.SampleGrad(sampler0, prevUV, a_dx, a_dy).r) - (curLayer - layerDepth);
+    float  w      = after / (after - before);
+    return lerp(curUV, prevUV, saturate(w));
+}
+float ParallaxSelfShadow(float2 a_uv, float a_hitDepth, float3 a_lightTS, float a_scale, float2 a_dx, float2 a_dy)
+{
+    if (a_lightTS.z <= 0.0f) return 1.0f;
+
+    const int   iSteps    = 8;
+    const float numLayers = (float)iSteps;
+
+    float2 dirTS  = (a_lightTS.xy / max(a_lightTS.z, 0.001f)) * a_scale;
+    float  dirLen = length(dirTS);
+    if (dirLen > a_scale * 2.0f) dirTS *= (a_scale * 2.0f) / dirLen;
+
+    float  layerDepth = 1.0f / numLayers;
+    float2 deltaUV    = dirTS / numLayers;
+
+    float2 curUV     = a_uv;
+    float  curDepth  = a_hitDepth;
+    float  occlusion = 0.0f;
+
+    [loop]
+    for (int i = 0; i < iSteps; i++)
+    {
+        curUV    += deltaUV;
+        curDepth -= layerDepth;
+        if (curDepth <= 0.0f) break;
+
+        float sampleDepth = 1.0f - heightMap.SampleGrad(sampler0, curUV, a_dx, a_dy).r;
+        float diff        = max(0.0f, curDepth - sampleDepth);
+        float weight      = (numLayers - (float)i) / numLayers;
+        occlusion         = max(occlusion, diff * weight * 4.0f);
+    }
+
+    return 1.0f - saturate(occlusion);
+}
+#endif // PARALLAX
+
 PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 {
-    float4 texColor = texture0.Sample(sampler0, In.UV0);
+    float2 uv = In.UV0;
+    float  parallaxShadow = 1.0f;
+#if PARALLAX
+    float2 dUVdx = ddx(In.UV0);
+    float2 dUVdy = ddy(In.UV0);
+    float  detailFade = 1.0f - smoothstep(15.0f, 30.0f, In.ViewDepth);
+    // Parallax scale masked off during the reflection-cube capture (not worth the march there)
+    float  materialParallax = mat_MapParams.z * (1.0f - pp_EnvSpecular.z);
+    if (materialParallax > 0.0f && detailFade > 0.0f)
+    {
+        float3   Ngeo   = normalize(In.WorldNormal);
+        float3x3 TBN    = DerivTBN(In.WorldPos, Ngeo, In.UV0);
+        float3   Vw     = normalize(pp_CameraPos.xyz - In.WorldPos);
+        float3   viewTS = mul(TBN, Vw);
+        float    grazeFade = smoothstep(0.05f, 0.35f, viewTS.z);
+        float    scale     = materialParallax * grazeFade * detailFade;
+        uv = ParallaxOcclusionUV(uv, viewTS, scale, dUVdx, dUVdy);
+
+        float3 worldLightDir = -mul(cb_lightDirection.xyz, (float3x3)cb_matModel);
+        float3 T = TBN[0]; float3 B = TBN[1];
+        float3 lightTS = float3(dot(worldLightDir, T), dot(worldLightDir, B), dot(worldLightDir, Ngeo));
+        if (scale > 0.0f)
+        {
+            float hitDepth  = 1.0f - heightMap.SampleGrad(sampler0, uv, dUVdx, dUVdy).r;
+            float rawSelf   = ParallaxSelfShadow(uv, hitDepth, lightTS, scale, dUVdx, dUVdy);
+            parallaxShadow  = lerp(1.0f, rawSelf, detailFade * 0.4f);
+        }
+    }
+#endif
+
+    float4 albedo   = SAMPLE_SKIN(texture0, uv); // raw albedo, kept for the metallic tint
+    float4 texColor = albedo;
 	clip(texColor.a - In.AlphaRef);
 
 	// Sun shadow visibility, up front so the directional lighting term can be gated by it.
@@ -248,47 +341,76 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 	texColor.rgb = clamp(texColor.rgb + lerp(lighting2Color, lighting4Color, In.LightingLerp2.xxx), 0.0f, 1.0f);
 	texColor.a *= cb_ambientColor.a;
 #else // BAKED_LIGHTING
-	// Ambient (In.Color) always; the directional sun term is gated by shadow so it vanishes
-	// in shade (FOB has DirectLight = 0, so it's unaffected).
+	// Ambient (In.Color) always; the directional sun term is gated by shadow so it vanishes in shade
 	texColor.rgb = texColor.rgb * (In.Color.rgb + In.DirectLight * shadow);
 	texColor.a *= cb_ambientColor.a;
 #endif // !BAKED_LIGHTING
 
-	// Per-material normal/roughness maps. Skin has no tangent stream, so the TBN is built
-	// from screen derivatives. Maps live in cb_MapParams.w (1=normal, 2=rough, 3=both).
+	// Per-material normal/roughness/metallic maps. Skin has no tangent stream, so the TBN is built
+	// from screen derivatives. mat_Wind.z packs presence bits (1 = normal, 2 = rough, 4 = metallic)
+	int    mapFlags      = (int)mat_Wind.z;
 	float3 worldN        = normalize(In.WorldNormal);
-	float  surfRoughness = cb_MapParams.z;
+	float  surfRoughness = mat_MapParams.w;
+	// Metallic masked off during the reflection-cube capture, or metals' softened diffuse bakes dark
+	// into the cube they'll later reflect
+	float  metallicScale = mat_Params2.x * (1.0f - pp_EnvSpecular.z);
+	float  metallic      = saturate(metallicScale);
 #if MATERIAL_MAPS
-	if (cb_MapParams.w == 1.0f || cb_MapParams.w == 3.0f)
+	if (mapFlags & 1)
 	{
-		float3 nt = normalMap.Sample(sampler0, In.UV0).xyz * 2.0f - 1.0f;
-		nt.xy    *= cb_MapParams.x; // normal strength
-		worldN    = PerturbNormalDeriv(In.WorldPos, worldN, In.UV0, nt);
+		float3 nt = SAMPLE_SKIN(normalMap, uv).xyz * 2.0f - 1.0f;
+		nt.xy    *= mat_MapParams.x; // normal strength
+		worldN    = PerturbNormalDeriv(In.WorldPos, worldN, uv, nt);
 	}
-	if (cb_MapParams.w >= 2.0f)
+	if (mapFlags & 2)
 	{
-		surfRoughness = saturate(roughnessMap.Sample(sampler0, In.UV0).r * cb_MapParams.y);
+		surfRoughness = saturate(SAMPLE_SKIN(roughnessMap, uv).r * mat_MapParams.y);
+	}
+	if (mapFlags & 4)
+	{
+		metallic = saturate(SAMPLE_SKIN(metallicMap, uv).r * metallicScale);
 	}
 #endif
 
-	// View dir + roughness-shaped specular params, shared by the sun and dynamic highlights.
-	float3 V       = normalize(cb_CameraPos.xyz - In.WorldPos); // toward the camera
-	float  rough   = saturate(surfRoughness);
-	float  specPow = max(lerp(8.0f, max(cb_SpecPower, 1.0f), 1.0f - rough), 1.0f);
-	float  specInt = cb_SpecIntensity * (1.0f - rough);
+	// Normal-map detail shading: add only the bump's delta in sun lambert, to avoid double-counting
+	// the VS-computed lighting
+#if MATERIAL_MAPS && !BAKED_LIGHTING
+	{
+		float3 worldLightDir = -mul(cb_lightDirection.xyz, (float3x3)cb_matModel);
+		float  bumpDelta     = saturate(dot(worldN, worldLightDir)) - saturate(dot(normalize(In.WorldNormal), worldLightDir));
+		float  detailFade    = 1.0f - smoothstep(15.0f, 30.0f, In.ViewDepth);
+		texColor.rgb *= clamp(1.0f + bumpDelta * 1.5f * shadow * parallaxShadow * detailFade, 0.0f, 2.0f);
+	}
+#endif
+
+	texColor.rgb *= lerp(0.75f, 1.0f, parallaxShadow);
+
+	// Roughness-shaped specular params. Clamp the rough end below the material's specularPower (as in
+	// World) so a narrow-lobe material (specularPower < 8) isn't tighter at high roughness than at low
+	float3 V            = normalize(pp_CameraPos.xyz - In.WorldPos); // toward the camera
+	float  rough        = saturate(surfRoughness);
+	float  matSpecPow   = max(mat_Reflectivity.w, 1.0f);
+	float  roughSpecPow = min(matSpecPow, 8.0f);
+	float  specPow      = max(lerp(roughSpecPow, matSpecPow, 1.0f - rough), 1.0f);
+	float  specInt      = mat_Reflectivity.z * (1.0f - rough);
+
+	// Metallic (Blinn-Phong): metals tint highlights with albedo and lose most diffuse; the env
+	// reflection below uses albedo as F0. metallic = 0 (default) leaves the old shading unchanged
+	float3 specColor = lerp(1.0f.xxx, albedo.rgb, metallic);
+	texColor.rgb    *= 1.0f - 0.6f * metallic;
 
 	float3 specular = 0.0f;
 
 #if !NO_DYN_LIGHT
 	// Diffuse uses the bumpy derived normal; specular uses the clean normal-mapped worldN.
-	float3 dynN    = ComputeDerivedWorldNormal(In.WorldPos, worldN, In.UV0, texture0, sampler0, cb_glowLightIntensity[0].y);
+	float3 dynN    = ComputeDerivedWorldNormal(In.WorldPos, worldN, uv, texture0, sampler0, cb_glowLightIntensity[0].y);
 	float3 dynSpec = 0.0f;
 	float3 glow    = SampleDynamicGlowLights(In.WorldPos, dynN, worldN, V, specInt, specPow, dynSpec);
 	texColor.rgb   = ApplyDynamicGlowLighting(texColor.rgb, glow);
-	specular      += dynSpec;
+	specular      += dynSpec * specColor;
 #endif
 
-	float3 staticLight = SampleStaticPointLights(In.WorldPos, worldN, cb_cellStaticLightIndices, (int)cb_cellStaticLightParams.x);
+	float3 staticLight = SampleStaticPointLights(In.WorldPos, worldN, cb_cellStaticLightIndices, cb_cellStaticLightIndices2, (int)cb_cellStaticLightParams.x);
 	texColor.rgb *= 1.0f + staticLight;
 
 #if !NO_CSM
@@ -303,28 +425,57 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 	float specShadow = 1.0f;
 #endif
 
-	// Per-material Blinn-Phong sun specular (roughness-shaped, killed in shadow).
-	if (cb_SpecIntensity > 0.0f)
+	// Per-material Blinn-Phong sun specular (killed in shadow). Uses the CSM sun direction (same as
+	// the shadows and World) so the highlight can't point a different way than the shadow gating it.
+	// Diffuse still uses the vanilla per-packet light dir (VS)
+	if (mat_Reflectivity.z > 0.0f)
 	{
 		float3 N = worldN;
 		if (dot(N, V) < 0.0f) N = -N;                         // orient to the visible side
-		// Bring cb_lightDirection back to world space (see VS comment).
-		float3 L = -mul(cb_lightDirection.xyz, (float3x3)cb_matModel);
+		float3 L = pp_SunDirection.xyz;                       // toward the sun (world, CSM)
 		float3 H = normalize(L + V);
 		float  specTerm = pow(saturate(dot(N, H)), specPow);
-		specular += specTerm * specInt * specShadow * saturate(dot(N, L));
+		specular += specTerm * specInt * specShadow * saturate(dot(N, L)) * parallaxShadow * specColor;
 	}
+
+	// Cubemap env specular (IBL): reflects the captured sky/terrain, roughness-blurred. Masked by the
+	// material specular intensity; box-parallax-corrected like SSR
+	if (pp_EnvSpecular.x > 0.0f && mat_Params2.y > 0.0f)
+	{
+		// relPos is relative to the capture probe centre, not the camera, or the reflection swims.
+		// Active ("to") cube first; during a probe switch cross-fade with the outgoing ("from") cube,
+		// each with its own probe + box. Metals use albedo as F0; dielectrics keep specularF0
+		float3 envF0 = lerp(mat_Params2.zzz, albedo.rgb, metallic);
+		float3 relTo = In.WorldPos - pp_EnvProbePos.xyz;
+		float3 env   = EnvSpecular(skyCube, envSampler, worldN, V, relTo,
+		                           surfRoughness, pp_EnvSpecular.y, envF0,
+		                           pp_EnvParallax.xyz);
+		float blend = pp_EnvProbePos.w;
+		if (blend < 0.999f)
+		{
+			float3 relFrom = In.WorldPos - pp_EnvProbePos2.xyz;
+			float3 envFrom = EnvSpecular(skyCube2, envSampler, worldN, V, relFrom,
+			                             surfRoughness, pp_EnvSpecular.y, envF0,
+			                             pp_EnvParallax2.xyz);
+			env = lerp(envFrom, env, blend);
+		}
+		specular += env * pp_EnvSpecular.x * mat_Params2.y;
+	}
+
+    // Firefly clamp (see World.hlsl): caps one-pixel reflection spikes that bloom into "butterflies";
+    // normal highlights are far below this
+    specular = min( specular, 8.0f );
 
     // Emissive intensity scales the texture only (specular keeps its lit magnitude).
     // Applied pre-fog so distant emissives still get fog-dimmed.
-    float3 surfaceColor = texColor.xyz * cb_SSRParams.z + specular;
+    float3 surfaceColor = texColor.xyz * mat_Params2.w + specular;
 
 #if !NO_FOG
-	float fogFactor = CalculateExponentialSquaredFog(In.ProjPos.w, cb_FogStart, cb_FogColor.w);
+	float fogFactor = CalculateExponentialSquaredFog(In.ProjPos.w, pp_FogParams.x, pp_FogColor.w);
 	fogFactor = saturate(fogFactor);
 
 	// Apply fog by blending between fog color and original color
-    float3 finalColor = lerp(cb_FogColor.xyz, surfaceColor, fogFactor);
+    float3 finalColor = lerp(pp_FogColor.xyz, surfaceColor, fogFactor);
 #else
     float3 finalColor = surfaceColor;
 #endif
@@ -336,7 +487,7 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
     // still written so the buffer reads correctly and reflective skin materials work.
     Out.GBuffer = float4(
         OctEncodeNormal(worldN),
-        cb_SSRParams.x,
-        PackFresnelRoughness(cb_SSRParams.y, surfRoughness));
+        mat_Reflectivity.x,
+        PackFresnelRoughness(mat_Reflectivity.y, surfRoughness));
     return Out;
 }

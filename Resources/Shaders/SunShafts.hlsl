@@ -42,5 +42,7 @@ float4 ps_main( PS_IN i ) : SV_TARGET
 
     rayColor = Uncharted2Tonemap( rayColor * cb_vRaysTint * cb_fSunAlpha );
 
+    // No dither here on purpose -- the Kawase blur that follows would average it away. The shaft is
+    // dithered at its final additive store instead (CopyTexture.hlsl, post-blur)
     return float4( rayColor, 1.0f );
 }

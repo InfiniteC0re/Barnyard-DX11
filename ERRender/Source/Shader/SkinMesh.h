@@ -18,12 +18,6 @@ public:
 	// Toshi::TMesh
 	//-----------------------------------------------------------------------------
 	virtual TBOOL Render() OVERRIDE;
-
-	TBOOL IsFOB() const { return m_bIsFOB; }
-	void  SetIsFOB( TBOOL a_bFOB ) { m_bIsFOB = a_bFOB; }
-
-private:
-	TBOOL m_bIsFOB;
 };
 
 } // namespace remaster

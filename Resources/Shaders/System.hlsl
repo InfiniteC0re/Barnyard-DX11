@@ -1,5 +1,7 @@
 // STATIC: "TEXTURED" "0..1"
 
+#include "ShaderUtils.hlsli"
+
 struct VS_IN
 {
     float3 ObjPos : POSITION;
@@ -52,6 +54,10 @@ PS_OUT ps_main(PS_IN In)
 #else // TEXTURED
 	float4 color = In.Color;
 #endif // !TEXTURED
+
+	// Dither into the R11G11B10 scene buffer so the untextured sky dome's gradient doesn't band on
+	// the coarse 6/6/5 mantissa. See DitherR11G11B10 in ShaderUtils.hlsli
+	color.xyz = DitherR11G11B10( color.xyz, In.ProjPos.xy );
 
     PS_OUT Out;
     Out.Color   = color;

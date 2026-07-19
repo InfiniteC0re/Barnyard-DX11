@@ -32,13 +32,17 @@ float3 SampleStaticPointLight(float3 worldPos, float3 normal, int index)
 	return colInt.rgb * (colInt.w * atten * NdotL);
 }
 
-// indices.xyzw = up to `count` indices into the global static-light arrays (per-cell).
-float3 SampleStaticPointLights(float3 worldPos, float3 normal, float4 indices, int count)
+// indices/indices2 = up to `count` (max 8) indices into the global static-light arrays (per-cell)
+float3 SampleStaticPointLights(float3 worldPos, float3 normal, float4 indices, float4 indices2, int count)
 {
 	float3 result = 0.0f;
 	if (count > 0) result += SampleStaticPointLight(worldPos, normal, (int)indices.x);
 	if (count > 1) result += SampleStaticPointLight(worldPos, normal, (int)indices.y);
 	if (count > 2) result += SampleStaticPointLight(worldPos, normal, (int)indices.z);
 	if (count > 3) result += SampleStaticPointLight(worldPos, normal, (int)indices.w);
+	if (count > 4) result += SampleStaticPointLight(worldPos, normal, (int)indices2.x);
+	if (count > 5) result += SampleStaticPointLight(worldPos, normal, (int)indices2.y);
+	if (count > 6) result += SampleStaticPointLight(worldPos, normal, (int)indices2.z);
+	if (count > 7) result += SampleStaticPointLight(worldPos, normal, (int)indices2.w);
 	return result;
 }

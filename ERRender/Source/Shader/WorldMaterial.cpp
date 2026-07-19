@@ -79,7 +79,7 @@ void remaster::WorldMaterial::PreRender()
 		}
 	}
 
-	if ( !remaster::g_pRender->GetCSMManager().IsRenderingShadowPass() )
+	if ( !remaster::g_pRender->GetCSMManager().IsRenderingShadowPass() && !remaster::g_bReflectionCaptureActive )
 	{
 		// Normal pass
 

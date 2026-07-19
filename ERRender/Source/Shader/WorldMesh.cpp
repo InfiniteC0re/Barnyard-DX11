@@ -40,19 +40,9 @@ TBOOL remaster::WorldMesh::Render()
 		pMaterial = TSTATICCAST( remaster::WorldShaderDX11, remaster::WorldShaderDX11::GetSingleton() )->GetShadowMaterial();
 	}
 
-	/*if ( !TSTATICCAST( AWorldShaderHAL, m_pOwnerShader )->IsAlphaBlendMaterial() ||
-	     pCurrentContext->GetAlphaBlend() >= 1.0f )
-	{
-		pMaterial = TSTATICCAST( AWorldMaterialHAL, m_pMaterial );
-	}
-	else
-	{
-		pMaterial = TSTATICCAST( AWorldMaterialHAL, m_pMaterial )->GetAlphaBlendMaterial();
-	}*/
-
 	auto  pCtxDX11          = TSTATICCAST( remaster::RenderContextD3D11, pRenderInterface->GetCurrentContext() );
 	TBOOL bHasDynamicLights = pCurrentContext->m_oLightIds[ 0 ] >= 0;
-	TBOOL bHasStaticLights  = pCtxDX11->GetStaticLightIDs().aIDs[ 0 ] >= 0;
+	TBOOL bHasStaticLights  = pCtxDX11->GetStaticLightIDs()[ 0 ] >= 0;
 	TBOOL bHasLightData     = bHasDynamicLights || bHasStaticLights;
 	auto  pLightData        = bHasLightData ? g_pLightDataPacketAllocator->Allocate() : TNULL;
 
@@ -60,12 +50,19 @@ TBOOL remaster::WorldMesh::Render()
 	{
 		// Both lists are -1-filled when empty, so copy unconditionally; consumers key off slot 0.
 		pLightData->oDynamicLights = pCurrentContext->m_oLightIds;
-		pLightData->oStaticLights  = pCtxDX11->GetStaticLightIDs();
+		const TINT8* pStaticIDs = pCtxDX11->GetStaticLightIDs();
+		for ( TINT i = 0; i < MAX_CELL_STATIC_LIGHTS; i++ )
+			pLightData->oStaticLights[ i ] = pStaticIDs[ i ];
 	}
 
 	auto pRenderPacket = pMaterial->AddRenderPacket( this );
 	pRenderPacket->SetModelViewMatrix( pCurrentContext->GetModelViewMatrix() );
 	pRenderPacket->SetAlpha( 1.0f );
+
+	// Snapshot light-colour row 0 like SkinMesh. ATreeManager2 passes the per-instance FOB tint
+	// selector (sunExposure, tintType, -1) through it; WorldShader::Render consumes it for "fob"
+	// materials (z = -1 marks a valid selector)
+	pRenderPacket->SetLightColour( pRenderInterface->GetLightColour().AsBasisVector3( 0 ) );
 	pRenderPacket->m_pUnk = pLightData;
 
 	return TTRUE;

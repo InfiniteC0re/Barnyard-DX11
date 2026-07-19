@@ -32,6 +32,7 @@ workspace "Barnyard Remastered"
 		"BAN_OPCODE_AUTOLINK",
 		"ICE_NO_DLL",
 		"BARNYARD_COMMUNITY_PATCH",
+		"BARNYARD_IGNORE_ASSET_PACKS",
 		"USE_ATOMIC",
 	}
 

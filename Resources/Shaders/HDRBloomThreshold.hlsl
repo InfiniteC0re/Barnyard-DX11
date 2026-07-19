@@ -15,7 +15,14 @@ cbuffer KawaseCBuffer : register( b1 )
 // Subtracting threshold per-channel would bias toward whichever channel was already brightest.
 float3 sampleThresholded( float2 uv )
 {
-    float3 color      = tex.Sample( texSamp, uv ).rgb;
+    float3 color = tex.Sample( texSamp, uv ).rgb;
+
+    // Sanitize before thresholding: max() drops NaN to 0 (D3D min/max return the non-NaN operand),
+    // min() caps Inf/fireflies. The 12 cap only limits how hard one pixel can bloom -- real bright
+    // areas sit below it (sky ~2, emissives <4, clamped speculars <=8); 64 still let one-pixel spikes
+    // bloom into "butterflies"
+    color = min( max( color, 0.0 ), 12.0 );
+
     float  brightness = max( color.r, max( color.g, color.b ) );
     float  weight     = max( brightness - cb_threshold, 0.0 ) / max( brightness, 1e-5 );
     return color * weight;

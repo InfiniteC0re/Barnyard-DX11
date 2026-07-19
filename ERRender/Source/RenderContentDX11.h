@@ -1,5 +1,6 @@
 #pragma once
 #include <Render/TRenderContext.h>
+#include <StaticLights.h>
 
 namespace remaster
 {
@@ -20,13 +21,28 @@ public:
 
 	const Toshi::TMatrix44& GetProjectionMatrix() const { return m_Projection; }
 
-	void                       ClearStaticLightIDs() { m_oStaticLightIds.Reset(); }
-	void                       AddStaticLight( Toshi::TLightID a_iLightId ) { m_oStaticLightIds.Add( a_iLightId ); }
-	const Toshi::TLightIDList& GetStaticLightIDs() const { return m_oStaticLightIds; }
+	// Per-cell static light IDs; -1 = empty slot
+	void         ClearStaticLightIDs()
+	{
+		for ( TINT i = 0; i < MAX_CELL_STATIC_LIGHTS; i++ )
+			m_aStaticLightIds[ i ] = -1;
+	}
+	void         AddStaticLight( TINT8 a_iLightId )
+	{
+		for ( TINT i = 0; i < MAX_CELL_STATIC_LIGHTS; i++ )
+		{
+			if ( m_aStaticLightIds[ i ] == -1 )
+			{
+				m_aStaticLightIds[ i ] = a_iLightId;
+				return;
+			}
+		}
+	}
+	const TINT8* GetStaticLightIDs() const { return m_aStaticLightIds; }
 
 private:
-	Toshi::TMatrix44    m_Projection;
-	Toshi::TLightIDList m_oStaticLightIds;
+	Toshi::TMatrix44 m_Projection;
+	TINT8            m_aStaticLightIds[ MAX_CELL_STATIC_LIGHTS ];
 };
 
 }

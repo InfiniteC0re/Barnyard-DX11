@@ -109,8 +109,8 @@ void remaster::GrassShaderDX11::StartFlush()
         pCurrentContext->m_fFogDistanceEnd
     );
 
-	g_pRender->SetCullMode( D3D11_CULL_FRONT );
-		
+	g_pRender->SetCullMode( g_bReflectionCaptureActive ? D3D11_CULL_NONE : D3D11_CULL_FRONT );
+
 	UpdateAnimation();
 }
 
@@ -260,40 +260,29 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	g_pRender->SetShaderPipelineState( m_vecGrassPipelines[ shadercombos::GetGrassComboIndex( uiComboFlags ) ] );
 
-	// Fill vertex constant buffer
-	// Setup model view projection matrix
-	TMatrix44 mMVP;
-	mMVP.Multiply( pCurrentContext->GetProjectionMatrix(), a_pRenderPacket->GetModelViewMatrix() );
-	g_pRender->VSBufferSetMat4( 0, mMVP );
+	// Only the model matrix ships per draw; the clip transform (world * pp_matViewProj) is refreshed at pass boundaries
+	g_pRender->UpdatePassViewProj( pCurrentContext->GetProjectionMatrix(), pCurrentContext->GetWorldViewMatrix() );
 
 	TMatrix44 mModel;
 	mModel.Multiply( pCurrentContext->GetViewWorldMatrix(), a_pRenderPacket->GetModelViewMatrix() );
-	g_pRender->VSBufferSetMat4( 10, mModel );
+	g_pRender->VSBufferSetMat4( 0, mModel );
 
-	// Setup UV offset
 	g_vecAnimOffset.w = 1.0f;
 	g_pRender->VSBufferSetVec4( 4, g_vecAnimOffset );
 
-	// Setup colors
 	WorldShaderDX11* pWorldShader = TSTATICCAST( WorldShaderDX11, AWorldShader::GetSingleton() );
 
-	g_pRender->VSBufferSetVec4( 5, pWorldShader->GetAmbientColour() );
-	g_pRender->VSBufferSetVec4( 6, pWorldShader->GetShadowColour() );
-
-	// Fog settings
-	TVector4 vMiscSettings;
-	vMiscSettings.x = pCurrentContext->m_fFogDistanceStart;
-	vMiscSettings.y = pCurrentContext->m_fFogDistanceEnd;
+	g_pRender->PassBufferSetVec4( PASSBUF_AMBIENT_COLOR, pWorldShader->GetAmbientColour() );
+	g_pRender->PassBufferSetVec4( PASSBUF_SHADOW_COLOR, pWorldShader->GetShadowColour() );
 
 	TVector4 vFogColor = pCurrentContext->m_FogColor;
 	vFogColor.w        = s_flFogDensity;
 
-	g_pRender->VSBufferSetVec4( 7, vMiscSettings );
-	g_pRender->VSBufferSetVec4( 8, vFogColor );
+	g_pRender->PassBufferSetVec4( PASSBUF_FOG_PARAMS, TVector4( pCurrentContext->m_fFogDistanceStart, pCurrentContext->m_fFogDistanceEnd, 0.0f, 0.0f ) );
+	g_pRender->PassBufferSetVec4( PASSBUF_FOG_COLOR, vFogColor );
 
-	// Setup model normal offset
 	TVector4 vecOffset = TVector4( 0.0f, 0.0f, 0.0f, 0.0f );
-	g_pRender->VSBufferSetVec4( 9, vecOffset );
+	g_pRender->VSBufferSetVec4( 5, vecOffset );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
@@ -310,7 +299,7 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	if ( bHasDynLight ) UploadDynamicLights( a_pRenderPacket );
 
 	// Per-cell static point light indices into the global static-light cbuffer (b3).
-	g_pRender->GetLightManager().UploadCellStaticLightIndices( a_pRenderPacket, 14 );
+	g_pRender->GetLightManager().UploadCellStaticLightIndices( a_pRenderPacket, 6, 8 );
 
 	// Set grass texture
 	g_pRender->PSSetShaderResource( 0, g_pGrassTexture );
@@ -328,17 +317,20 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		TNULL
 	);
 
-	// Layers...
+	// cube capture: base layer only (like the CSM pass)
+	if ( g_bReflectionCaptureActive )
+		return;
+
 	ACamera* pCamera   = ACameraManager::GetSingleton()->GetCurrentCamera();
 	TVector4 vecCamPos = pCamera->m_Matrix.GetTranslation();
 
-	// Transform coordinates to the actual world position, since they are exported rotated
+	TVector4 vecMeshCenter = pMesh->GetCellMeshSphere()->m_BoundingSphere.AsVector4();
+	vecMeshCenter.w        = 1.0f;
+
 	TVector4 vecMeshBounding;
-	vecMeshBounding.x = pMesh->GetCellMeshSphere()->m_BoundingSphere.AsVector4().x;
-	vecMeshBounding.y = -pMesh->GetCellMeshSphere()->m_BoundingSphere.AsVector4().z;
-	vecMeshBounding.z = pMesh->GetCellMeshSphere()->m_BoundingSphere.AsVector4().y;
+	TMatrix44::TransformVector( vecMeshBounding, mModel, vecMeshCenter );
 	vecMeshBounding.w = pMesh->GetCellMeshSphere()->m_BoundingSphere.GetRadius();
-	
+
 	TFLOAT fDistanceToCamera = TVector4::DistanceXZ( vecMeshBounding, vecCamPos ) - vecMeshBounding.w;
 
 	constexpr TFLOAT MAX_DISTANCE = 200.0f;
@@ -369,10 +361,10 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 			vecOffset.x += fStepSize;
 			vecOffset.y += fStepSize;
 			vecOffset.z += fStepSize;
-			g_pRender->VSBufferSetVec4( 9, vecOffset );
-			g_pRender->VSBufferSetMat4( 10, mModel );
+			g_pRender->VSBufferSetVec4( 5, vecOffset );
+			g_pRender->VSBufferSetMat4( 0, mModel );
 
-			g_pRender->GetLightManager().UploadCellStaticLightIndices( a_pRenderPacket, 14 );
+			g_pRender->GetLightManager().UploadCellStaticLightIndices( a_pRenderPacket, 6, 8 );
 
 			// Draw layer
 			g_pRender->DrawIndexed(

@@ -21,7 +21,19 @@ float LinearizeDepth( float hardwareDepth )
 float ps_main( PS_IN i ) : SV_TARGET
 {
     float centerDepth = LinearizeDepth( depthTexture.SampleLevel( pointSampler, i.UV, 0 ).r );
+    float centerInvZ  = 1.0f / max( centerDepth, 0.00001f );
     float2 delta = cb_BlurParams.xy * cb_BlurParams.zw;
+
+    // Slope-aware bilateral: weight neighbours by deviation from the gradient-*predicted* depth, not
+    // centre depth, or a grazing plane's gradient reads as an edge and rejects everything (AO jitter).
+    // Slope is in 1/Z (perspective-linear across a plane, so exact), converted back to linear Z for the
+    // sharpness units. Min-magnitude one-sided difference: on a plane both sides agree, at an edge the
+    // clean side wins
+    float invZPlus  = 1.0f / max( LinearizeDepth( depthTexture.SampleLevel( pointSampler, i.UV + delta, 0 ).r ), 0.00001f );
+    float invZMinus = 1.0f / max( LinearizeDepth( depthTexture.SampleLevel( pointSampler, i.UV - delta, 0 ).r ), 0.00001f );
+    float slopePlus  = invZPlus  - centerInvZ;
+    float slopeMinus = centerInvZ - invZMinus;
+    float slopeInvZ  = abs( slopePlus ) < abs( slopeMinus ) ? slopePlus : slopeMinus;
 
     float totalAO = aoTexture.SampleLevel( pointSampler, i.UV, 0 ).r;
     float totalWeight = 1.0f;
@@ -36,7 +48,9 @@ float ps_main( PS_IN i ) : SV_TARGET
         {
             float2 sampleUV = i.UV + delta * (float)( r * side );
             float sampleDepth = LinearizeDepth( depthTexture.SampleLevel( pointSampler, sampleUV, 0 ).r );
-            float depthWeight = exp2( -abs( sampleDepth - centerDepth ) * cb_DepthParams.z );
+            float expectedInvZ  = centerInvZ + slopeInvZ * (float)( r * side );
+            float expectedDepth = 1.0f / max( expectedInvZ, 0.00001f );
+            float depthWeight = exp2( -abs( sampleDepth - expectedDepth ) * cb_DepthParams.z );
             float weight = kernel * depthWeight;
 
             totalAO += aoTexture.SampleLevel( linearSampler, sampleUV, 0 ).r * weight;

@@ -64,6 +64,26 @@ enum SAMPLERSTATE : TINT
 // Selects the linear (anisotropic) sampler matching a texture's U/V addressing.
 TINT GetLinearSamplerForAddressing( Toshi::ADDRESSINGMODE a_eAddressU, Toshi::ADDRESSINGMODE a_eAddressV );
 
+// Slots of the shared per-pass constant buffer (b4, VS+PS); layout mirrors PerPassCB in Resources\Shaders\PerPass.hlsli
+typedef TUINT32 PassBufferOffset;
+enum PassBufferOffset_ : PassBufferOffset
+{
+	PASSBUF_CAMERA_POS,     // xyz = camera world position
+	PASSBUF_SUN_DIRECTION,  // xyz = direction toward the sun (world)
+	PASSBUF_FOG_COLOR,      // xyz = fog colour, w = density
+	PASSBUF_FOG_PARAMS,     // x = fog start, y = fog end
+	PASSBUF_WIND_PARAMS,    // xy = wind dir (world XZ), z = strength, w = time
+	PASSBUF_ENV_SPECULAR,   // x = global env intensity, y = cube max mip
+	PASSBUF_ENV_PARALLAX,   // xyz = "to" box half-extents
+	PASSBUF_ENV_PROBE_POS,  // xyz = "to" probe centre, w = blend
+	PASSBUF_ENV_PARALLAX2,  // xyz = "from" box half-extents
+	PASSBUF_ENV_PROBE_POS2, // xyz = "from" probe centre
+	PASSBUF_AMBIENT_COLOR,  // world ambient colour
+	PASSBUF_SHADOW_COLOR,   // world shadow colour
+	PASSBUF_VIEWPROJ,       // 4 slots: world -> clip matrix (see UpdatePassViewProj)
+	PASSBUF_NUMOF = PASSBUF_VIEWPROJ + 4,
+};
+
 //-----------------------------------------------------------------------------
 // Runtime graphics settings
 //
@@ -80,6 +100,7 @@ enum GFXDirtyFlags : TUINT
 	GFX_DIRTY_VSYNC       = 1 << 2, // Present sync interval
 	GFX_DIRTY_MSAA        = 1 << 3, // offscreen MSAA sample count -> rebuild sized RTs
 	GFX_DIRTY_CSM         = 1 << 4, // CSM shadow-map resolution preset
+	GFX_DIRTY_AA          = 1 << 5, // post-process AA mode (no rebuild; shader-path swap)
 };
 
 enum DisplayMode : TUINT
@@ -87,6 +108,14 @@ enum DisplayMode : TUINT
 	DISPLAY_WINDOWED,
 	DISPLAY_BORDERLESS,
 	DISPLAY_FULLSCREEN,
+};
+
+// Post-process anti-aliasing applied to the tone-mapped LDR image, independent of MSAA
+enum AAMode : TUINT
+{
+	AA_NONE, // no post-process AA
+	AA_FXAA, // FXAA 3.11
+	AA_SMAA, // SMAA 1x
 };
 
 struct GraphicsSettings
@@ -97,6 +126,7 @@ struct GraphicsSettings
 	TBOOL       bVSync        = TFALSE;
 	TUINT       uiMSAASamples = 1;                 // 1/2/4/8 desired (clamped to device support)
 	CSMPreset   eCSMPreset    = CSM_PRESET_MEDIUM;
+	AAMode      eAAMode       = AA_NONE;           // post-process AA (FXAA/SMAA)
 };
 
 class RenderDX11 : public Toshi::TRenderInterface
@@ -106,8 +136,8 @@ public:
 
 	static constexpr TUINT MSAA_SAMPLE_COUNT            = 4;
 	static constexpr TSIZE HEAPSIZE                     = 0x10000;
-	static constexpr TSIZE VERTEX_CONSTANT_BUFFER_SIZE  = 512; // 32 vec4 slots, bound to VS/PS b0 per draw
-	static constexpr TSIZE PIXEL_CONSTANT_BUFFER_SIZE   = 256;
+	static constexpr TSIZE VERTEX_CONSTANT_BUFFER_SIZE  = 192; // 12 vec4 slots (Skin's per-draw max), bound to VS/PS b0 per draw
+	static constexpr TSIZE PASS_CONSTANT_BUFFER_SIZE    = PASSBUF_NUMOF * 16; // bound to VS/PS b4
 	static constexpr TSIZE SHADOW_CONSTANT_BUFFER_SIZE  = sizeof( ShadowCBufferData );
 	static constexpr TSIZE NUMBUFFERS                   = 1;
 	static constexpr TSIZE IMMEDIATE_VERTEX_BUFFER_SIZE = 0x4000;
@@ -228,12 +258,6 @@ public:
 
 	};
 
-	typedef TUINT32 PSBufferOffset;
-	enum PSBufferOffset_ : PSBufferOffset
-	{
-
-	};
-
 	enum FONT
 	{
 		FONT_REKORD26,
@@ -305,6 +329,7 @@ public:
 	void RequestVSync( TBOOL a_bEnabled );
 	void RequestMSAA( TUINT a_uiSamples );
 	void RequestCSMPreset( CSMPreset a_ePreset );
+	void RequestAAMode( AAMode a_eMode );
 
 	// Consumes m_uiGraphicsDirty and applies the pending settings. Must be called
 	// between frames (outside BeginScene/EndScene); see Update().
@@ -342,7 +367,6 @@ public:
 	// Buffers management
 	//-----------------------------------------------------------------------------
 	void VSBufferSetVec4( VSBufferOffset a_uiOffset, __m128 a_vData );
-	void PSBufferSetVec4( PSBufferOffset a_uiOffset, __m128 a_vData );
 
 	void VSBufferSetMat4( VSBufferOffset a_uiOffset, const Toshi::TMatrix44& a_rData )
 	{
@@ -352,9 +376,22 @@ public:
 		VSBufferSetVec4( a_uiOffset + 3, _mm_load_ps( &a_rData.m_f41 ) );
 	}
 
-	// TVector4 -> __m128 helpers
+	// Per-pass (b4) constants: compare-and-set into the CPU shadow copy; uploaded by FlushConstantBuffers only when a value changed
+	void PassBufferSetVec4( PassBufferOffset a_uiOffset, __m128 a_vData );
+
+	void PassBufferSetMat4( PassBufferOffset a_uiOffset, const Toshi::TMatrix44& a_rData )
+	{
+		PassBufferSetVec4( a_uiOffset + 0, _mm_load_ps( &a_rData.m_f11 ) );
+		PassBufferSetVec4( a_uiOffset + 1, _mm_load_ps( &a_rData.m_f21 ) );
+		PassBufferSetVec4( a_uiOffset + 2, _mm_load_ps( &a_rData.m_f31 ) );
+		PassBufferSetVec4( a_uiOffset + 3, _mm_load_ps( &a_rData.m_f41 ) );
+	}
+
+	// Refresh the per-pass world->clip matrix (PASSBUF_VIEWPROJ); only redoes the 4x4 multiply when an input changed
+	void UpdatePassViewProj( const Toshi::TMatrix44& a_rProjection, const Toshi::TMatrix44& a_rWorldView );
+
 	void VSBufferSetVec4( VSBufferOffset a_uiOffset, const Toshi::TVector4& a_rData ) { VSBufferSetVec4( a_uiOffset, _mm_load_ps( &a_rData.x ) ); }
-	void PSBufferSetVec4( VSBufferOffset a_uiOffset, const Toshi::TVector4& a_rData ) { PSBufferSetVec4( a_uiOffset, _mm_load_ps( &a_rData.x ) ); }
+	void PassBufferSetVec4( PassBufferOffset a_uiOffset, const Toshi::TVector4& a_rData ) { PassBufferSetVec4( a_uiOffset, _mm_load_ps( &a_rData.x ) ); }
 
 public:
 	//-----------------------------------------------------------------------------
@@ -422,9 +459,17 @@ public:
 		ClearStateCache();
 
 		for ( TINT i = 0; i < TARRAYSIZE( m_aVSCurrentConstantBuffers ); i++ )
+		{
 			m_aVSCurrentConstantBuffers[ i ] = TNULL;
+			m_aVSCurrentCBFirst[ i ]         = 0;
+			m_aVSCurrentCBNum[ i ]           = 0;
+		}
 		for ( TINT i = 0; i < TARRAYSIZE( m_aPSCurrentConstantBuffers ); i++ )
+		{
 			m_aPSCurrentConstantBuffers[ i ] = TNULL;
+			m_aPSCurrentCBFirst[ i ]         = 0;
+			m_aPSCurrentCBNum[ i ]           = 0;
+		}
 		for ( TINT i = 0; i < TARRAYSIZE( m_aVSCurrentSampleStates ); i++ )
 			m_aVSCurrentSampleStates[ i ] = TNULL;
 		for ( TINT i = 0; i < TARRAYSIZE( m_aPSCurrentSampleStates ); i++ )
@@ -477,14 +522,17 @@ public:
 		}
 	}
 
+	// Whole-buffer binds reset the cached range to the 0/0 sentinel so a later ranged bind of the same buffer isn't wrongly skipped by the cache
 	void VSSetConstantBuffer( TINT a_iSlot, ID3D11Buffer* a_pBuffer )
 	{
 		TASSERT( a_iSlot < TARRAYSIZE( m_aVSCurrentConstantBuffers ) );
 
-		if ( m_aVSCurrentConstantBuffers[ a_iSlot ] != a_pBuffer )
+		if ( m_aVSCurrentConstantBuffers[ a_iSlot ] != a_pBuffer || m_aVSCurrentCBNum[ a_iSlot ] != 0 )
 		{
 			m_pDeviceContext->VSSetConstantBuffers( a_iSlot, 1, &a_pBuffer );
 			m_aVSCurrentConstantBuffers[ a_iSlot ] = a_pBuffer;
+			m_aVSCurrentCBFirst[ a_iSlot ]         = 0;
+			m_aVSCurrentCBNum[ a_iSlot ]           = 0;
 		}
 	}
 
@@ -492,10 +540,39 @@ public:
 	{
 		TASSERT( a_iSlot < TARRAYSIZE( m_aPSCurrentConstantBuffers ) );
 
-		if ( m_aPSCurrentConstantBuffers[ a_iSlot ] != a_pBuffer )
+		if ( m_aPSCurrentConstantBuffers[ a_iSlot ] != a_pBuffer || m_aPSCurrentCBNum[ a_iSlot ] != 0 )
 		{
 			m_pDeviceContext->PSSetConstantBuffers( a_iSlot, 1, &a_pBuffer );
 			m_aPSCurrentConstantBuffers[ a_iSlot ] = a_pBuffer;
+			m_aPSCurrentCBFirst[ a_iSlot ]         = 0;
+			m_aPSCurrentCBNum[ a_iSlot ]           = 0;
+		}
+	}
+
+	// Ranged binds via *SetConstantBuffers1: first/count are 16-byte constants, must be multiples of 16 (256-byte granularity); needs the 11.1 context
+	void VSSetConstantBufferRange( TINT a_iSlot, ID3D11Buffer* a_pBuffer, TUINT a_uiFirstConstant, TUINT a_uiNumConstants )
+	{
+		TASSERT( a_iSlot < TARRAYSIZE( m_aVSCurrentConstantBuffers ) );
+
+		if ( m_aVSCurrentConstantBuffers[ a_iSlot ] != a_pBuffer || m_aVSCurrentCBFirst[ a_iSlot ] != a_uiFirstConstant || m_aVSCurrentCBNum[ a_iSlot ] != a_uiNumConstants )
+		{
+			m_pDeviceContext1->VSSetConstantBuffers1( a_iSlot, 1, &a_pBuffer, &a_uiFirstConstant, &a_uiNumConstants );
+			m_aVSCurrentConstantBuffers[ a_iSlot ] = a_pBuffer;
+			m_aVSCurrentCBFirst[ a_iSlot ]         = a_uiFirstConstant;
+			m_aVSCurrentCBNum[ a_iSlot ]           = a_uiNumConstants;
+		}
+	}
+
+	void PSSetConstantBufferRange( TINT a_iSlot, ID3D11Buffer* a_pBuffer, TUINT a_uiFirstConstant, TUINT a_uiNumConstants )
+	{
+		TASSERT( a_iSlot < TARRAYSIZE( m_aPSCurrentConstantBuffers ) );
+
+		if ( m_aPSCurrentConstantBuffers[ a_iSlot ] != a_pBuffer || m_aPSCurrentCBFirst[ a_iSlot ] != a_uiFirstConstant || m_aPSCurrentCBNum[ a_iSlot ] != a_uiNumConstants )
+		{
+			m_pDeviceContext1->PSSetConstantBuffers1( a_iSlot, 1, &a_pBuffer, &a_uiFirstConstant, &a_uiNumConstants );
+			m_aPSCurrentConstantBuffers[ a_iSlot ] = a_pBuffer;
+			m_aPSCurrentCBFirst[ a_iSlot ]         = a_uiFirstConstant;
+			m_aPSCurrentCBNum[ a_iSlot ]           = a_uiNumConstants;
 		}
 	}
 
@@ -706,8 +783,14 @@ public:
 	CSMManager&   GetCSMManager() { return m_oCSMManager; }
 	LightManager& GetLightManager() { return m_oLightManager; }
 
+	// TRUE when *SetConstantBuffers1 offset binding is usable (11.1 context + driver support)
+	TBOOL IsCBOffsettingSupported() const { return m_bCBOffsettingSupported; }
+
 private:
 	void BuildAdapterDatabase();
+
+	void CreatePostAAStaticResources();
+	void UpdateAAConstants();
 
 private:
 	ID3D11Device*         m_pDevice         = TNULL; // NOTE: DUE TO COMPATIBILITY, IT NEEDS TO BE AT THIS OFFSET!!!
@@ -743,6 +826,23 @@ private:
 	ID3D11RenderTargetView*   m_pSwapChainBackBufferRTV  = TNULL;
 	ID3D11Texture2D*          m_pPresentResolveTexture   = TNULL;
 	ID3D11ShaderResourceView* m_pPresentResolveSRV       = TNULL;
+
+	// LDR landing buffer the tone-map pass writes when post-AA is active (swapchain-sized)
+	ID3D11Texture2D*          m_pAALDRTexture            = TNULL;
+	ID3D11RenderTargetView*   m_pAALDRRTV                = TNULL;
+	ID3D11ShaderResourceView* m_pAALDRSRV                = TNULL;
+	// SMAA intermediate targets (swapchain-sized): edges and blend weights
+	ID3D11Texture2D*          m_pSMAAEdgesTexture        = TNULL;
+	ID3D11RenderTargetView*   m_pSMAAEdgesRTV            = TNULL;
+	ID3D11ShaderResourceView* m_pSMAAEdgesSRV            = TNULL;
+	ID3D11Texture2D*          m_pSMAABlendTexture        = TNULL;
+	ID3D11RenderTargetView*   m_pSMAABlendRTV            = TNULL;
+	ID3D11ShaderResourceView* m_pSMAABlendSRV            = TNULL;
+	// SMAA precomputed lookup textures (created once; live for the device lifetime)
+	ID3D11ShaderResourceView* m_pSMAAAreaSRV             = TNULL;
+	ID3D11ShaderResourceView* m_pSMAASearchSRV           = TNULL;
+	// AA constant buffer (PS slot b1): RT metrics = ( 1/w, 1/h, w, h )
+	ID3D11Buffer*             m_pAAConstantBuffer        = TNULL;
 	ID3D11RenderTargetView*   m_pRenderTargetView        = TNULL;
 	ID3D11Texture2D*          m_pRenderTargetTexture     = TNULL;
 	ID3D11ShaderResourceView* m_pRenderTargetSRV         = TNULL;
@@ -788,11 +888,17 @@ private:
 	TSIZE         m_VertexBufferNewSize;
 	TSIZE         m_VertexBufferCurSize;
 
-	void* m_pPixelConstantBuffer;
-	TBOOL m_IsPixelConstantBufferSet;
+	// Per-pass constant buffer (b4): CPU shadow copy + dirty flag (see PassBufferSetVec4)
+	void*         m_pPassConstantBuffer  = TNULL;
+	TBOOL         m_bPassBufferDirty     = TFALSE;
+	ID3D11Buffer* m_pPassBuffer          = TNULL;
 
-	ID3D11Buffer* m_PixelBuffers[ NUMBUFFERS ];
-	TSIZE         m_PixelBufferIndex;
+	// UpdatePassViewProj change-detection inputs (valid once the first pass ran)
+	Toshi::TMatrix44 m_oPassProjection;
+	Toshi::TMatrix44 m_oPassWorldView;
+	TBOOL            m_bPassViewProjValid = TFALSE;
+
+	TBOOL m_bCBOffsettingSupported = TFALSE; // D3D11.1 *SetConstantBuffers1 offsets usable
 
 	ID3D11Buffer* m_MainVertexBuffer;
 	TUINT         m_iImmediateVertexCurrentOffset;
@@ -843,6 +949,11 @@ private:
 
 	ID3D11Buffer* m_aVSCurrentConstantBuffers[ 16 ];
 	ID3D11Buffer* m_aPSCurrentConstantBuffers[ 16 ];
+	// Cached *SetConstantBuffers1 ranges per slot (16-byte constants); 0/0 = whole-buffer bind
+	TUINT         m_aVSCurrentCBFirst[ 16 ] = {};
+	TUINT         m_aVSCurrentCBNum[ 16 ]   = {};
+	TUINT         m_aPSCurrentCBFirst[ 16 ] = {};
+	TUINT         m_aPSCurrentCBNum[ 16 ]   = {};
 
 	ID3D11SamplerState* m_aVSCurrentSampleStates[ D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT ];
 	ID3D11SamplerState* m_aPSCurrentSampleStates[ D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT ];

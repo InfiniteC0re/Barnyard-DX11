@@ -65,14 +65,22 @@ struct DynamicLightCBuffer
 enum StaticLightFlags : TUINT8
 {
 	STATIC_LIGHT_ENABLED    = 1 << 0,
-	STATIC_LIGHT_NIGHT_ONLY = 1 << 1, 
+	STATIC_LIGHT_NIGHT_ONLY = 1 << 1,
 };
+
+// Sentinel for StaticPointLight::iLightMag: ignore the day/night cycle, always on (subject only to STATIC_LIGHT_NIGHT_ONLY)
+static constexpr TINT8 STATIC_LIGHT_NO_MAG = -1;
+
+// Number of building-light groups in ATerrainInterface::m_afLightMags (mirrors that array's size)
+static constexpr TINT STATIC_LIGHT_MAG_COUNT = 12;
 
 struct StaticPointLight
 {
 	Toshi::TVector4 vPosition; // xyz = world pos, w = radius
 	Toshi::TVector4 vColor;    // xyz = RGB,       w = intensity
 	TUINT8          uiFlags;   // bitmask of StaticLightFlags
+	TINT8           iLightMag; // -1 = always on, else index into ATerrainInterface::m_afLightMags [0..11]:
+	                           // the light is active only while that building-light group's mag is > 0
 };
 
 static constexpr TINT MAX_STATIC_POINT_LIGHTS = 64;
@@ -127,11 +135,12 @@ public:
 	// Uploads all static lights into the global cbuffer (PS slot 3); call once per frame.
 	void UploadStaticLightsGlobalCBuffer();
 
-	// Writes the packet's per-cell light indices to b0 slot a_iVSBaseSlot and their count to
-	// slot a_iVSBaseSlot + 1; the shader looks the indices up in the global cbuffer.
-	void UploadCellStaticLightIndices( Toshi::TRenderPacket* a_pRenderPacket, TINT a_iVSBaseSlot );
+	// Writes the packet's per-cell static-light indices to b0 (indices 0..3 at a_iVSBaseSlot,
+	// count at a_iVSBaseSlot + 1, indices 4..7 at a_iVSIndices2Slot); up to MAX_CELL_STATIC_LIGHTS (8) per cell
+	void UploadCellStaticLightIndices( Toshi::TRenderPacket* a_pRenderPacket, TINT a_iVSBaseSlot, TINT a_iVSIndices2Slot );
 
-	void GetInfluencingStaticLightIDs( const Toshi::TSphere& a_rcBounds, Toshi::TLightIDList& a_rOutList ) const;
+	// Fills a_pOutIDs (TINT8[MAX_CELL_STATIC_LIGHTS], -1 = empty) with lights whose influence sphere overlaps the bounds
+	void GetInfluencingStaticLightIDs( const Toshi::TSphere& a_rcBounds, TINT8* a_pOutIDs ) const;
 
 	// Stores a static light and returns its index, or -1 when the table is full.
 	TINT  AddStaticPointLight( const StaticPointLight& a_rLight );

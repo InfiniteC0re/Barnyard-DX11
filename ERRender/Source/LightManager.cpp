@@ -6,6 +6,7 @@
 #include <Render/TRenderPacket.h>
 #include <BYardSDK/AGlowViewport.h>
 #include <BYardSDK/ACamera.h>
+#include <BYardSDK/ATerrainInterface.h>
 #include <Toshi/TScheduler.h>
 
 //-----------------------------------------------------------------------------
@@ -108,9 +109,32 @@ TBOOL  g_bDynamicLightFlickerEnabled   = TTRUE;
 TFLOAT g_flDynamicLightFlickerSpeed    = 5.0f;
 TFLOAT g_flDynamicLightFlickerStrength = 0.1f;
 
-// A gentle, never-quite-repeating brightness wobble. Three sine waves at unrelated
-// frequencies (a slow swell, a mid flutter and a fast crackle) keep it from looking
-// mechanical. Each light flickers on its own settings.
+static TBOOL IsItNight()
+{
+	const TCHAR* pGameTimeManager = *TREINTERPRETCAST( const TCHAR**, 0x00783d3c );
+	return pGameTimeManager && *TREINTERPRETCAST( const TINT*, pGameTimeManager + 0x34 ) == 4;
+}
+
+// A light bound to a building-light group (iLightMag >= 0) is on while that group's mag in
+// ATerrainInterface is > 0; an unbound light falls back to the STATIC_LIGHT_NIGHT_ONLY gate
+static TBOOL IsStaticLightLitNow( const StaticPointLight& a_rLight )
+{
+	if ( a_rLight.iLightMag >= 0 && a_rLight.iLightMag < STATIC_LIGHT_MAG_COUNT )
+	{
+		ATerrainInterface* pTerrain = ATerrainInterface::GetSingleton();
+		// Before the terrain is up there are no mags to read; keep the light visible
+		if ( pTerrain )
+			return pTerrain->m_afLightMags[ a_rLight.iLightMag ] > 0.0f;
+		return TTRUE;
+	}
+
+	if ( a_rLight.uiFlags & STATIC_LIGHT_NIGHT_ONLY )
+		return IsItNight();
+
+	return TTRUE;
+}
+
+// Three sine waves at unrelated frequencies give a never-quite-repeating wobble so the flicker doesn't look mechanical
 static TFLOAT ComputeFlickerMultiplier( const DynamicLightSettings& a_rSettings )
 {
 	if ( !a_rSettings.bFlickerEnabled )
@@ -502,6 +526,11 @@ void LightManager::RenderDynamicLightShadowMaps()
 		if ( !pGlowObject->IsEnabled() )
 			continue;
 
+		// IsEnabled() doesn't cover the day/night gate, so without this a dark night lamp lingers
+		// in the shadow list during the day and still gets scattered by the volumetric fog
+		if ( pGlowObject->IsNightLight() && !IsItNight() )
+			continue;
+
 		TMatrix44 oGlowWorld;
 		if ( !BuildGlowObjectWorldTransform( oGlowWorld, pGlowObject ) )
 			continue;
@@ -614,30 +643,22 @@ void LightManager::UploadVolumetricDynamicLightsCBuffer()
 // Static point lights
 //-----------------------------------------------------------------------------
 
-// Current night state, read the same way AGlowViewport gates its night lights:
-// AGameTimeManager::ms_pInstance @ 0x00783d3c, day phase at +0x34 (4 == night).
-static TBOOL IsItNight()
+void LightManager::GetInfluencingStaticLightIDs( const TSphere& a_rcBounds, TINT8* a_pOutIDs ) const
 {
-	const TCHAR* pGameTimeManager = *TREINTERPRETCAST( const TCHAR**, 0x00783d3c );
-	return pGameTimeManager && *TREINTERPRETCAST( const TINT*, pGameTimeManager + 0x34 ) == 4;
-}
-
-void LightManager::GetInfluencingStaticLightIDs( const TSphere& a_rcBounds, TLightIDList& a_rOutList ) const
-{
-	a_rOutList.Reset();
+	for ( TINT i = 0; i < MAX_CELL_STATIC_LIGHTS; i++ )
+		a_pOutIDs[ i ] = -1;
 
 	const TVector3& vBoundsCenter = a_rcBounds.GetOrigin();
 	const TFLOAT    fBoundsRadius = a_rcBounds.GetRadius();
-	const TBOOL     bIsNight      = IsItNight();
 
 	TINT iNumAdded = 0;
-	for ( TINT i = 0; i < m_iNumStaticPointLights && iNumAdded < TLightIDList::MAX_NUM_LIGHTS; i++ )
+	for ( TINT i = 0; i < m_iNumStaticPointLights && iNumAdded < MAX_CELL_STATIC_LIGHTS; i++ )
 	{
 		const StaticPointLight& light = m_aStaticPointLights[ i ];
 		if ( !( light.uiFlags & STATIC_LIGHT_ENABLED ) )
 			continue;
 
-		if ( ( light.uiFlags & STATIC_LIGHT_NIGHT_ONLY ) && !bIsNight )
+		if ( !IsStaticLightLitNow( light ) )
 			continue;
 
 		// Sphere overlap: centre distance within the sum of radii.
@@ -645,10 +666,7 @@ void LightManager::GetInfluencingStaticLightIDs( const TSphere& a_rcBounds, TLig
 		const TFLOAT   fReach = fBoundsRadius + light.vPosition.w;
 
 		if ( TVector3::DistanceSq( vBoundsCenter, vLightCenter ) <= fReach * fReach )
-		{
-			a_rOutList.Add( TLightID( i ) );
-			iNumAdded++;
-		}
+			a_pOutIDs[ iNumAdded++ ] = TINT8( i );
 	}
 }
 
@@ -705,24 +723,29 @@ void LightManager::UploadStaticLightsGlobalCBuffer()
 	g_pRender->PSSetConstantBuffer( 3, m_pStaticLightBuffer );
 }
 
-void LightManager::UploadCellStaticLightIndices( Toshi::TRenderPacket* a_pRenderPacket, TINT a_iVSBaseSlot )
+void LightManager::UploadCellStaticLightIndices( Toshi::TRenderPacket* a_pRenderPacket, TINT a_iVSBaseSlot, TINT a_iVSIndices2Slot )
 {
-	TVector4 vIndices( -1.0f, -1.0f, -1.0f, -1.0f ); // xyzw = up to 4 indices, -1 = empty
-	TINT     iCount = 0;
+	TFLOAT aIndices[ MAX_CELL_STATIC_LIGHTS ];
+	for ( TINT i = 0; i < MAX_CELL_STATIC_LIGHTS; i++ )
+		aIndices[ i ] = -1.0f;
+	TINT iCount = 0;
 
 	// A null packet means this draw gets no static lights (e.g. glow/emissive meshes).
 	if ( a_pRenderPacket && a_pRenderPacket->m_pUnk )
 	{
-		const TLightIDList& rStatic = TREINTERPRETCAST( LightDataPacket*, a_pRenderPacket->m_pUnk )->oStaticLights;
-
-		if ( rStatic.aIDs[ 0 ] >= 0 ) { vIndices.x = TFLOAT( rStatic.aIDs[ 0 ] ); iCount = 1; }
-		if ( rStatic.aIDs[ 1 ] >= 0 ) { vIndices.y = TFLOAT( rStatic.aIDs[ 1 ] ); iCount = 2; }
-		if ( rStatic.aIDs[ 2 ] >= 0 ) { vIndices.z = TFLOAT( rStatic.aIDs[ 2 ] ); iCount = 3; }
-		if ( rStatic.aIDs[ 3 ] >= 0 ) { vIndices.w = TFLOAT( rStatic.aIDs[ 3 ] ); iCount = 4; }
+		const TINT8* rStatic = TREINTERPRETCAST( LightDataPacket*, a_pRenderPacket->m_pUnk )->oStaticLights;
+		for ( TINT i = 0; i < MAX_CELL_STATIC_LIGHTS; i++ )
+		{
+			if ( rStatic[ i ] < 0 )
+				break;
+			aIndices[ i ] = TFLOAT( rStatic[ i ] );
+			iCount        = i + 1;
+		}
 	}
 
-	g_pRender->VSBufferSetVec4( a_iVSBaseSlot, vIndices );
+	g_pRender->VSBufferSetVec4( a_iVSBaseSlot, TVector4( aIndices[ 0 ], aIndices[ 1 ], aIndices[ 2 ], aIndices[ 3 ] ) );
 	g_pRender->VSBufferSetVec4( a_iVSBaseSlot + 1, TVector4( TFLOAT( iCount ), 0.0f, 0.0f, 0.0f ) );
+	g_pRender->VSBufferSetVec4( a_iVSIndices2Slot, TVector4( aIndices[ 4 ], aIndices[ 5 ], aIndices[ 6 ], aIndices[ 7 ] ) );
 }
 
 } // namespace remaster

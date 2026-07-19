@@ -17,6 +17,8 @@ enum WorldComboFlags : TUINT
 	World_MATERIAL_MAPS = BITFLAG( 5 ),
 	World_PARALLAX = BITFLAG( 6 ),
 	World_CLOUD_SHADOWS = BITFLAG( 7 ),
+	World_WIND = BITFLAG( 8 ),
+	World_FOB = BITFLAG( 9 ),
 };
 
 static constexpr dx11::ShaderComboDefinition WorldCombos[] =
@@ -29,10 +31,12 @@ static constexpr dx11::ShaderComboDefinition WorldCombos[] =
 	{ "MATERIAL_MAPS", 0, 1, 32 },
 	{ "PARALLAX", 0, 1, 64 },
 	{ "CLOUD_SHADOWS", 0, 1, 128 },
+	{ "WIND", 0, 1, 256 },
+	{ "FOB", 0, 1, 512 },
 };
 
-static constexpr TUINT WorldNumCombos = 8;
-static constexpr TUINT WorldNumPermutations = 256;
+static constexpr TUINT WorldNumCombos = 10;
+static constexpr TUINT WorldNumPermutations = 1024;
 
 TINLINE TUINT GetWorldComboIndex( TUINT a_uiComboFlags )
 {
@@ -45,6 +49,8 @@ TINLINE TUINT GetWorldComboIndex( TUINT a_uiComboFlags )
 	uiIndex += ( ( ( a_uiComboFlags & World_MATERIAL_MAPS ) ? 1U : 0U ) - 0U ) * 32U;
 	uiIndex += ( ( ( a_uiComboFlags & World_PARALLAX ) ? 1U : 0U ) - 0U ) * 64U;
 	uiIndex += ( ( ( a_uiComboFlags & World_CLOUD_SHADOWS ) ? 1U : 0U ) - 0U ) * 128U;
+	uiIndex += ( ( ( a_uiComboFlags & World_WIND ) ? 1U : 0U ) - 0U ) * 256U;
+	uiIndex += ( ( ( a_uiComboFlags & World_FOB ) ? 1U : 0U ) - 0U ) * 512U;
 	return uiIndex;
 }
 

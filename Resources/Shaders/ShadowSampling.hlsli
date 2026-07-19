@@ -104,7 +104,10 @@ ShadowSetup ComputeShadowSetup(float3 worldPos, float3 worldNormal, int cascade)
     // the light, so the error grows as the surface faces away from the sun. Scale the
     // offset by 1/NdotL (capped) so grazing walls get more push than head-on surfaces.
     // It depends only on the per-pixel normal, so it stays consistent across cascades.
-    float NdotL        = saturate(dot(worldNormal, -cb_LightDirection.xyz));
+    // Toward-sun via the engine's (-x, +y, -z) mapping of the sun-travel vector (see the volumetric
+    // fog comment in ERRenderWrapper). Full negation had the wrong Y sign, misfiring the grazing test
+    float3 toSun       = float3(-cb_LightDirection.x, cb_LightDirection.y, -cb_LightDirection.z);
+    float NdotL        = saturate(dot(worldNormal, toSun));
     float grazingScale = clamp(1.0f / max(NdotL, 0.05f), 1.0f, cb_LightDirection.w);
     worldPos += worldNormal * (cb_CascadeWorldTexelSize.x * cb_CascadeScales.w * grazingScale);
 

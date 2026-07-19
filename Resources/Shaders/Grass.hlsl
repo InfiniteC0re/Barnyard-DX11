@@ -21,20 +21,18 @@ struct PS_IN
     float3 WorldNormal : TEXCOORD3;
 };
 
+// Per-draw constants. Per-pass values (ambient/shadow colours, fog) live in PerPass.hlsli (b4)
 cbuffer ConstantBuffer : register(b0)
 {
-    float4x4 cb_matMVP;
-	float4   cb_DisplaceOffset;
-    float4   cb_AmbientColor;
-	float4   cb_ShadowColor;
-    float    cb_FogStart;
-	float    cb_FogEnd;
-	float4   cb_FogColor;
-	float4   cb_WorldOffset;
-    float4x4 cb_matModel;
-    float4   cb_cellStaticLightIndices; // 14: xyzw = up to 4 static light indices into the global buffer (-1 = none)
-    float4   cb_cellStaticLightParams;  // 15: x = count
+    float4x4 cb_matModel;                // 0-3 (clip position = world * pp_matViewProj)
+    float4   cb_DisplaceOffset;          // 4
+    float4   cb_WorldOffset;             // 5
+    float4   cb_cellStaticLightIndices;  // 6: xyzw = up to 4 static light indices into the global buffer (-1 = none)
+    float4   cb_cellStaticLightParams;   // 7: x = count
+    float4   cb_cellStaticLightIndices2; // 8: xyzw = static light indices 4..7 (-1 = none)
 };
+
+#include "PerPass.hlsli"
 
 #if !NO_CSM
 #include "ShadowSampling.hlsli"
@@ -50,14 +48,13 @@ PS_IN vs_main(VS_IN In)
 {
     PS_IN Out;
 
-	// Calculate vertex screen position
     float3 objPos = In.ObjPos + (In.Normal + cb_DisplaceOffset.xyz) * cb_WorldOffset.xyz;
-    Out.ProjPos = mul(float4(objPos, 1.0f), cb_matMVP);
     Out.WorldPos = mul(float4(objPos, 1.0f), cb_matModel).xyz;
+    Out.ProjPos = mul(float4(Out.WorldPos, 1.0f), pp_matViewProj);
     Out.ViewDepth = Out.ProjPos.w;
     Out.WorldNormal = normalize(mul(In.Normal, (float3x3)cb_matModel));
 
-    Out.Color.xyz = lerp(cb_ShadowColor.xyz, cb_AmbientColor.xyz, In.Color.xyz);
+    Out.Color.xyz = lerp(pp_ShadowColor.xyz, pp_AmbientColor.xyz, In.Color.xyz);
     Out.Color.w = 1.0f;
 
     Out.UV0 = In.UV * cb_DisplaceOffset.w;
@@ -86,6 +83,15 @@ struct PS_OUT
     float4 GBuffer : SV_Target1;
 };
 
+#define GRASS_LIGHT_SATURATION_GAIN 1.2f
+float3 ApplyGrassLight(float3 baseColor, float3 light)
+{
+    float3 lit      = baseColor * (1.0f + light);
+    float  lightAmt = saturate(dot(light, float3(0.333f, 0.333f, 0.333f)));
+    float  lum      = dot(lit, float3(0.299f, 0.587f, 0.114f));
+    return max(0.0f, lum + (lit - lum) * (1.0f + lightAmt * GRASS_LIGHT_SATURATION_GAIN));
+}
+
 PS_OUT ps_main(PS_IN In)
 {
     float4 texColor = texture0.Sample(sampler0, In.UV0) * In.Color;
@@ -93,11 +99,11 @@ PS_OUT ps_main(PS_IN In)
 
 #if !NO_DYN_LIGHT
 	float3 glow = SampleDynamicGlowLights(In.WorldPos, In.WorldNormal);
-	texColor.rgb = ApplyDynamicGlowLighting(texColor.rgb, glow);
+	texColor.rgb = ApplyGrassLight(texColor.rgb, glow);
 #endif
 
-	float3 staticLight = SampleStaticPointLights(In.WorldPos, In.WorldNormal, cb_cellStaticLightIndices, (int)cb_cellStaticLightParams.x);
-	texColor.rgb *= 1.0f + staticLight;
+	float3 staticLight = SampleStaticPointLights(In.WorldPos, In.WorldNormal, cb_cellStaticLightIndices, cb_cellStaticLightIndices2, (int)cb_cellStaticLightParams.x);
+	texColor.rgb = ApplyGrassLight(texColor.rgb, staticLight);
 
 #if !NO_CSM
     float shadow = SampleShadow(In.WorldPos, In.WorldNormal, In.ViewDepth);
@@ -111,10 +117,10 @@ PS_OUT ps_main(PS_IN In)
 #endif
 
 #if !NO_FOG
-    float fogFactor = CalculateExponentialSquaredFog(In.ProjPos.w, cb_FogStart, cb_FogColor.w);
+    float fogFactor = CalculateExponentialSquaredFog(In.ProjPos.w, pp_FogParams.x, pp_FogColor.w);
 	fogFactor = saturate(fogFactor);
     // Apply fog by blending between fog color and original color
-    float3 finalColor = lerp(cb_FogColor.xyz, texColor.xyz * shadowScale, fogFactor);
+    float3 finalColor = lerp(pp_FogColor.xyz, texColor.xyz * shadowScale, fogFactor);
 #else
     float3 finalColor = texColor.xyz * shadowScale;
 #endif

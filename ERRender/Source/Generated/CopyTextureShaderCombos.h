@@ -96,12 +96,48 @@ TINLINE TBOOL CreateCopyTexturePixelShader_ps_main( ID3D11PixelShader** a_ppShad
 	return TTRUE;
 }
 
+inline dx11::ShaderCombo g_oCopyTexturePixelShaderCombo_ps_composite;
+inline TBOOL g_bCopyTexturePixelShaderComboCompiled_ps_composite = TFALSE;
+
+TINLINE TBOOL EnsureCopyTexturePixelShaderCombo_ps_composite()
+{
+	if ( !g_bCopyTexturePixelShaderComboCompiled_ps_composite )
+		g_bCopyTexturePixelShaderComboCompiled_ps_composite = g_oCopyTexturePixelShaderCombo_ps_composite.CompileFromFile( "Data\\Shaders\\CopyTexture.hlsl", "ps_composite", "ps_5_0", CopyTextureCombos, CopyTextureNumCombos, CopyTextureNumPermutations );
+
+	return g_bCopyTexturePixelShaderComboCompiled_ps_composite;
+}
+
+TINLINE dx11::ShaderCombo& GetCopyTexturePixelShaderCombo_ps_composite()
+{
+	TASSERT( g_bCopyTexturePixelShaderComboCompiled_ps_composite );
+	return g_oCopyTexturePixelShaderCombo_ps_composite;
+}
+
+TINLINE TBOOL CreateCopyTexturePixelShader_ps_composite( ID3D11PixelShader** a_ppShader )
+{
+	if ( !g_bCopyTexturePixelShaderComboCompiled_ps_composite )
+		return TFALSE;
+
+	dx11::ShaderCombo& rCombo = g_oCopyTexturePixelShaderCombo_ps_composite;
+	ID3D11PixelShader** ppShader = rCombo.GetPixelShaderPtr( 0 );
+	TVALIDPTR( ppShader );
+	if ( !ppShader || !*ppShader )
+		return TFALSE;
+	*a_ppShader = *ppShader;
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileCopyTextureShaderCombos()
 {
 	if ( !EnsureCopyTexturePixelShaderCombo_ps_main() )
 		return TFALSE;
 
 	if ( !g_oCopyTexturePixelShaderCombo_ps_main.CreatePixelShaders() )
+		return TFALSE;
+	if ( !EnsureCopyTexturePixelShaderCombo_ps_composite() )
+		return TFALSE;
+
+	if ( !g_oCopyTexturePixelShaderCombo_ps_composite.CreatePixelShaders() )
 		return TFALSE;
 
 	return TTRUE;

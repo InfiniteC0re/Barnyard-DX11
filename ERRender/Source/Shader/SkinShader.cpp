@@ -10,6 +10,9 @@
 #include "RenderDX11Utils.h"
 #include "RenderContentDX11.h"
 #include "CSM/CSMManager.h"
+#include "CubemapAnchors.h"
+#include "SkyCube.h"
+#include "RenderParams.h"
 #include "Generated/SkinShaderCombos.h"
 #include "Generated/ShadowDepthShaderCombos.h"
 
@@ -108,7 +111,7 @@ void remaster::SkinShaderDX11::StartFlush()
 
 	g_pRender->SetZMode( TTRUE, D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
 
-	if ( g_bCSMEnabled && g_pCSMManager && g_flShadowIntensity > 0.0f )
+	if ( g_bInMainScenePass && g_bCSMEnabled && g_pCSMManager && g_flShadowIntensity > 0.0f )
 	{
 		g_pRender->PSSetShaderResource( 5, g_pCSMManager->GetShadowSRV() );
 		g_pRender->PSSetSamplerState( 5, g_pCSMManager->GetShadowSampler() );
@@ -120,6 +123,14 @@ void remaster::SkinShaderDX11::StartFlush()
 			g_pRender->PSSetShaderResource( 9, g_pCloudShadowSRV );
 			g_pRender->PSSetSamplerState( 3, g_pCloudShadowSampler );
 		}
+	}
+
+	// bind the reflection cube (last frame) + linear-clamp sampler for env specular; skipped during the capture
+	if ( !g_bReflectionCaptureActive && g_oSkyCubeBlend.pSRVTo )
+	{
+		g_pRender->PSSetShaderResource( 11, g_oSkyCubeBlend.pSRVTo );   // active ("to") cube
+		g_pRender->PSSetShaderResource( 12, g_oSkyCubeBlend.pSRVFrom ); // outgoing ("from") cube (cross-fade)
+		g_pRender->PSSetSamplerState( 4, SAMPLER_LINEAR_CLAMP );
 	}
 
 	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
@@ -142,7 +153,13 @@ void remaster::SkinShaderDX11::EndFlush()
 	g_pRender->PSSetShaderResource( 4, TNULL );
 	g_pRender->PSSetShaderResource( 5, TNULL );
 	g_pRender->PSSetShaderResource( 9, TNULL );
+	g_pRender->PSSetShaderResource( 10, TNULL );
+	g_pRender->PSSetShaderResource( 11, TNULL );
+	g_pRender->PSSetShaderResource( 12, TNULL );
 	g_pRender->PSSetConstantBuffer( 2, TNULL );
+
+	// Release the wind roughness map from the vertex stage (bound only for wind draws)
+	g_pRender->VSSetShaderResource( 8, TNULL );
 }
 
 TBOOL remaster::SkinShaderDX11::Create()
@@ -199,7 +216,7 @@ TBOOL remaster::SkinShaderDX11::Validate()
 	if ( !m_pBoneCBuffer )
 	{
 		D3D11_BUFFER_DESC boneDesc    = {};
-		boneDesc.ByteWidth            = sizeof( TMatrix44 ) * MAX_SKIN_BONES;
+		boneDesc.ByteWidth            = BONE_GPU_STRIDE * MAX_SKIN_BONES;
 		boneDesc.Usage                = D3D11_USAGE_DYNAMIC;
 		boneDesc.BindFlags            = D3D11_BIND_CONSTANT_BUFFER;
 		boneDesc.CPUAccessFlags       = D3D11_CPU_ACCESS_WRITE;
@@ -226,12 +243,18 @@ TBOOL remaster::SkinShaderDX11::TryValidate()
 	return TTRUE;
 }
 
-const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetSkinPipeline( TBOOL a_bBakedLighting, TBOOL a_bFOB, TBOOL a_bDynLighting, TBOOL a_bIsAnimated, TBOOL a_bHasMaps ) const
+const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetSkinPipeline( TBOOL a_bBakedLighting, TBOOL a_bDynLighting, TBOOL a_bIsAnimated, TBOOL a_bHasMaps, TBOOL a_bWind, TBOOL a_bParallax ) const
 {
 	TUINT uiComboFlags = 0;
 
 	if ( a_bHasMaps )
 		uiComboFlags |= shadercombos::Skin_MATERIAL_MAPS;
+
+	if ( a_bWind )
+		uiComboFlags |= shadercombos::Skin_WIND;
+
+	if ( a_bParallax )
+		uiComboFlags |= shadercombos::Skin_PARALLAX;
 
 	if ( g_bCloudShadowsEnabled )
 		uiComboFlags |= shadercombos::Skin_CLOUD_SHADOWS;
@@ -239,13 +262,10 @@ const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetSk
 	if ( a_bBakedLighting )
 		uiComboFlags |= shadercombos::Skin_BAKED_LIGHTING;
 
-	if ( a_bFOB )
-		uiComboFlags |= shadercombos::Skin_FOB;
-
 	if ( a_bIsAnimated )
 		uiComboFlags |= shadercombos::Skin_ANIMATED;
 
-	if ( !g_bCSMEnabled || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
+	if ( !g_bInMainScenePass || !g_bCSMEnabled || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
 		uiComboFlags |= shadercombos::Skin_NO_CSM;
 
 	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
@@ -258,16 +278,42 @@ const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetSk
 	return m_vecSkinPipelines[ shadercombos::GetSkinComboIndex( uiComboFlags ) ];
 }
 
-const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetShadowPipeline( TBOOL a_bIsAnimated ) const
+const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetShadowPipeline( TBOOL a_bIsAnimated, TBOOL a_bWind ) const
 {
 	TUINT uiComboFlags = 0;
 
 	if ( a_bIsAnimated )
 		uiComboFlags |= shadercombos::ShadowDepth_ANIMATED;
 
+	if ( a_bWind )
+		uiComboFlags |= shadercombos::ShadowDepth_WIND;
+
 	uiComboFlags |= shadercombos::ShadowDepth_ALPHATEST;
 
 	return m_vecSkinShadowPipelines[ shadercombos::GetShadowDepthComboIndex( uiComboFlags ) ];
+}
+
+static void UploadBonePalette( ID3D11Buffer* a_pBoneCBuffer, Toshi::TSkeletonInstance* a_pSkeletonInstance, ASkinSubMesh* a_pSubMesh )
+{
+	remaster::RenderDX11* pRender = remaster::g_pRender;
+
+	D3D11_MAPPED_SUBRESOURCE mapped;
+	pRender->GetD3D11DeviceContext()->Map( a_pBoneCBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped );
+	TFLOAT* pDst = static_cast<TFLOAT*>( mapped.pData );
+	for ( TUINT k = 0; k < a_pSubMesh->uiNumBones; k++, pDst += 12 )
+	{
+		const TFLOAT* pSrc = &a_pSkeletonInstance->GetBone( a_pSubMesh->aBones[ k ] ).m_Transform.m_f11;
+		for ( TINT j = 0; j < 3; j++ )
+		{
+			pDst[ j * 4 + 0 ] = pSrc[ 0 * 4 + j ];
+			pDst[ j * 4 + 1 ] = pSrc[ 1 * 4 + j ];
+			pDst[ j * 4 + 2 ] = pSrc[ 2 * 4 + j ];
+			pDst[ j * 4 + 3 ] = pSrc[ 3 * 4 + j ];
+		}
+	}
+	pRender->GetD3D11DeviceContext()->Unmap( a_pBoneCBuffer, 0 );
+
+	pRender->VSSetConstantBuffer( 1, a_pBoneCBuffer );
 }
 
 void remaster::SkinShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
@@ -295,17 +341,36 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	{
 		auto pCBuffer = g_pRender->GetDepthPassConstantBuffer();
 
-		g_pRender->SetShaderPipelineState( GetShadowPipeline( bIsAnimated ) );
+		// Match the main pass's wind so the shadow silhouette sways; needs a roughness map for the
+		// wind-strength (blue) channel in the shadow VS
+		const remaster::MaterialParams* pShadowParams = pMaterial->GetMaterialParams();
+		const TBOOL bWind = g_bWindEnabled && pShadowParams && pShadowParams->bWind && pShadowParams->pRoughnessMap;
 
-		// Upload MVP to GPU
+		g_pRender->SetShaderPipelineState( GetShadowPipeline( bIsAnimated, bWind ) );
+
+		// Upload MVP (+ cascade, + wind params) to the depth-pass constant buffer at b0
 		{
 			D3D11_MAPPED_SUBRESOURCE mapped;
 			g_pRender->GetD3D11DeviceContext()->Map( pCBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped );
 
 			TSTATICCAST( TMatrix44, mapped.pData )->Multiply( g_pCSMManager->GetCurrentLightProjection(), a_pRenderPacket->GetModelViewMatrix() );
-			( TSTATICCAST( TMatrix44, mapped.pData ) + 1 )->AsBasisVector4( 0 ) = TVector4( TFLOAT( g_pCSMManager->GetCurrentCascade() ), 0.0f, 0.0f );
+
+			// Slot 4 = cascade, slot 5 = wind dir/strength/time, slot 6 = [windMin, windMax]
+			TVector4* pExtra = TREINTERPRETCAST( TVector4*, TSTATICCAST( TMatrix44, mapped.pData ) + 1 );
+			pExtra[ 0 ] = TVector4( TFLOAT( g_pCSMManager->GetCurrentCascade() ), 0.0f, 0.0f );
+			if ( bWind )
+			{
+				pExtra[ 1 ] = TVector4( g_flWindDir[ 0 ], g_flWindDir[ 1 ], g_flWindStrength, g_flWindTime );
+				pExtra[ 2 ] = TVector4( pShadowParams->fWindMin, pShadowParams->fWindMax, 0.0f, 0.0f );
+			}
 
 			g_pRender->GetD3D11DeviceContext()->Unmap( pCBuffer, 0 );
+		}
+
+		if ( bWind )
+		{
+			g_pRender->VSSetShaderResource( 8, (ID3D11ShaderResourceView*)pShadowParams->pRoughnessMap );
+			g_pRender->VSSetSamplerState( 0, SAMPLER_LINEAR_WRAP );
 		}
 
 		TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
@@ -324,18 +389,8 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 			TIndexBlockResource::HALBuffer indexBuffer;
 			CALL_THIS( 0x006d6180, TIndexPoolResource*, TBOOL, pIndexPool, TIndexBlockResource::HALBuffer&, indexBuffer ); // pIndexPool->GetHALBuffer( &indexBuffer );
 
-			// Upload bones for this sub-mesh into the dedicated bone constant buffer.
 			if ( bIsAnimated )
-			{
-				D3D11_MAPPED_SUBRESOURCE mapped;
-				g_pRender->GetD3D11DeviceContext()->Map( m_pBoneCBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped );
-				TMatrix44* pBones = static_cast<TMatrix44*>( mapped.pData );
-				for ( TUINT k = 0; k < pSubMesh->uiNumBones; k++ )
-					pBones[ k ] = pSkeletonInstance->GetBone( pSubMesh->aBones[ k ] ).m_Transform;
-				g_pRender->GetD3D11DeviceContext()->Unmap( m_pBoneCBuffer, 0 );
-				
-				g_pRender->VSSetConstantBuffer( 1, m_pBoneCBuffer );
-			}
+				UploadBonePalette( m_pBoneCBuffer, pSkeletonInstance, pSubMesh );
 
 			g_pRender->DrawIndexed(
 			    D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
@@ -354,15 +409,20 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 
 	const TFLOAT flPacketAlpha     = a_pRenderPacket->GetAlpha();
 	const TBOOL  bUseBakedLighting = pMaterial->IsHDLighting() && pMaterial->HasLighting1Tex() && pMaterial->HasLighting2Tex();
-	const TBOOL  bIsFOB            = pMesh->IsFOB();
 	const TBOOL  bHasDynLight      = g_bDynamicLightEnabled && RenderPacketHasDynamicLights( a_pRenderPacket );
 
 	const remaster::MaterialParams* pSpecParams = pMaterial->GetMaterialParams();
-	const TBOOL bHasMaps = pSpecParams && ( pSpecParams->pNormalMap || pSpecParams->pRoughnessMap );
+	const TBOOL bHasMaps = pSpecParams && ( pSpecParams->pNormalMap || pSpecParams->pRoughnessMap || pSpecParams->pMetallicMap );
 
-	g_pRender->SetShaderPipelineState( GetSkinPipeline( bUseBakedLighting, bIsFOB, bHasDynLight, bIsAnimated, bHasMaps ) );
+	// Wind reads the roughness map's blue channel in the VS, so it needs both the per-material
+	// opt-in and a roughness map to sample. Master-gated by g_bWindEnabled
+	const TBOOL bWind = g_bWindEnabled && pSpecParams && pSpecParams->bWind && pSpecParams->pRoughnessMap;
 
-	// Setup renderer
+	// Parallax occlusion mapping compiles in only for meshes that ship a height map
+	const TBOOL bParallax = pSpecParams && pSpecParams->pHeightMap;
+
+	g_pRender->SetShaderPipelineState( GetSkinPipeline( bUseBakedLighting, bHasDynLight, bIsAnimated, bHasMaps, bWind, bParallax ) );
+
 	if ( bUseBakedLighting )
 	{
 		g_pRender->PSSetShaderResource( 1, TREINTERPRETCAST( ID3D11ShaderResourceView*, pMaterial->GetLightingTexture( ASkinMaterial::LT_0 )->GetD3DTexture() ) );
@@ -371,9 +431,6 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 		g_pRender->PSSetShaderResource( 4, TREINTERPRETCAST( ID3D11ShaderResourceView*, pMaterial->GetLightingTexture( ASkinMaterial::LT_3 )->GetD3DTexture() ) );
 		g_pRender->PSSetSamplerState( 1, 5 );
 	}
-
-	TMatrix44 matWVP;
-	matWVP.Multiply( pCurrentContext->GetProjectionMatrix(), a_pRenderPacket->GetModelViewMatrix() );
 
 	TMatrix44 matModel;
 	matModel.Multiply( pCurrentContext->GetViewWorldMatrix(), a_pRenderPacket->GetModelViewMatrix() );
@@ -425,61 +482,71 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	else
 		g_pRender->SetBlendEnabled( TFALSE );
 
-	// Fog + per-material specular settings (slot 9.zw)
-	TVector4 vMiscSettings;
-	vMiscSettings.x = pCurrentContext->m_fFogDistanceStart;
-	vMiscSettings.y = pCurrentContext->m_fFogDistanceEnd;
-	vMiscSettings.z = pSpecParams ? TMath::Max( pSpecParams->fSpecularPower, 1.0f ) : 1.0f;
-	vMiscSettings.w = pSpecParams ? pSpecParams->fSpecularIntensity : 0.0f;
-
+	// Fog settings (per-pass, b4)
 	TVector4 vFogColor = pCurrentContext->m_FogColor;
 	vFogColor.w        = s_flFogDensity;
+	g_pRender->PassBufferSetVec4( PASSBUF_FOG_PARAMS, TVector4( pCurrentContext->m_fFogDistanceStart, pCurrentContext->m_fFogDistanceEnd, 0.0f, 0.0f ) );
+	g_pRender->PassBufferSetVec4( PASSBUF_FOG_COLOR, vFogColor );
 
-	// Upload data
-	g_pRender->VSBufferSetMat4( 0, matWVP );
+	// Only the model matrix ships per draw; the clip transform (world * pp_matViewProj) is refreshed at pass boundaries
+	g_pRender->UpdatePassViewProj( pCurrentContext->GetProjectionMatrix(), pCurrentContext->GetWorldViewMatrix() );
+	g_pRender->VSBufferSetMat4( 0, matModel );
 	g_pRender->VSBufferSetVec4( 4, vAmbientColor );
 	g_pRender->VSBufferSetVec4( 5, vLightColour );
 	g_pRender->VSBufferSetVec4( 6, vLightDirection );
 	g_pRender->VSBufferSetVec4( 7, vUpAxis );
 	g_pRender->VSBufferSetVec4( 8, vLightingLerp );
-	g_pRender->VSBufferSetVec4( 9, vMiscSettings );
-	g_pRender->VSBufferSetVec4( 10, vFogColor );
-	g_pRender->VSBufferSetMat4( 11, matModel );
 
-	// Camera world position for specular
 	const TVector3 camPos = pCurrentContext->GetViewWorldMatrix().GetTranslation3();
-	g_pRender->VSBufferSetVec4( 15, TVector4( camPos.x, camPos.y, camPos.z, 0.0f ) );
+	g_pRender->PassBufferSetVec4( PASSBUF_CAMERA_POS, TVector4( camPos.x, camPos.y, camPos.z, 0.0f ) );
 
-	// Per-material normal/roughness maps. Bind at t7/t8 (t1-t4 are baked lighting) and pack
-	// strengths + presence flags into slot 16. Maps sample with the diffuse sampler (s0).
-	TFLOAT flMapFlags = 0.0f;
+	// Per-material normal/roughness/height/metallic map SRVs at t7/t8/t10/t13 (t1-t4 are the
+	// baked lighting); presence flags live in the material record (b5), maps sample s0
 	if ( pSpecParams && pSpecParams->pNormalMap )
-	{
 		g_pRender->PSSetShaderResource( 7, (ID3D11ShaderResourceView*)pSpecParams->pNormalMap );
-		flMapFlags += 1.0f;
-	}
 	if ( pSpecParams && pSpecParams->pRoughnessMap )
-	{
 		g_pRender->PSSetShaderResource( 8, (ID3D11ShaderResourceView*)pSpecParams->pRoughnessMap );
-		flMapFlags += 2.0f;
-	}
-	const TFLOAT flNormalStrength    = pSpecParams ? pSpecParams->fNormalStrength    : 1.0f;
-	const TFLOAT flRoughnessStrength = pSpecParams ? pSpecParams->fRoughnessStrength : 1.0f;
-	const TFLOAT flRoughness         = pSpecParams ? pSpecParams->fRoughness         : 0.0f;
-	g_pRender->VSBufferSetVec4( 16, TVector4( flNormalStrength, flRoughnessStrength, flRoughness, flMapFlags ) );
+	if ( pSpecParams && pSpecParams->pMetallicMap )
+		g_pRender->PSSetShaderResource( 13, (ID3D11ShaderResourceView*)pSpecParams->pMetallicMap );
+	if ( bParallax )
+		g_pRender->PSSetShaderResource( 10, (ID3D11ShaderResourceView*)pSpecParams->pHeightMap );
 
-	// SSR params (slot 17): x = reflectivity, y = fresnel power, z = emissive intensity
-	// (1 = neutral, >1 pushes into HDR range for bloom). Reflectivity 0 means SSR ignores it
-	// but the G-buffer normal is still written so reflective skin materials work.
-	const TFLOAT flReflectivity      = pSpecParams ? pSpecParams->fReflectivity : 0.0f;
-	const TFLOAT flFresnelPower      = pSpecParams ? TMath::Max( pSpecParams->fFresnelPower, 0.1f ) : 0.1f;
-	const TFLOAT flEmissiveIntensity = pSpecParams ? pSpecParams->fEmissiveIntensity : 1.0f;
-	g_pRender->VSBufferSetVec4( 17, TVector4( flReflectivity, flFresnelPower, flEmissiveIntensity, 0.0f ) );
+	// All static material values come from the immutable material buffer (b5)
+	remaster::BindMaterialConstants( pSpecParams, remaster::MATBUF_DEFAULT_SKIN );
+
+	// Per-pass env-specular vec4: [intensity, cube max mip, capture-active mask (kills
+	// metallic/parallax), tangent-debug]. Must match the world shader's write
+	const TFLOAT flEnvIntensity = ( g_bReflectionCaptureActive || !g_bEnvSpecular ) ? 0.0f : 1.0f;
+	g_pRender->PassBufferSetVec4( PASSBUF_ENV_SPECULAR,
+	    TVector4( flEnvIntensity, TFLOAT( g_iSkyCubeMaxMip ), g_bReflectionCaptureActive ? 1.0f : 0.0f, remaster::g_bDebugTangents ? 1.0f : 0.0f ) );
+
+	// CSM sun direction (per-pass), engine (-x,+y,-z) mapping; drives sun specular only so the
+	// highlight agrees with the CSM shadows (diffuse still uses the per-packet light dir)
+	const TVector3 sunDir = g_pCSMManager ? g_pCSMManager->GetLightDirection() : TVector3( 0.0f, -1.0f, 0.0f );
+	g_pRender->PassBufferSetVec4( PASSBUF_SUN_DIRECTION, TVector4( -sunDir.x, sunDir.y, -sunDir.z, 0.0f ) );
+
+	// Env-specular cross-fade (per-pass): "to" cube (box+probe, w=blend) + outgoing "from" cube,
+	// from the capture blend state so each probe centre matches where its cube was rendered (else
+	// reflections swim). Steady state: blend = 1, "to" only
+	const remaster::SkyCubeBlendState& rBlend = remaster::g_oSkyCubeBlend;
+	g_pRender->PassBufferSetVec4( PASSBUF_ENV_PARALLAX, TVector4( rBlend.vBoxTo.x, rBlend.vBoxTo.y, rBlend.vBoxTo.z, 0.0f ) );
+	g_pRender->PassBufferSetVec4( PASSBUF_ENV_PROBE_POS, TVector4( rBlend.vProbeTo.x, rBlend.vProbeTo.y, rBlend.vProbeTo.z, rBlend.flBlend ) );
+	g_pRender->PassBufferSetVec4( PASSBUF_ENV_PARALLAX2, TVector4( rBlend.vBoxFrom.x, rBlend.vBoxFrom.y, rBlend.vBoxFrom.z, 0.0f ) );
+	g_pRender->PassBufferSetVec4( PASSBUF_ENV_PROBE_POS2, TVector4( rBlend.vProbeFrom.x, rBlend.vProbeFrom.y, rBlend.vProbeFrom.z, 0.0f ) );
+
+	// Wind (vertex stage): deformation samples the roughness map's blue channel in the VS, so bind
+	// SRV+sampler there. Direction/strength/time per-pass; [windMin,windMax] remap rides in the material record
+	g_pRender->PassBufferSetVec4( PASSBUF_WIND_PARAMS, TVector4( g_flWindDir[ 0 ], g_flWindDir[ 1 ], g_flWindStrength, g_flWindTime ) );
+	if ( bWind )
+	{
+		g_pRender->VSSetShaderResource( 8, (ID3D11ShaderResourceView*)pSpecParams->pRoughnessMap );
+		g_pRender->VSSetSamplerState( 0, SAMPLER_LINEAR_WRAP );
+	}
 
 	if ( bHasDynLight ) UploadDynamicLights( a_pRenderPacket );
 
 	// Per-cell static point light indices into the global static-light cbuffer (b3).
-	g_pRender->GetLightManager().UploadCellStaticLightIndices( a_pRenderPacket, 18 );
+	g_pRender->GetLightManager().UploadCellStaticLightIndices( a_pRenderPacket, 9, 11 );
 
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
@@ -498,18 +565,8 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 		TIndexBlockResource::HALBuffer indexBuffer;
 		CALL_THIS( 0x006d6180, TIndexPoolResource*, TBOOL, pIndexPool, TIndexBlockResource::HALBuffer&, indexBuffer ); // pIndexPool->GetHALBuffer( &indexBuffer );
 
-		// Upload bones for this sub-mesh into the dedicated bone constant buffer.
 		if ( bIsAnimated )
-		{
-			D3D11_MAPPED_SUBRESOURCE mapped;
-			g_pRender->GetD3D11DeviceContext()->Map( m_pBoneCBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped );
-			TMatrix44* pBones = static_cast<TMatrix44*>( mapped.pData );
-			for ( TUINT k = 0; k < pSubMesh->uiNumBones; k++ )
-				pBones[ k ] = pSkeletonInstance->GetBone( pSubMesh->aBones[ k ] ).m_Transform;
-			g_pRender->GetD3D11DeviceContext()->Unmap( m_pBoneCBuffer, 0 );
-
-			g_pRender->VSSetConstantBuffer( 1, m_pBoneCBuffer );
-		}
+			UploadBonePalette( m_pBoneCBuffer, pSkeletonInstance, pSubMesh );
 
 		// Draw mesh
 		g_pRender->DrawIndexed(
