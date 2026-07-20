@@ -42,7 +42,7 @@ void GrassMaterial::PreRender()
 			g_pGrassTexture = (ID3D11ShaderResourceView*)pTextureHAL->GetD3DTexture();
 
 			g_pRender->PSSetShaderResource( 0, g_pGrassTexture );
-			g_pRender->PSSetSamplerState( 0, 6 );
+			g_pRender->PSSetSamplerState( 0, SAMPLER_LINEAR_WRAP );
 		}
 	}
 
@@ -79,7 +79,7 @@ void GrassMaterial::PostRender()
 	if ( m_Flags & FLAGS_NO_CULL )
 		g_pRender->SetCullMode( D3D11_CULL_FRONT );
 
-	g_pRender->PSSetSamplerState( 0, 3 );
+	g_pRender->PSSetSamplerState( 0, SAMPLER_LINEAR_WRAP );
 	g_pRender->PSSetShaderResource( 0, TNULL );
 	g_pRender->SetDepthWrite( TTRUE );
 }
