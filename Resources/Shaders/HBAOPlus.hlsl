@@ -123,10 +123,12 @@ float ps_main( PS_IN i ) : SV_TARGET
         float2 base = BASE_DIRS[ dirIndex ];
         float2 dir  = float2( cosR * base.x - sinR * base.y, sinR * base.x + cosR * base.y );
 
+        float dirJitter = frac( stepJitter + (float)dirIndex * 0.61803399f );
+
         [unroll]
         for ( int stepIndex = 1; stepIndex <= NUM_STEPS; stepIndex++ )
         {
-            float samplePixels = 1.0f + ( (float)stepIndex - 0.5f + stepJitter ) * stepPixels;
+            float samplePixels = 1.0f + ( (float)stepIndex - 0.5f + dirJitter ) * stepPixels;
             float2 sampleUV = i.UV + dir * samplePixels * cb_BufferSize.zw;
 
             sampleUV = clamp( sampleUV, 0.0f, 1.0f );

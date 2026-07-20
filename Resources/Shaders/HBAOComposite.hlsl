@@ -1,4 +1,5 @@
 #include "ScreenSpace.hlsl"
+#include "ShaderUtils.hlsli"
 
 Texture2D    aoTexture : register( t0 );
 Texture2D    sceneTexture : register( t1 );
@@ -15,5 +16,5 @@ float4 ps_main( PS_IN i ) : SV_TARGET
 {
     float ao = aoTexture.SampleLevel( aoSampler, i.UV, 0 ).r;
     float4 scene = sceneTexture.SampleLevel( sceneSampler, i.UV, 0 );
-    return float4( scene.rgb * ao, scene.a );
+    return float4( DitherR11G11B10( scene.rgb * ao, i.Position.xy ), scene.a );
 }
