@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "UIRenderer.h"
 #include "RenderDX11.h"
+#include "RenderParams.h"
 #include "RenderDX11Utils.h"
 #include "FontRenderer.h"
 #include "Generated/UIShaderCombos.h"
@@ -106,7 +107,7 @@ void remaster::UIRendererDX11::BeginScene()
 	TPROFILER_SCOPE();
 
 	// Under the boot GUI, after the GUI viewport clear (which wipes anything drawn earlier)
-	if ( !ShaderWarmup_IsComplete() )
+	if ( g_bBootScreenVisible && !ShaderWarmup_IsComplete() )
 		DrawBootBackground();
 
 	TRenderInterface::DISPLAYPARAMS* pDisplayParams = g_pRender->GetCurrentDisplayParams();

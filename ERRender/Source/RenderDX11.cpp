@@ -3,6 +3,7 @@
 #include "RenderAdapterDX11.h"
 #include "RenderContentDX11.h"
 #include "RenderDX11Utils.h"
+#include "ShaderCache.h"
 #include "MaterialParams.h"
 #include "UI/FontRenderer.h"
 #include "Generated/ShaderCombos.h"
@@ -1239,6 +1240,13 @@ TBOOL ShaderWarmup_RunStep()
 		const TBOOL bCompiled = s_aDeferredShaderCombos[ s_iFinalizedShaderCombos ].fnFinalize();
 		TASSERT( bCompiled );
 		s_iFinalizedShaderCombos++;
+	}
+
+	static TBOOL s_bFileCacheCleared = TFALSE;
+	if ( !s_bFileCacheCleared && ShaderWarmup_IsComplete() )
+	{
+		dx11::ClearShaderFileCache();
+		s_bFileCacheCleared = TTRUE;
 	}
 
 	return ShaderWarmup_IsComplete();

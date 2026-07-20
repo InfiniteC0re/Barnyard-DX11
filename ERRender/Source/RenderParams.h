@@ -89,6 +89,9 @@ extern TFLOAT g_flVolumetricFogMaxDist;
 extern TFLOAT g_flVolumetricFogIntensity;
 extern TFLOAT g_flVolumetricFogColor[ 3 ];
 
+// Boot warm-up screen (set by BootState after a grace period so cached boots don't flash it)
+extern TBOOL g_bBootScreenVisible;
+
 // Debug
 extern TBOOL  g_bDebugTangents;
 

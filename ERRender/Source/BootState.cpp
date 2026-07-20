@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "BootState.h"
 #include "RenderDX11.h"
+#include "RenderParams.h"
 
 #include <BYardSDK/SDK_T2GUIFont.h>
 #include <BYardSDK/SDK_T2GUIFontManager.h>
@@ -38,9 +39,15 @@ TBOOL BootState::Update()
 
 	if ( !remaster::ShaderWarmup_IsComplete() )
 	{
-		SetSaveLoadBackgroundVisible( TFALSE );
+		// With a warm shader cache the warm-up finishes within a few frames; don't flash the boot screen
+		static ULONGLONG s_uiFirstUpdateTicks = GetTickCount64();
+		if ( GetTickCount64() - s_uiFirstUpdateTicks > 400 )
+			remaster::g_bBootScreenVisible = TTRUE;
 
-		if ( !s_pWarmupText )
+		if ( remaster::g_bBootScreenVisible )
+			SetSaveLoadBackgroundVisible( TFALSE );
+
+		if ( remaster::g_bBootScreenVisible && !s_pWarmupText )
 		{
 			if ( SDK_T2GUIFont* pFont = SDK_T2GUIFontManager::FindFont( "Rekord18" ) )
 			{
@@ -91,7 +98,11 @@ TBOOL BootState::Update()
 			s_pWarmupNote->Unlink();
 		}
 
-		SetSaveLoadBackgroundVisible( TTRUE );
+		if ( remaster::g_bBootScreenVisible )
+		{
+			SetSaveLoadBackgroundVisible( TTRUE );
+			remaster::g_bBootScreenVisible = TFALSE;
+		}
 	}
 
 	return TFALSE;

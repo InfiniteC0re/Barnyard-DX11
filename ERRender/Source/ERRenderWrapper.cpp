@@ -121,6 +121,8 @@ TFLOAT g_flSkyCubeParallaxVertical   = 20.0f; // world units (Y)
 
 TBOOL g_bDebugTangents = TFALSE;
 
+TBOOL g_bBootScreenVisible = TFALSE;
+
 // Blue vertex-color channel drives per-vertex strength; per-material opt-in via the XML "wind" flag
 TBOOL  g_bWindEnabled                     = TTRUE;
 TFLOAT g_flWindStrength                   = 0.15f;          // max world-unit sway at blue = 1
