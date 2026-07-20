@@ -50,6 +50,7 @@
 #include <AHooks.h>
 #include <HookHelpers.h>
 #include <BYardSDK/ACamera.h>
+#include <BYardSDK/AInstanceManager.h>
 #include <BYardSDK/ARenderer.h>
 #include <BYardSDK/AGlowViewport.h>
 #include <BYardSDK/AModel.h>
@@ -629,6 +630,15 @@ static Toshi::TVector4 s_vCubeBox[ 2 ]   = {};                                  
 static TBOOL           s_bCubeValid[ 2 ] = {};                                  // has each cube been fully captured at its probe yet
 static TFLOAT          s_flCubeRRTimer   = 0.0f;                                // round-robin accumulator (steady-state face refresh)
 static TINT            s_iCubeRRFace     = 0;                                   // next face to refresh in round-robin
+
+// World lighting state the game's own instance render runs with, snapshotted by the
+// AInstanceManager::Render hook. The skin-shader instances bake ambient + sun colour/direction
+// into their packets from the live interface/context state, and by cube-capture time skinned
+// models have overwritten those per model (instances rendered black in the probe)
+static TBOOL            s_bCubeLightingValid = TFALSE;
+static Toshi::TMatrix44 s_oCubeLightDirection;
+static Toshi::TMatrix44 s_oCubeLightColour;
+static Toshi::TVector4  s_vCubeAmbientColour;
 
 // AO runs at half width x half height, upsampled with a linear sampler at composite
 static TUINT s_uiHBAOWidth  = 0;
@@ -1350,6 +1360,23 @@ void remaster::RenderDX11::ReleaseRenderTargets()
 TBOOL g_bHasGlowObjectsThisFrame = TFALSE;
 TBOOL g_bEnableWaterReflections  = TFALSE;
 
+MEMBER_HOOK( 0x005e17a0, AInstanceManager, AInstanceManager_Render, TBOOL )
+{
+	if ( !remaster::g_bReflectionCaptureActive && !remaster::g_pRender->GetCSMManager().IsRenderingShadowPass() )
+	{
+		auto pRenderInterface = TRenderD3DInterface::Interface();
+		if ( auto pContext = pRenderInterface->GetCurrentContext() )
+		{
+			s_oCubeLightDirection = pRenderInterface->GetLightDirection();
+			s_oCubeLightColour    = pRenderInterface->GetLightColour();
+			s_vCubeAmbientColour  = pContext->GetAmbientColour();
+			s_bCubeLightingValid  = TTRUE;
+		}
+	}
+
+	return CallOriginal();
+}
+
 static void CaptureCubeMap( TFLOAT a_flDeltaTime )
 {
 	if ( !remaster::g_bSkyCubeEnabled || !s_pSkyCubeTexture[ 0 ] )
@@ -1563,6 +1590,18 @@ static void CaptureCubeMap( TFLOAT a_flDeltaTime )
 			// Gates, trees, and instances only go in for a placed anchor (the camera-follow fallback re-renders every frame)
 			if ( bAnchored )
 			{
+				// Replay the main-pass lighting snapshot for the packet-baked skin-shader values
+				auto            pRenderInterface = TRenderD3DInterface::Interface();
+				const TMatrix44 oOldLightDir     = pRenderInterface->GetLightDirection();
+				const TMatrix44 oOldLightCol     = pRenderInterface->GetLightColour();
+				const TVector4  vOldAmbient      = pCtx->GetAmbientColour();
+				if ( s_bCubeLightingValid )
+				{
+					pRenderInterface->SetLightDirectionMatrix( s_oCubeLightDirection );
+					pRenderInterface->SetLightColourMatrix( s_oCubeLightColour );
+					pCtx->SetAmbientColour( s_vCubeAmbientColour );
+				}
+
 				if ( *(TINT*)0x0078de44 )
 					CALL_THIS( 0x005dd5c0, void*, void, *(void**)0x0078de44 ); // AGateManager::Render
 
@@ -1571,6 +1610,10 @@ static void CaptureCubeMap( TFLOAT a_flDeltaTime )
 
 				if ( *(void**)0x0078deb0 )
 					CALL_THIS( 0x005e17a0, void*, void, *(void**)0x0078deb0 ); // AInstanceManager::Render
+
+				pRenderInterface->SetLightDirectionMatrix( oOldLightDir );
+				pRenderInterface->SetLightColourMatrix( oOldLightCol );
+				pCtx->SetAmbientColour( vOldAmbient );
 			}
 
 			remaster::g_pRender->FlushShaders();
@@ -2939,6 +2982,7 @@ void remaster::SetupRenderHooks()
 	InstallHook<TRenderD3DInterface_FlushShaders>();
 	InstallHook<TD3DAdapter_Mode_Device_SupportsVSConstants>();
 	InstallHook<ARenderer_RenderMainScene>();
+	InstallHook<AInstanceManager_Render>();
 	InstallHook<RenderCellMeshWin>();
 	InstallHook<RenderCellMeshDefault>();
 	InstallHook<AModelInstance_RenderInstanceCallback>();
