@@ -406,12 +406,15 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 	float3 dynN    = ComputeDerivedWorldNormal(In.WorldPos, worldN, uv, texture0, sampler0, cb_glowLightIntensity[0].y);
 	float3 dynSpec = 0.0f;
 	float3 glow    = SampleDynamicGlowLights(In.WorldPos, dynN, worldN, V, specInt, specPow, dynSpec);
-	texColor.rgb   = ApplyDynamicGlowLighting(texColor.rgb, glow);
+	texColor.rgb  += albedo.rgb * glow; // additive, matching the static lights below
 	specular      += dynSpec * specColor;
 #endif
 
+	// Additive on raw albedo: a point light is extra incoming light, so it must not scale with
+	// the sun/baked shading -- multiplying (1 + s) into the shaded color lit the sun-facing side
+	// far more than the side actually facing the light
 	float3 staticLight = SampleStaticPointLights(In.WorldPos, worldN, cb_cellStaticLightIndices, cb_cellStaticLightIndices2, (int)cb_cellStaticLightParams.x);
-	texColor.rgb *= 1.0f + staticLight;
+	texColor.rgb += albedo.rgb * staticLight;
 
 #if !NO_CSM
 	float shadowStrength = cb_ShadowParams.w;

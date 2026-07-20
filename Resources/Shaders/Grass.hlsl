@@ -84,45 +84,48 @@ struct PS_OUT
 };
 
 #define GRASS_LIGHT_SATURATION_GAIN 1.2f
-float3 ApplyGrassLight(float3 baseColor, float3 light)
-{
-    float3 lit      = baseColor * (1.0f + light);
-    float  lightAmt = saturate(dot(light, float3(0.333f, 0.333f, 0.333f)));
-    float  lum      = dot(lit, float3(0.299f, 0.587f, 0.114f));
-    return max(0.0f, lum + (lit - lum) * (1.0f + lightAmt * GRASS_LIGHT_SATURATION_GAIN));
-}
 
 PS_OUT ps_main(PS_IN In)
 {
-    float4 texColor = texture0.Sample(sampler0, In.UV0) * In.Color;
+    float4 texRaw   = texture0.Sample(sampler0, In.UV0);
+    float4 texColor = texRaw * In.Color;
     if (texColor.a < 0.5f) discard;
 
+	// Point lights (static + dynamic glow) applied additively on the raw texture below, after the
+	// sun shadow: extra incoming light neither scales with the baked shading nor dims in shadow.
+	// The foliage variant adds wrap diffuse + translucency so backlit blades glow through
+	float3 V = normalize(pp_CameraPos.xyz - In.WorldPos);
+	float3 pointLight = SampleStaticPointLightsFoliage(In.WorldPos, normalize(In.WorldNormal), V, cb_cellStaticLightIndices, cb_cellStaticLightIndices2, (int)cb_cellStaticLightParams.x);
 #if !NO_DYN_LIGHT
-	float3 glow = SampleDynamicGlowLights(In.WorldPos, In.WorldNormal);
-	texColor.rgb = ApplyGrassLight(texColor.rgb, glow);
+	pointLight += SampleDynamicGlowLights(In.WorldPos, In.WorldNormal);
 #endif
-
-	float3 staticLight = SampleStaticPointLights(In.WorldPos, In.WorldNormal, cb_cellStaticLightIndices, cb_cellStaticLightIndices2, (int)cb_cellStaticLightParams.x);
-	texColor.rgb = ApplyGrassLight(texColor.rgb, staticLight);
 
 #if !NO_CSM
     float shadow = SampleShadow(In.WorldPos, In.WorldNormal, In.ViewDepth);
     float shadowStrength = cb_ShadowParams.w;
+    // No glow-based un-shadowing lerp anymore: additive point light is not scaled by the sun
+    // shadow, so lit grass in shade brightens on its own
     float shadowScale = shadow * shadowStrength + (1.0f - shadowStrength);
-    #if !NO_DYN_LIGHT
-    shadowScale = lerp(shadowScale, 1.0f, saturate(max(glow.r, max(glow.g, glow.b))));
-    #endif
 #else
     float shadowScale = 1.0f;
 #endif
+
+    // Additive point-light contribution, with the saturation pop ApplyGrassLight used to give
+    // glow lights so lit grass keeps its colour instead of washing toward the light tint
+    float3 lightAdd = texRaw.rgb * pointLight;
+    float  addAmt   = saturate(dot(pointLight, float3(0.333f, 0.333f, 0.333f)));
+    float  addLum   = dot(lightAdd, float3(0.299f, 0.587f, 0.114f));
+    lightAdd        = max(0.0f, addLum + (lightAdd - addLum) * (1.0f + addAmt * GRASS_LIGHT_SATURATION_GAIN));
+
+    float3 litColor = texColor.xyz * shadowScale + lightAdd;
 
 #if !NO_FOG
     float fogFactor = CalculateExponentialSquaredFog(In.ProjPos.w, pp_FogParams.x, pp_FogColor.w);
 	fogFactor = saturate(fogFactor);
     // Apply fog by blending between fog color and original color
-    float3 finalColor = lerp(pp_FogColor.xyz, texColor.xyz * shadowScale, fogFactor);
+    float3 finalColor = lerp(pp_FogColor.xyz, litColor, fogFactor);
 #else
-    float3 finalColor = texColor.xyz * shadowScale;
+    float3 finalColor = litColor;
 #endif
 
     PS_OUT Out;

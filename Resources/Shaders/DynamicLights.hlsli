@@ -155,11 +155,3 @@ float3 SampleDynamicGlowLights(float3 worldPos)
 
 	return glow;
 }
-
-float3 ApplyDynamicGlowLighting(float3 baseColor, float3 glow)
-{
-	// Scale the surface by the light contribution.
-	// Preserves the surface hue: white light on red grass stays red, just brighter.
-	// Channels are multiplied proportionally so color ratios are maintained.
-	return baseColor * (1.0f + glow);
-}

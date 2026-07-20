@@ -97,17 +97,17 @@ namespace remaster
 LightManager* g_pLightManager = TNULL;
 
 TBOOL  g_bDynamicLightEnabled              = TTRUE;
-TFLOAT g_flDynamicLightIntensity           = 1.75f;
+TFLOAT g_flDynamicLightIntensity           = 1.0f;
 TFLOAT g_flDynamicLightVolumetricIntensity = 0.3f;
 TFLOAT g_flDynamicLightColor[ 3 ]          = { 255.0f / 255.0f, 181.0f / 255.0f, 110.0f / 255.0f };
-TBOOL  g_bDynamicLightShadowsEnabled   = TTRUE;
-TFLOAT g_flDynamicLightShadowDistance  = 45.0f;
-TFLOAT g_flDynamicLightShadowIntensity = 1.0f;
-TFLOAT g_flDynamicLightShadowBias      = 0.0015f;
-TFLOAT g_flDynamicLightBumpScale       = 3.5f;
-TBOOL  g_bDynamicLightFlickerEnabled   = TTRUE;
-TFLOAT g_flDynamicLightFlickerSpeed    = 5.0f;
-TFLOAT g_flDynamicLightFlickerStrength = 0.1f;
+TBOOL  g_bDynamicLightShadowsEnabled       = TTRUE;
+TFLOAT g_flDynamicLightShadowDistance      = 45.0f;
+TFLOAT g_flDynamicLightShadowIntensity     = 1.0f;
+TFLOAT g_flDynamicLightShadowBias          = 0.0015f;
+TFLOAT g_flDynamicLightBumpScale           = 3.5f;
+TBOOL  g_bDynamicLightFlickerEnabled       = TTRUE;
+TFLOAT g_flDynamicLightFlickerSpeed        = 5.0f;
+TFLOAT g_flDynamicLightFlickerStrength     = 0.1f;
 
 static TBOOL IsItNight()
 {

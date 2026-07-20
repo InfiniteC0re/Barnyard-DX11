@@ -301,6 +301,10 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	// Per-cell static point light indices into the global static-light cbuffer (b3).
 	g_pRender->GetLightManager().UploadCellStaticLightIndices( a_pRenderPacket, 6, 8 );
 
+	// The foliage translucency term needs the camera pos
+	const TVector3 vCamPos = g_pRender->GetCurrentContext()->GetViewWorldMatrix().GetTranslation3();
+	g_pRender->PassBufferSetVec4( PASSBUF_CAMERA_POS, TVector4( vCamPos.x, vCamPos.y, vCamPos.z, 0.0f ) );
+
 	// Set grass texture
 	g_pRender->PSSetShaderResource( 0, g_pGrassTexture );
 

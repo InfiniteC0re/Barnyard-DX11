@@ -358,12 +358,15 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 	// Diffuse uses the bumpy derived normal (dynN); specular uses the clean worldN so the
 	// highlight is a crisp glint that tracks the light, not a broad smear over the surface.
 	float3 glow    = SampleDynamicGlowLights(In.WorldPos, dynN, worldN, V, specInt, specPow, dynSpec);
-	texColor.rgb   = ApplyDynamicGlowLighting(texColor.rgb, glow);
 	specular      += dynSpec * specColor;
 #endif
 
-    float3 staticLight = SampleStaticPointLights(In.WorldPos, worldN, cb_cellStaticLightIndices, cb_cellStaticLightIndices2, (int)cb_cellStaticLightParams.x);
-    texColor.rgb *= 1.0f + staticLight;
+    // Point lights (static + dynamic glow) applied additively on the raw albedo below, after the
+    // sun shadow: extra incoming light neither scales with the baked shading nor dims in shadow
+    float3 pointLight = SampleStaticPointLights(In.WorldPos, worldN, cb_cellStaticLightIndices, cb_cellStaticLightIndices2, (int)cb_cellStaticLightParams.x);
+#if !NO_DYN_LIGHT
+    pointLight += glow;
+#endif
 
 #if !NO_CSM
     float shadow = SampleShadow(In.WorldPos, In.WorldNormal, In.ViewDepth);
@@ -438,6 +441,17 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
     // Emissive intensity scales the texture only (specular keeps its lit magnitude).
     // Applied pre-fog so distant emissives still get fog-dimmed.
     float3 surfaceColor = texColor.xyz * mat_Params2.w * shadowScale + specular;
+    surfaceColor += albedo.rgb * cb_TexCoordOffsetAndAlpha.z * ( 1.0f - 0.6f * metallic ) * mat_Params2.w * pointLight;
+
+#if FOB
+    // Sun subsurface for foliage billboards: looking toward the sun through the canopy makes
+    // the leaves glow through, tinted by the per-tree lit colour. Gated by the raw sun shadow
+    // so occluded canopies don't glow
+    {
+        float sunTrans = pow(saturate(dot(-V, pp_SunDirection.xyz)), 8.0f);
+        surfaceColor  += albedo.rgb * cb_TexCoordOffsetAndAlpha.z * cb_FOBColor.xyz * ( sunTrans * 0.35f * specShadow );
+    }
+#endif
 
 #if !NO_FOG
 	float fogFactor = CalculateExponentialSquaredFog(In.ProjPos.w, pp_FogParams.x, pp_FogColor.w);
