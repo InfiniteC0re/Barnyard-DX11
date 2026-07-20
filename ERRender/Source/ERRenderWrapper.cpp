@@ -2895,6 +2895,9 @@ MEMBER_HOOK( 0x00608540, AGlowViewport, AGlowViewport_AddGlowObject, AGlowViewpo
 {
 	AGlowViewport::GlowObject* pGlowObject = CallOriginal();
 
+	// Call constructor again, because original doesn't for whatever reason
+	CALL_THIS( 0x00608630, AGlowViewport::GlowObject*, void, pGlowObject );
+
 	pGlowObject->m_bIsNightLight = TTRUE;
 	return pGlowObject;
 }
