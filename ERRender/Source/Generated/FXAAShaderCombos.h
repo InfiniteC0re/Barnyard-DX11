@@ -96,6 +96,16 @@ TINLINE TBOOL CreateFXAAPixelShader_ps_main( ID3D11PixelShader** a_ppShader )
 	return TTRUE;
 }
 
+static constexpr TUINT FXAANumWarmupShaders = FXAANumPermutations * 1u;
+
+TINLINE TBOOL PrepareFXAAShaderCombos()
+{
+	if ( !EnsureFXAAPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileFXAAShaderCombos()
 {
 	if ( !EnsureFXAAPixelShaderCombo_ps_main() )

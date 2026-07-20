@@ -96,6 +96,16 @@ TINLINE TBOOL CreateSMAANeighborhoodPixelShader_ps_main( ID3D11PixelShader** a_p
 	return TTRUE;
 }
 
+static constexpr TUINT SMAANeighborhoodNumWarmupShaders = SMAANeighborhoodNumPermutations * 1u;
+
+TINLINE TBOOL PrepareSMAANeighborhoodShaderCombos()
+{
+	if ( !EnsureSMAANeighborhoodPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileSMAANeighborhoodShaderCombos()
 {
 	if ( !EnsureSMAANeighborhoodPixelShaderCombo_ps_main() )

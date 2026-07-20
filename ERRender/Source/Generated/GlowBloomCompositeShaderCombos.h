@@ -96,6 +96,16 @@ TINLINE TBOOL CreateGlowBloomCompositePixelShader_ps_main( ID3D11PixelShader** a
 	return TTRUE;
 }
 
+static constexpr TUINT GlowBloomCompositeNumWarmupShaders = GlowBloomCompositeNumPermutations * 1u;
+
+TINLINE TBOOL PrepareGlowBloomCompositeShaderCombos()
+{
+	if ( !EnsureGlowBloomCompositePixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileGlowBloomCompositeShaderCombos()
 {
 	if ( !EnsureGlowBloomCompositePixelShaderCombo_ps_main() )

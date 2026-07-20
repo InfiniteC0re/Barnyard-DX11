@@ -158,6 +158,22 @@ TINLINE TBOOL CreateVolumetricFogCompositePixelShader_ps_darken( ID3D11PixelShad
 	return TTRUE;
 }
 
+static constexpr TUINT VolumetricFogCompositeNumWarmupShaders = VolumetricFogCompositeNumPermutations * 3u;
+
+TINLINE TBOOL PrepareVolumetricFogCompositeShaderCombos()
+{
+	if ( !EnsureVolumetricFogCompositePixelShaderCombo_ps_temporal() )
+		return TFALSE;
+
+	if ( !EnsureVolumetricFogCompositePixelShaderCombo_ps_additive() )
+		return TFALSE;
+
+	if ( !EnsureVolumetricFogCompositePixelShaderCombo_ps_darken() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileVolumetricFogCompositeShaderCombos()
 {
 	if ( !EnsureVolumetricFogCompositePixelShaderCombo_ps_temporal() )

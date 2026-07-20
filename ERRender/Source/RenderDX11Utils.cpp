@@ -202,6 +202,8 @@ static TBOOL ReadShaderSourceFile( const TCHAR* a_pchFilepath, TString8& a_rSour
 	return TTRUE;
 }
 
+volatile LONG remaster::dx11::g_iCompiledShaderPermutations = 0;
+
 struct ShaderCompileWorkerContext
 {
 	const TCHAR*                   pchFilepath;
@@ -248,6 +250,8 @@ static void CompileShaderComboPermutation( ShaderCompileWorkerContext* a_pContex
 
 	if ( !a_pContext->ppBlobs[ a_uiIndex ] )
 		InterlockedExchange( &a_pContext->iFailed, 1 );
+
+	InterlockedIncrement( &remaster::dx11::g_iCompiledShaderPermutations );
 
 	delete[] pDefinitions;
 	delete[] pDefines;

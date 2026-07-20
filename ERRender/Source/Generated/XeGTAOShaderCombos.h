@@ -96,6 +96,16 @@ TINLINE TBOOL CreateXeGTAOPixelShader_ps_main( ID3D11PixelShader** a_ppShader )
 	return TTRUE;
 }
 
+static constexpr TUINT XeGTAONumWarmupShaders = XeGTAONumPermutations * 1u;
+
+TINLINE TBOOL PrepareXeGTAOShaderCombos()
+{
+	if ( !EnsureXeGTAOPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileXeGTAOShaderCombos()
 {
 	if ( !EnsureXeGTAOPixelShaderCombo_ps_main() )

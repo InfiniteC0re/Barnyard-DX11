@@ -143,6 +143,9 @@ TBOOL remaster::GrassShaderDX11::Create()
 
 TBOOL remaster::GrassShaderDX11::Validate()
 {
+	if ( !ShaderWarmup_IsComplete() )
+		return TFALSE;
+
 	if ( IsValidated() )
 		return TTRUE;
 

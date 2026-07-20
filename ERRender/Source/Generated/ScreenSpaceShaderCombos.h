@@ -127,6 +127,53 @@ TINLINE TBOOL CreateScreenSpacePixelShader_ps_red_tint( ID3D11PixelShader** a_pp
 	return TTRUE;
 }
 
+inline dx11::ShaderCombo g_oScreenSpacePixelShaderCombo_ps_boot_background;
+inline TBOOL g_bScreenSpacePixelShaderComboCompiled_ps_boot_background = TFALSE;
+
+TINLINE TBOOL EnsureScreenSpacePixelShaderCombo_ps_boot_background()
+{
+	if ( !g_bScreenSpacePixelShaderComboCompiled_ps_boot_background )
+		g_bScreenSpacePixelShaderComboCompiled_ps_boot_background = g_oScreenSpacePixelShaderCombo_ps_boot_background.CompileFromFile( "Data\\Shaders\\ScreenSpace.hlsl", "ps_boot_background", "ps_5_0", ScreenSpaceCombos, ScreenSpaceNumCombos, ScreenSpaceNumPermutations );
+
+	return g_bScreenSpacePixelShaderComboCompiled_ps_boot_background;
+}
+
+TINLINE dx11::ShaderCombo& GetScreenSpacePixelShaderCombo_ps_boot_background()
+{
+	TASSERT( g_bScreenSpacePixelShaderComboCompiled_ps_boot_background );
+	return g_oScreenSpacePixelShaderCombo_ps_boot_background;
+}
+
+TINLINE TBOOL CreateScreenSpacePixelShader_ps_boot_background( ID3D11PixelShader** a_ppShader )
+{
+	if ( !g_bScreenSpacePixelShaderComboCompiled_ps_boot_background )
+		return TFALSE;
+
+	dx11::ShaderCombo& rCombo = g_oScreenSpacePixelShaderCombo_ps_boot_background;
+	ID3D11PixelShader** ppShader = rCombo.GetPixelShaderPtr( 0 );
+	TVALIDPTR( ppShader );
+	if ( !ppShader || !*ppShader )
+		return TFALSE;
+	*a_ppShader = *ppShader;
+	return TTRUE;
+}
+
+static constexpr TUINT ScreenSpaceNumWarmupShaders = ScreenSpaceNumPermutations * 3u;
+
+TINLINE TBOOL PrepareScreenSpaceShaderCombos()
+{
+	if ( !EnsureScreenSpaceVertexShaderCombo_vs_main() )
+		return TFALSE;
+
+	if ( !EnsureScreenSpacePixelShaderCombo_ps_red_tint() )
+		return TFALSE;
+
+	if ( !EnsureScreenSpacePixelShaderCombo_ps_boot_background() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileScreenSpaceShaderCombos()
 {
 	if ( !EnsureScreenSpaceVertexShaderCombo_vs_main() )
@@ -138,6 +185,11 @@ TINLINE TBOOL CompileScreenSpaceShaderCombos()
 		return TFALSE;
 
 	if ( !g_oScreenSpacePixelShaderCombo_ps_red_tint.CreatePixelShaders() )
+		return TFALSE;
+	if ( !EnsureScreenSpacePixelShaderCombo_ps_boot_background() )
+		return TFALSE;
+
+	if ( !g_oScreenSpacePixelShaderCombo_ps_boot_background.CreatePixelShaders() )
 		return TFALSE;
 
 	return TTRUE;

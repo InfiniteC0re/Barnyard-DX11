@@ -96,6 +96,16 @@ TINLINE TBOOL CreateResolveDepthPixelShader_ps_main( ID3D11PixelShader** a_ppSha
 	return TTRUE;
 }
 
+static constexpr TUINT ResolveDepthNumWarmupShaders = ResolveDepthNumPermutations * 1u;
+
+TINLINE TBOOL PrepareResolveDepthShaderCombos()
+{
+	if ( !EnsureResolveDepthPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileResolveDepthShaderCombos()
 {
 	if ( !EnsureResolveDepthPixelShaderCombo_ps_main() )

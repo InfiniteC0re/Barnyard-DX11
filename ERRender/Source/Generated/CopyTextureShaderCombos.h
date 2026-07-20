@@ -127,6 +127,19 @@ TINLINE TBOOL CreateCopyTexturePixelShader_ps_composite( ID3D11PixelShader** a_p
 	return TTRUE;
 }
 
+static constexpr TUINT CopyTextureNumWarmupShaders = CopyTextureNumPermutations * 2u;
+
+TINLINE TBOOL PrepareCopyTextureShaderCombos()
+{
+	if ( !EnsureCopyTexturePixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	if ( !EnsureCopyTexturePixelShaderCombo_ps_composite() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileCopyTextureShaderCombos()
 {
 	if ( !EnsureCopyTexturePixelShaderCombo_ps_main() )

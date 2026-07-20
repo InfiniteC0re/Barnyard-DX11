@@ -127,6 +127,19 @@ TINLINE TBOOL CreateHBAOCompositePixelShader_ps_main( ID3D11PixelShader** a_ppSh
 	return TTRUE;
 }
 
+static constexpr TUINT HBAOCompositeNumWarmupShaders = HBAOCompositeNumPermutations * 2u;
+
+TINLINE TBOOL PrepareHBAOCompositeShaderCombos()
+{
+	if ( !EnsureHBAOCompositePixelShaderCombo_ps_debug() )
+		return TFALSE;
+
+	if ( !EnsureHBAOCompositePixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileHBAOCompositeShaderCombos()
 {
 	if ( !EnsureHBAOCompositePixelShaderCombo_ps_debug() )

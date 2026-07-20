@@ -131,6 +131,19 @@ TINLINE TBOOL CreateSystemPixelShader_ps_main( ID3D11PixelShader** a_ppShader )
 	return TTRUE;
 }
 
+static constexpr TUINT SystemNumWarmupShaders = SystemNumPermutations * 2u;
+
+TINLINE TBOOL PrepareSystemShaderCombos()
+{
+	if ( !EnsureSystemVertexShaderCombo_vs_main() )
+		return TFALSE;
+
+	if ( !EnsureSystemPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileSystemShaderCombos()
 {
 	if ( !EnsureSystemVertexShaderCombo_vs_main() )

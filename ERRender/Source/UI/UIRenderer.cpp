@@ -104,6 +104,11 @@ TUINT remaster::UIRendererDX11::GetHeight( Toshi::T2GUIMaterial* a_pMaterial )
 void remaster::UIRendererDX11::BeginScene()
 {
 	TPROFILER_SCOPE();
+
+	// Under the boot GUI, after the GUI viewport clear (which wipes anything drawn earlier)
+	if ( !ShaderWarmup_IsComplete() )
+		DrawBootBackground();
+
 	TRenderInterface::DISPLAYPARAMS* pDisplayParams = g_pRender->GetCurrentDisplayParams();
 
 	m_oViewport = {

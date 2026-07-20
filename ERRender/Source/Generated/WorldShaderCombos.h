@@ -158,6 +158,19 @@ TINLINE TBOOL CreateWorldPixelShader_ps_main( ID3D11PixelShader** a_ppShader )
 	return TTRUE;
 }
 
+static constexpr TUINT WorldNumWarmupShaders = WorldNumPermutations * 2u;
+
+TINLINE TBOOL PrepareWorldShaderCombos()
+{
+	if ( !EnsureWorldVertexShaderCombo_vs_main() )
+		return TFALSE;
+
+	if ( !EnsureWorldPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileWorldShaderCombos()
 {
 	if ( !EnsureWorldVertexShaderCombo_vs_main() )

@@ -96,6 +96,16 @@ TINLINE TBOOL CreateHBAOPlusPixelShader_ps_main( ID3D11PixelShader** a_ppShader 
 	return TTRUE;
 }
 
+static constexpr TUINT HBAOPlusNumWarmupShaders = HBAOPlusNumPermutations * 1u;
+
+TINLINE TBOOL PrepareHBAOPlusShaderCombos()
+{
+	if ( !EnsureHBAOPlusPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileHBAOPlusShaderCombos()
 {
 	if ( !EnsureHBAOPlusPixelShaderCombo_ps_main() )

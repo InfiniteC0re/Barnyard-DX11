@@ -134,6 +134,19 @@ TINLINE TBOOL CreateVolumetricFogPixelShader_ps_visibility( ID3D11PixelShader** 
 	return TTRUE;
 }
 
+static constexpr TUINT VolumetricFogNumWarmupShaders = VolumetricFogNumPermutations * 2u;
+
+TINLINE TBOOL PrepareVolumetricFogShaderCombos()
+{
+	if ( !EnsureVolumetricFogPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	if ( !EnsureVolumetricFogPixelShaderCombo_ps_visibility() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileVolumetricFogShaderCombos()
 {
 	if ( !EnsureVolumetricFogPixelShaderCombo_ps_main() )

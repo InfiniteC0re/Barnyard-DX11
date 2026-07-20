@@ -11,6 +11,9 @@ namespace remaster
 namespace dx11
 {
 
+// Total shader permutations compiled so far, across all combos
+extern volatile LONG g_iCompiledShaderPermutations;
+
 ID3DBlob* CompileShader( const TCHAR* a_pchSrcData, LPCSTR a_pEntrypoint, LPCSTR a_pTarget, const D3D_SHADER_MACRO* a_pDefines );
 ID3DBlob* CompileShaderFromFile( const TCHAR* a_pchFilepath, LPCSTR a_pEntrypoint, LPCSTR a_pTarget, const D3D_SHADER_MACRO* a_pDefines );
 HRESULT   CreatePixelShader( const void* a_pShaderBytecode, SIZE_T a_uiBytecodeLength, ID3D11PixelShader** a_ppPixelShader );

@@ -96,6 +96,16 @@ TINLINE TBOOL CreateSkyMaskPixelShader_ps_main( ID3D11PixelShader** a_ppShader )
 	return TTRUE;
 }
 
+static constexpr TUINT SkyMaskNumWarmupShaders = SkyMaskNumPermutations * 1u;
+
+TINLINE TBOOL PrepareSkyMaskShaderCombos()
+{
+	if ( !EnsureSkyMaskPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileSkyMaskShaderCombos()
 {
 	if ( !EnsureSkyMaskPixelShaderCombo_ps_main() )

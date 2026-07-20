@@ -96,6 +96,16 @@ TINLINE TBOOL CreateDualKawaseDownPixelShader_ps_main( ID3D11PixelShader** a_ppS
 	return TTRUE;
 }
 
+static constexpr TUINT DualKawaseDownNumWarmupShaders = DualKawaseDownNumPermutations * 1u;
+
+TINLINE TBOOL PrepareDualKawaseDownShaderCombos()
+{
+	if ( !EnsureDualKawaseDownPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileDualKawaseDownShaderCombos()
 {
 	if ( !EnsureDualKawaseDownPixelShaderCombo_ps_main() )

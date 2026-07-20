@@ -172,6 +172,9 @@ TBOOL remaster::SkinShaderDX11::Create()
 
 TBOOL remaster::SkinShaderDX11::Validate()
 {
+	if ( !ShaderWarmup_IsComplete() )
+		return TFALSE;
+
 	if ( IsValidated() )
 		return TTRUE;
 

@@ -155,6 +155,19 @@ TINLINE TBOOL CreateSkinPixelShader_ps_main( ID3D11PixelShader** a_ppShader )
 	return TTRUE;
 }
 
+static constexpr TUINT SkinNumWarmupShaders = SkinNumPermutations * 2u;
+
+TINLINE TBOOL PrepareSkinShaderCombos()
+{
+	if ( !EnsureSkinVertexShaderCombo_vs_main() )
+		return TFALSE;
+
+	if ( !EnsureSkinPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileSkinShaderCombos()
 {
 	if ( !EnsureSkinVertexShaderCombo_vs_main() )

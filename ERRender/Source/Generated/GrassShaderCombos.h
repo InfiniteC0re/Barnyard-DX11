@@ -140,6 +140,19 @@ TINLINE TBOOL CreateGrassPixelShader_ps_main( ID3D11PixelShader** a_ppShader )
 	return TTRUE;
 }
 
+static constexpr TUINT GrassNumWarmupShaders = GrassNumPermutations * 2u;
+
+TINLINE TBOOL PrepareGrassShaderCombos()
+{
+	if ( !EnsureGrassVertexShaderCombo_vs_main() )
+		return TFALSE;
+
+	if ( !EnsureGrassPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileGrassShaderCombos()
 {
 	if ( !EnsureGrassVertexShaderCombo_vs_main() )

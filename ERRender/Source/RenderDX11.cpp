@@ -1160,10 +1160,172 @@ void RenderDX11::ReleaseSwapchainSizedResources()
 	fnRelease( m_pSwapChainBackBuffer );
 }
 
+// Only reachable once a 3D world renders (RenderMainScene passes and the lazy shader
+// Validate calls), so these can wait for the SaveLoadSKU warm-up. Prepare (D3DCompile,
+// no device) runs on the worker thread; Finalize (Create*Shaders) must stay on the main
+// thread because the device is created with D3D11_CREATE_DEVICE_SINGLETHREADED
+struct ShaderWarmupStep
+{
+	TBOOL ( *fnPrepare )();
+	TBOOL ( *fnFinalize )();
+	TUINT uiNumShaders;
+};
+
+#define SHADER_WARMUP_STEP( Name ) { shadercombos::Prepare##Name##ShaderCombos, shadercombos::Compile##Name##ShaderCombos, shadercombos::Name##NumWarmupShaders }
+
+static const ShaderWarmupStep s_aDeferredShaderCombos[] = {
+	SHADER_WARMUP_STEP( ShadowDepth ),
+	SHADER_WARMUP_STEP( World ),
+	SHADER_WARMUP_STEP( Skin ),
+	SHADER_WARMUP_STEP( Grass ),
+	SHADER_WARMUP_STEP( SkyMask ),
+	SHADER_WARMUP_STEP( SunShafts ),
+	SHADER_WARMUP_STEP( CopyTexture ),
+	SHADER_WARMUP_STEP( ResolveDepth ),
+	SHADER_WARMUP_STEP( DownsampleDepthMin ),
+	SHADER_WARMUP_STEP( DualKawaseDown ),
+	SHADER_WARMUP_STEP( DualKawaseUp ),
+	SHADER_WARMUP_STEP( HDRBloomThreshold ),
+	SHADER_WARMUP_STEP( GlowBloomComposite ),
+	SHADER_WARMUP_STEP( HBAOPlus ),
+	SHADER_WARMUP_STEP( XeGTAO ),
+	SHADER_WARMUP_STEP( SSR ),
+	SHADER_WARMUP_STEP( HBAOBlur ),
+	SHADER_WARMUP_STEP( HBAOComposite ),
+	SHADER_WARMUP_STEP( VolumetricFog ),
+	SHADER_WARMUP_STEP( VolumetricFogComposite ),
+	SHADER_WARMUP_STEP( CloudShadow ),
+};
+
+static volatile LONG s_iPreparedShaderCombos  = 0; // published by the worker thread
+static TINT          s_iFinalizedShaderCombos = 0; // main thread only
+static TINT          s_iWarmupShaderBaseline  = 0; // permutations already compiled (eager set) when the warm-up began
+
+static DWORD WINAPI ShaderWarmupThreadProc( LPVOID )
+{
+	for ( TINT i = 0; i < TINT( TARRAYSIZE( s_aDeferredShaderCombos ) ); i++ )
+	{
+		const TBOOL bPrepared = s_aDeferredShaderCombos[ i ].fnPrepare();
+		TASSERT( bPrepared );
+		InterlockedIncrement( &s_iPreparedShaderCombos );
+	}
+
+	return 0;
+}
+
+void ShaderWarmup_Begin()
+{
+	s_iWarmupShaderBaseline = dx11::g_iCompiledShaderPermutations;
+
+	HANDLE hThread = CreateThread( TNULL, 0, ShaderWarmupThreadProc, TNULL, 0, TNULL );
+	TASSERT( hThread != TNULL );
+	if ( hThread )
+		CloseHandle( hThread );
+	else
+		s_iPreparedShaderCombos = TARRAYSIZE( s_aDeferredShaderCombos ); // fall back to on-demand finalize
+}
+
+TBOOL ShaderWarmup_IsComplete()
+{
+	return s_iFinalizedShaderCombos >= TINT( TARRAYSIZE( s_aDeferredShaderCombos ) );
+}
+
+// Finalizes families whose blobs are ready; cheap, called per frame on the main thread
+TBOOL ShaderWarmup_RunStep()
+{
+	const TINT iPrepared = s_iPreparedShaderCombos;
+	while ( s_iFinalizedShaderCombos < iPrepared )
+	{
+		const TBOOL bCompiled = s_aDeferredShaderCombos[ s_iFinalizedShaderCombos ].fnFinalize();
+		TASSERT( bCompiled );
+		s_iFinalizedShaderCombos++;
+	}
+
+	return ShaderWarmup_IsComplete();
+}
+
+// Procedural background under the boot GUI while the warm-up runs (see ScreenSpace.hlsl)
+void DrawBootBackground()
+{
+	RenderDX11* pRender = g_pRender;
+	static ID3D11Buffer* s_pBootBackgroundCB = TNULL;
+	if ( !s_pBootBackgroundCB )
+	{
+		D3D11_BUFFER_DESC desc = {};
+		desc.ByteWidth      = 16;
+		desc.Usage          = D3D11_USAGE_DYNAMIC;
+		desc.BindFlags      = D3D11_BIND_CONSTANT_BUFFER;
+		desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		if ( FAILED( pRender->GetD3D11Device()->CreateBuffer( &desc, TNULL, &s_pBootBackgroundCB ) ) )
+			return;
+	}
+
+	ID3D11PixelShader* pPixelShader = TNULL;
+	if ( !shadercombos::CreateScreenSpacePixelShader_ps_boot_background( &pPixelShader ) )
+		return;
+
+	static ULONGLONG s_uiStartTicks = GetTickCount64();
+
+	TINT iDone, iTotal;
+	ShaderWarmup_GetProgress( iDone, iTotal );
+
+	FLOAT afParams[ 4 ] = {
+		FLOAT( GetTickCount64() - s_uiStartTicks ) * 0.001f,
+		pRender->GetSurfaceWidth() / pRender->GetSurfaceHeight(),
+		( iTotal > 0 ) ? FLOAT( iDone ) / FLOAT( iTotal ) : 0.0f,
+		pRender->GetSurfaceHeight()
+	};
+
+	D3D11_MAPPED_SUBRESOURCE mapped;
+	if ( SUCCEEDED( pRender->GetD3D11DeviceContext()->Map( s_pBootBackgroundCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped ) ) )
+	{
+		TUtil::MemCopy( mapped.pData, afParams, sizeof( afParams ) );
+		pRender->GetD3D11DeviceContext()->Unmap( s_pBootBackgroundCB, 0 );
+	}
+
+	pRender->SetCullMode( D3D11_CULL_NONE );
+	pRender->SetDepthEnabled( TFALSE );
+	pRender->SetBlendEnabled( TFALSE );
+	pRender->PSSetConstantBuffer( 1, s_pBootBackgroundCB );
+	pRender->DrawScreenRectangle( pPixelShader );
+	pRender->PSSetConstantBuffer( 1, TNULL );
+}
+
+// For validation paths that need combos before the warm-up finished (shouldn't happen
+// during boot); safe against the worker since it only consumes published families
+void ShaderWarmup_EnsureFinished()
+{
+	while ( !ShaderWarmup_RunStep() )
+		Sleep( 1 );
+}
+
+// Counts individual shader permutations, not families, for a smooth progress indication
+void ShaderWarmup_GetProgress( TINT& a_riDone, TINT& a_riTotal )
+{
+	TINT iTotal = 0;
+	for ( TINT i = 0; i < TINT( TARRAYSIZE( s_aDeferredShaderCombos ) ); i++ )
+		iTotal += TINT( s_aDeferredShaderCombos[ i ].uiNumShaders );
+
+	a_riDone  = TMath::Min( TINT( dx11::g_iCompiledShaderPermutations ) - s_iWarmupShaderBaseline, iTotal );
+	a_riTotal = iTotal;
+}
+
 void RenderDX11::CreateRenderObjects()
 {
-	const TBOOL bShaderCombosCompiled = shadercombos::CompileAllShaderCombos();
+	// The present path (screen rect VS, postprocess, AA) and 2D (system, UI) run before the
+	// warm-up finishes, so they compile here; everything else waits for ShaderWarmup_RunStep
+	const TBOOL bShaderCombosCompiled =
+	    shadercombos::CompileScreenSpaceShaderCombos() &&
+	    shadercombos::CompileSystemShaderCombos() &&
+	    shadercombos::CompileUIShaderCombos() &&
+	    shadercombos::CompilePostprocessShaderCombos() &&
+	    shadercombos::CompileFXAAShaderCombos() &&
+	    shadercombos::CompileSMAAEdgeDetectionShaderCombos() &&
+	    shadercombos::CompileSMAABlendWeightShaderCombos() &&
+	    shadercombos::CompileSMAANeighborhoodShaderCombos();
 	TASSERT( bShaderCombosCompiled );
+
+	ShaderWarmup_Begin();
 
 	// Sample states
 	m_aSamplerStates[ SAMPLER_POINT_CLAMP ]           = CreateSamplerState( D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE_ADDRESS_CLAMP, 0.0f, 0, 0.0f, D3D11_FLOAT32_MAX, 1 );

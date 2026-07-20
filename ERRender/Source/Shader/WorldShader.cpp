@@ -174,6 +174,9 @@ TBOOL remaster::WorldShaderDX11::Create()
 
 TBOOL remaster::WorldShaderDX11::Validate()
 {
+	if ( !ShaderWarmup_IsComplete() )
+		return TFALSE;
+
 	if ( IsValidated() )
 		return TTRUE;
 

@@ -40,6 +40,19 @@ namespace remaster
 
 void SetupRenderHooks();
 
+// Deferred shader warm-up: boot-critical combos compile in CreateRenderObjects, the rest on a
+// worker thread (D3DCompile only) started by Begin. RunStep finalizes ready families on the
+// main thread each frame from the SaveLoadSKU::OnUpdate hook that holds the boot state
+void  ShaderWarmup_Begin();
+TBOOL ShaderWarmup_RunStep();
+TBOOL ShaderWarmup_IsComplete();
+void  ShaderWarmup_EnsureFinished();
+void  ShaderWarmup_GetProgress( TINT& a_riDone, TINT& a_riTotal );
+
+// Procedural warm-up background (ScreenSpace ps_boot_background); drawn from the GUI
+// renderer's BeginScene since the GUI viewport clear would wipe anything drawn earlier
+void DrawBootBackground();
+
 enum SAMPLERSTATE : TINT
 {
 	SAMPLER_POINT_CLAMP           = 0,  // point,            clamp / clamp / clamp

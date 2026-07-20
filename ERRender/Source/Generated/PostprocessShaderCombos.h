@@ -127,6 +127,19 @@ TINLINE TBOOL CreatePostprocessPixelShader_ps_main_aa( ID3D11PixelShader** a_ppS
 	return TTRUE;
 }
 
+static constexpr TUINT PostprocessNumWarmupShaders = PostprocessNumPermutations * 2u;
+
+TINLINE TBOOL PreparePostprocessShaderCombos()
+{
+	if ( !EnsurePostprocessPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	if ( !EnsurePostprocessPixelShaderCombo_ps_main_aa() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompilePostprocessShaderCombos()
 {
 	if ( !EnsurePostprocessPixelShaderCombo_ps_main() )

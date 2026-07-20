@@ -96,6 +96,16 @@ TINLINE TBOOL CreateSunShaftsPixelShader_ps_main( ID3D11PixelShader** a_ppShader
 	return TTRUE;
 }
 
+static constexpr TUINT SunShaftsNumWarmupShaders = SunShaftsNumPermutations * 1u;
+
+TINLINE TBOOL PrepareSunShaftsShaderCombos()
+{
+	if ( !EnsureSunShaftsPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileSunShaftsShaderCombos()
 {
 	if ( !EnsureSunShaftsPixelShaderCombo_ps_main() )

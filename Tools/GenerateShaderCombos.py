@@ -246,6 +246,24 @@ def emit_shader(out, name: str, shader_path: Path, combos):
         out.append("}")
         out.append("")
 
+    out.append(f"static constexpr TUINT {name}NumWarmupShaders = {name}NumPermutations * {len(entrypoints)}u;")
+    out.append("")
+
+    out.append(f"TINLINE TBOOL Prepare{name}ShaderCombos()")
+    out.append("{")
+
+    if entrypoints:
+        for entrypoint in entrypoints:
+            stage_name = "Vertex" if entrypoint.startswith("vs_") else "Pixel"
+            entrypoint_suffix = sanitize(entrypoint)
+            out.append(f"\tif ( !Ensure{name}{stage_name}ShaderCombo_{entrypoint_suffix}() )")
+            out.append("\t\treturn TFALSE;")
+            out.append("")
+
+    out.append("\treturn TTRUE;")
+    out.append("}")
+    out.append("")
+
     out.append(f"TINLINE TBOOL Compile{name}ShaderCombos()")
     out.append("{")
 

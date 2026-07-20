@@ -96,6 +96,16 @@ TINLINE TBOOL CreateDownsampleDepthMinPixelShader_ps_main( ID3D11PixelShader** a
 	return TTRUE;
 }
 
+static constexpr TUINT DownsampleDepthMinNumWarmupShaders = DownsampleDepthMinNumPermutations * 1u;
+
+TINLINE TBOOL PrepareDownsampleDepthMinShaderCombos()
+{
+	if ( !EnsureDownsampleDepthMinPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileDownsampleDepthMinShaderCombos()
 {
 	if ( !EnsureDownsampleDepthMinPixelShaderCombo_ps_main() )

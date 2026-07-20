@@ -19,6 +19,7 @@
 #include "UI/UIRenderer.h"
 #include "UI/FontRenderer.h"
 #include "LightData.h"
+#include "BootState.h"
 
 #include "Generated/SkyMaskShaderCombos.h"
 #include "Generated/SunShaftsShaderCombos.h"
@@ -50,6 +51,9 @@
 #include <AHooks.h>
 #include <HookHelpers.h>
 #include <BYardSDK/ACamera.h>
+#include <BYardSDK/AGameState.h>
+#include <BYardSDK/AGUI2.h>
+#include <BYardSDK/SDK_T2GUIFontManager.h>
 #include <BYardSDK/AInstanceManager.h>
 #include <BYardSDK/ARenderer.h>
 #include <BYardSDK/AGlowViewport.h>
@@ -2955,6 +2959,15 @@ HOOK( 0x006119d0, AModelLoader_CreateMaterial, TMaterial*, TINT a_iOffset, const
 	return pMaterial;
 }
 
+// SaveLoadSKU is the first game state and removes itself when its save check finishes; holding
+// it (no CallOriginal) keeps the boot screen up while the deferred shader combos compile
+MEMBER_HOOK( 0x006529c0, AGameState, SaveLoadSKU_OnUpdate, TBOOL, TFLOAT a_fDeltaTime )
+{
+	if ( BootState::Update() ) return TTRUE;
+
+	return CallOriginal( a_fDeltaTime );
+}
+
 // Tangent stream layout: float4 per vertex (xyz = tangent, w = handedness sign)
 static constexpr TUINT16 TANGENT_STREAM_SIZE = sizeof( Toshi::TVector4 );
 
@@ -2976,6 +2989,7 @@ MEMBER_HOOK( 0x006150e0, ARenderer, ARenderer_CreateTRenderResources, TBOOL )
 void remaster::SetupRenderHooks()
 {
 	InstallHook<ARenderer_CreateTRenderResources>();
+	InstallHook<SaveLoadSKU_OnUpdate>();
 	InstallHook<TRenderD3DInterface_Create>();
 	InstallHook<TRenderD3DInterface_CreateObject>();
 	InstallHook<TRenderD3DInterface_BeginEndScene>();

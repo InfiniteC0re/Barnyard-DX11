@@ -96,6 +96,16 @@ TINLINE TBOOL CreateHDRBloomThresholdPixelShader_ps_main( ID3D11PixelShader** a_
 	return TTRUE;
 }
 
+static constexpr TUINT HDRBloomThresholdNumWarmupShaders = HDRBloomThresholdNumPermutations * 1u;
+
+TINLINE TBOOL PrepareHDRBloomThresholdShaderCombos()
+{
+	if ( !EnsureHDRBloomThresholdPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileHDRBloomThresholdShaderCombos()
 {
 	if ( !EnsureHDRBloomThresholdPixelShaderCombo_ps_main() )

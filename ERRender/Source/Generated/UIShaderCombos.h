@@ -137,6 +137,19 @@ TINLINE TBOOL CreateUIPixelShader_ps_main( ID3D11PixelShader** a_ppShader )
 	return TTRUE;
 }
 
+static constexpr TUINT UINumWarmupShaders = UINumPermutations * 2u;
+
+TINLINE TBOOL PrepareUIShaderCombos()
+{
+	if ( !EnsureUIVertexShaderCombo_vs_main() )
+		return TFALSE;
+
+	if ( !EnsureUIPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileUIShaderCombos()
 {
 	if ( !EnsureUIVertexShaderCombo_vs_main() )

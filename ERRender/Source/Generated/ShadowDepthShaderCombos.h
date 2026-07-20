@@ -168,6 +168,22 @@ TINLINE TBOOL CreateShadowDepthPixelShader_ps_main( ID3D11PixelShader** a_ppShad
 	return TTRUE;
 }
 
+static constexpr TUINT ShadowDepthNumWarmupShaders = ShadowDepthNumPermutations * 3u;
+
+TINLINE TBOOL PrepareShadowDepthShaderCombos()
+{
+	if ( !EnsureShadowDepthVertexShaderCombo_vs_main_world() )
+		return TFALSE;
+
+	if ( !EnsureShadowDepthVertexShaderCombo_vs_main_skin() )
+		return TFALSE;
+
+	if ( !EnsureShadowDepthPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileShadowDepthShaderCombos()
 {
 	if ( !EnsureShadowDepthVertexShaderCombo_vs_main_world() )

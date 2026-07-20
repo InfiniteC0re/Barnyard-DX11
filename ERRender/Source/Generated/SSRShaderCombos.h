@@ -251,6 +251,31 @@ TINLINE TBOOL CreateSSRPixelShader_ps_debug_skycube( ID3D11PixelShader** a_ppSha
 	return TTRUE;
 }
 
+static constexpr TUINT SSRNumWarmupShaders = SSRNumPermutations * 6u;
+
+TINLINE TBOOL PrepareSSRShaderCombos()
+{
+	if ( !EnsureSSRPixelShaderCombo_ps_gather() )
+		return TFALSE;
+
+	if ( !EnsureSSRPixelShaderCombo_ps_blur() )
+		return TFALSE;
+
+	if ( !EnsureSSRPixelShaderCombo_ps_composite() )
+		return TFALSE;
+
+	if ( !EnsureSSRPixelShaderCombo_ps_debug() )
+		return TFALSE;
+
+	if ( !EnsureSSRPixelShaderCombo_ps_debug_normal() )
+		return TFALSE;
+
+	if ( !EnsureSSRPixelShaderCombo_ps_debug_skycube() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileSSRShaderCombos()
 {
 	if ( !EnsureSSRPixelShaderCombo_ps_gather() )

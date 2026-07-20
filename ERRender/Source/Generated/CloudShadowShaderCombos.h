@@ -96,6 +96,16 @@ TINLINE TBOOL CreateCloudShadowPixelShader_ps_main( ID3D11PixelShader** a_ppShad
 	return TTRUE;
 }
 
+static constexpr TUINT CloudShadowNumWarmupShaders = CloudShadowNumPermutations * 1u;
+
+TINLINE TBOOL PrepareCloudShadowShaderCombos()
+{
+	if ( !EnsureCloudShadowPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileCloudShadowShaderCombos()
 {
 	if ( !EnsureCloudShadowPixelShaderCombo_ps_main() )

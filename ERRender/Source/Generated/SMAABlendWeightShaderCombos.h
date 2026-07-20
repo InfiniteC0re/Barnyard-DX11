@@ -96,6 +96,16 @@ TINLINE TBOOL CreateSMAABlendWeightPixelShader_ps_main( ID3D11PixelShader** a_pp
 	return TTRUE;
 }
 
+static constexpr TUINT SMAABlendWeightNumWarmupShaders = SMAABlendWeightNumPermutations * 1u;
+
+TINLINE TBOOL PrepareSMAABlendWeightShaderCombos()
+{
+	if ( !EnsureSMAABlendWeightPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileSMAABlendWeightShaderCombos()
 {
 	if ( !EnsureSMAABlendWeightPixelShaderCombo_ps_main() )

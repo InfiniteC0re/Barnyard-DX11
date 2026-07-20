@@ -96,6 +96,16 @@ TINLINE TBOOL CreateSMAAEdgeDetectionPixelShader_ps_main( ID3D11PixelShader** a_
 	return TTRUE;
 }
 
+static constexpr TUINT SMAAEdgeDetectionNumWarmupShaders = SMAAEdgeDetectionNumPermutations * 1u;
+
+TINLINE TBOOL PrepareSMAAEdgeDetectionShaderCombos()
+{
+	if ( !EnsureSMAAEdgeDetectionPixelShaderCombo_ps_main() )
+		return TFALSE;
+
+	return TTRUE;
+}
+
 TINLINE TBOOL CompileSMAAEdgeDetectionShaderCombos()
 {
 	if ( !EnsureSMAAEdgeDetectionPixelShaderCombo_ps_main() )
