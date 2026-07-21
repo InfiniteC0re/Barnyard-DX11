@@ -83,8 +83,7 @@ void remaster::SkinShaderDX11::Flush()
 		g_pRender->SetCullMode( m_bRenderEnvMap ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
 		m_aOrderTables[ 0 ].Render();
 
-		//pDevice->SetRenderState( D3DRS_FOGENABLE, 0 );
-		g_pRender->SetAlphaToCoverageEnabled( TTRUE );
+		g_pRender->SetAlphaToCoverageEnabled( TFALSE );
 	}
 
 	BaseClass::Flush();
@@ -109,7 +108,7 @@ void remaster::SkinShaderDX11::StartFlush()
 
 	g_pRender->SetBlendEnabled( TTRUE );
 	g_pRender->SetCullMode( m_bRenderEnvMap ? D3D11_CULL_BACK : D3D11_CULL_FRONT );
-	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
+	g_pRender->SetAlphaToCoverageEnabled( TFALSE );
 
 	g_pRender->SetZMode( TTRUE, D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
 
@@ -145,6 +144,7 @@ void remaster::SkinShaderDX11::StartFlush()
 void remaster::SkinShaderDX11::EndFlush()
 {
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
+	g_pRender->SetAlphaToCoverageEnabled( TFALSE );
 
 	if ( g_pCSMManager && g_pCSMManager->IsRenderingShadowPass() )
 		return;
@@ -449,6 +449,8 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 
 	const TBOOL bIsBlending = pMaterial->GetBlendMode() != 0 || flPacketAlpha < 1.0f || pMaterial->IsBlending();
 	g_pRender->SetBlendEnabled( bIsBlending );
+
+	g_pRender->SetAlphaToCoverageEnabled( bAlphaTest && !bIsBlending && g_pRender->GetMSAASampleCount() > 1 );
 
 	g_pRender->SetShaderPipelineState( GetSkinPipeline( bUseBakedLighting, bHasDynLight, bIsAnimated, bHasMaps, bWind, bParallax, bAlphaTest ) );
 

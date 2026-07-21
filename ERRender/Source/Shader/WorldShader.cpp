@@ -73,7 +73,7 @@ void remaster::WorldShaderDX11::Flush()
 	g_pRender->SetDepthWrite( TTRUE );
 	g_pRender->SetBlendEnabled( TTRUE );
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
-	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
+	g_pRender->SetAlphaToCoverageEnabled( TFALSE );
 }
 
 static TFLOAT s_flFogDensity = 0.0f;
@@ -95,8 +95,6 @@ void remaster::WorldShaderDX11::StartFlush()
 	g_pRender->SetDepthWrite( TTRUE );
 	g_pRender->SetBlendEnabled( TTRUE );
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
-
-	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
 
 	if ( g_bInMainScenePass && GameSettings::IsCSMEnabled() && g_pCSMManager && g_flShadowIntensity > 0.0f )
 	{
@@ -146,7 +144,7 @@ void remaster::WorldShaderDX11::EndFlush()
 
 	g_pRender->SetCullMode( D3D11_CULL_NONE );
 	g_pRender->SetDepthWrite( TTRUE );
-	g_pRender->SetBlendEnabled( TFALSE );
+	g_pRender->SetAlphaToCoverageEnabled( TFALSE );
 }
 
 void remaster::WorldShaderDX11::UploadDynamicLights( Toshi::TRenderPacket* a_pRenderPacket )
@@ -348,6 +346,9 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	TUINT uiComboFlags = 0;
 	if ( !bIsBlending && !remaster::TextureResource_IsOpaque( pMaterial->GetTexture( 0 ) ) )
 		uiComboFlags |= shadercombos::World_ALPHAREF;
+
+	g_pRender->SetAlphaToCoverageEnabled( ( uiComboFlags & shadercombos::World_ALPHAREF ) != 0 && g_pRender->GetMSAASampleCount() > 1 );
+
 	if ( !g_bInMainScenePass || bIsGlowing || pMesh->IsWater() || !GameSettings::IsCSMEnabled() || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
 		uiComboFlags |= shadercombos::World_NO_CSM;
 	if ( bIsGlowing || !pCurrentContext->IsFogEnabled() || s_flFogDensity <= 0.0f )

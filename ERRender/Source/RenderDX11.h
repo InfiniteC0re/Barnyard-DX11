@@ -424,7 +424,7 @@ public:
 	void SetDepthClip( TBOOL a_bClip );
 	void SetDepthBias( TINT a_iDepthBias );
 	void SetSlopeScaledDepthBias( TFLOAT a_fDepthBias );
-	void SetAlphaToCoverageEnabled( TBOOL a_bEnabled ) { m_BlendState.Parts.bAlphaToCoverage = TFALSE; }
+	void SetAlphaToCoverageEnabled( TBOOL a_bEnabled ) { m_BlendState.Parts.bAlphaToCoverage = a_bEnabled; }
 
 	D3D11_BLEND_OP        GetBlendOp() const { return m_BlendState.Parts.BlendOp; }
 	TBOOL                 IsBlendEnabled() const { return m_BlendState.Parts.bBlendEnabled; }
