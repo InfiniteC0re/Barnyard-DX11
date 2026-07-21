@@ -22,15 +22,15 @@ enum SkinComboFlags : TUINT
 
 static constexpr dx11::ShaderComboDefinition SkinCombos[] =
 {
-	{ "BAKED_LIGHTING", 0, 1, 1 },
-	{ "NO_CSM", 0, 1, 2 },
-	{ "NO_FOG", 0, 1, 4 },
-	{ "NO_DYN_LIGHT", 0, 1, 8 },
-	{ "ANIMATED", 0, 1, 16 },
-	{ "MATERIAL_MAPS", 0, 1, 32 },
-	{ "CLOUD_SHADOWS", 0, 1, 64 },
-	{ "WIND", 0, 1, 128 },
-	{ "PARALLAX", 0, 1, 256 },
+	{ "BAKED_LIGHTING", 0, 1, 1, dx11::SHADERCOMBOSTAGE_ALL },
+	{ "NO_CSM", 0, 1, 2, dx11::SHADERCOMBOSTAGE_PS },
+	{ "NO_FOG", 0, 1, 4, dx11::SHADERCOMBOSTAGE_PS },
+	{ "NO_DYN_LIGHT", 0, 1, 8, dx11::SHADERCOMBOSTAGE_PS },
+	{ "ANIMATED", 0, 1, 16, dx11::SHADERCOMBOSTAGE_VS },
+	{ "MATERIAL_MAPS", 0, 1, 32, dx11::SHADERCOMBOSTAGE_PS },
+	{ "CLOUD_SHADOWS", 0, 1, 64, dx11::SHADERCOMBOSTAGE_PS },
+	{ "WIND", 0, 1, 128, dx11::SHADERCOMBOSTAGE_VS },
+	{ "PARALLAX", 0, 1, 256, dx11::SHADERCOMBOSTAGE_PS },
 };
 
 static constexpr TUINT SkinNumCombos = 9;

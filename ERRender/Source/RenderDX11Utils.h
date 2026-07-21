@@ -19,12 +19,21 @@ ID3DBlob* CompileShaderFromFile( const TCHAR* a_pchFilepath, LPCSTR a_pEntrypoin
 HRESULT   CreatePixelShader( const void* a_pShaderBytecode, SIZE_T a_uiBytecodeLength, ID3D11PixelShader** a_ppPixelShader );
 HRESULT   CreateVertexShader( const void* a_pShaderBytecode, SIZE_T a_uiBytecodeLength, ID3D11VertexShader** a_ppVertexShader );
 
+// Which pipeline stages a combo flag actually affects
+enum SHADERCOMBOSTAGE : TUINT
+{
+	SHADERCOMBOSTAGE_VS  = BITFLAG( 0 ),
+	SHADERCOMBOSTAGE_PS  = BITFLAG( 1 ),
+	SHADERCOMBOSTAGE_ALL = SHADERCOMBOSTAGE_VS | SHADERCOMBOSTAGE_PS,
+};
+
 struct ShaderComboDefinition
 {
 	const TCHAR* pchName;
 	TINT         iMinValue;
 	TINT         iMaxValue;
 	TUINT        uiStride;
+	TUINT        uiStages;
 };
 
 class ShaderCombo

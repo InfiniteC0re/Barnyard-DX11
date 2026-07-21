@@ -1,12 +1,12 @@
-// STATIC: "ALPHAREF" "0..1"
-// STATIC: "NO_CSM" "0..1"
-// STATIC: "NO_FOG" "0..1"
-// STATIC: "NO_DYN_LIGHT" "0..1"
-// STATIC: "GLOW" "0..1"
-// STATIC: "MATERIAL_MAPS" "0..1"
-// STATIC: "PARALLAX" "0..1"
-// STATIC: "CLOUD_SHADOWS" "0..1"
-// STATIC: "WIND" "0..1"
+// STATIC: "ALPHAREF" "0..1" [ps]
+// STATIC: "NO_CSM" "0..1" [ps]
+// STATIC: "NO_FOG" "0..1" [ps]
+// STATIC: "NO_DYN_LIGHT" "0..1" [ps]
+// STATIC: "GLOW" "0..1" [ps]
+// STATIC: "MATERIAL_MAPS" "0..1" [ps]
+// STATIC: "PARALLAX" "0..1" [ps]
+// STATIC: "CLOUD_SHADOWS" "0..1" [ps]
+// STATIC: "WIND" "0..1" [vs]
 // STATIC: "FOB" "0..1"
 
 struct VS_IN

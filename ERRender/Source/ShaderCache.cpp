@@ -133,7 +133,7 @@ void remaster::dx11::ClearShaderFileCache()
 }
 
 static constexpr TUINT32 SHADER_CACHE_MAGIC   = TFourCC("BYSC");
-static constexpr TUINT32 SHADER_CACHE_VERSION = 1;
+static constexpr TUINT32 SHADER_CACHE_VERSION = 2;
 
 struct ShaderCacheHeader
 {
@@ -208,7 +208,7 @@ TUINT64 remaster::dx11::ComputeShaderCacheHash( const TCHAR* a_pchFilepath, LPCS
 	for ( TUINT i = 0; i < a_uiNumCombos; i++ )
 	{
 		uiHash = HashShaderData( a_pCombos[ i ].pchName, T2String8::Length( a_pCombos[ i ].pchName ), uiHash );
-		uiHash = HashShaderData( &a_pCombos[ i ].iMinValue, sizeof( TINT ) * 2 + sizeof( TUINT ), uiHash );
+		uiHash = HashShaderData( &a_pCombos[ i ].iMinValue, sizeof( TINT ) * 2 + sizeof( TUINT ) * 2, uiHash );
 	}
 
 	LockShaderFileCache();

@@ -1,12 +1,12 @@
 // STATIC: "BAKED_LIGHTING" "0..1"
-// STATIC: "NO_CSM" "0..1"
-// STATIC: "NO_FOG" "0..1"
-// STATIC: "NO_DYN_LIGHT" "0..1"
-// STATIC: "ANIMATED" "0..1"
-// STATIC: "MATERIAL_MAPS" "0..1"
-// STATIC: "CLOUD_SHADOWS" "0..1"
-// STATIC: "WIND" "0..1"
-// STATIC: "PARALLAX" "0..1"
+// STATIC: "NO_CSM" "0..1" [ps]
+// STATIC: "NO_FOG" "0..1" [ps]
+// STATIC: "NO_DYN_LIGHT" "0..1" [ps]
+// STATIC: "ANIMATED" "0..1" [vs]
+// STATIC: "MATERIAL_MAPS" "0..1" [ps]
+// STATIC: "CLOUD_SHADOWS" "0..1" [ps]
+// STATIC: "WIND" "0..1" [vs]
+// STATIC: "PARALLAX" "0..1" [ps]
 
 struct VS_IN
 {

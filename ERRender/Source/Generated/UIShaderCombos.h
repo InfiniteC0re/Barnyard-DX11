@@ -16,9 +16,9 @@ enum UIComboFlags : TUINT
 
 static constexpr dx11::ShaderComboDefinition UICombos[] =
 {
-	{ "TEXTURED", 0, 1, 1 },
-	{ "FONT", 0, 1, 2 },
-	{ "ALPHA_REF", 0, 1, 4 },
+	{ "TEXTURED", 0, 1, 1, dx11::SHADERCOMBOSTAGE_ALL },
+	{ "FONT", 0, 1, 2, dx11::SHADERCOMBOSTAGE_ALL },
+	{ "ALPHA_REF", 0, 1, 4, dx11::SHADERCOMBOSTAGE_ALL },
 };
 
 static constexpr TUINT UINumCombos = 3;

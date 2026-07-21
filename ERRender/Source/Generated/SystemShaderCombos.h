@@ -14,7 +14,7 @@ enum SystemComboFlags : TUINT
 
 static constexpr dx11::ShaderComboDefinition SystemCombos[] =
 {
-	{ "TEXTURED", 0, 1, 1 },
+	{ "TEXTURED", 0, 1, 1, dx11::SHADERCOMBOSTAGE_ALL },
 };
 
 static constexpr TUINT SystemNumCombos = 1;

@@ -151,8 +151,9 @@ struct ShaderCompileWorkerContext
 	LPCSTR                         pTarget;
 	const remaster::dx11::ShaderComboDefinition* pCombos;
 	TUINT                          uiNumCombos;
-	TUINT                          uiNumPermutations;
 	ID3DBlob**                     ppBlobs;
+	const TUINT*                   pWorkIndices; // permutation indices to compile
+	TUINT                          uiNumWorkItems;
 	volatile LONG                  iNextIndex;
 	volatile LONG                  iFailed;
 };
@@ -202,11 +203,11 @@ static DWORD WINAPI ShaderCompileWorkerProc( LPVOID a_pParameter )
 
 	for ( ;; )
 	{
-		const LONG iIndex = InterlockedIncrement( &pContext->iNextIndex ) - 1;
-		if ( iIndex >= LONG( pContext->uiNumPermutations ) )
+		const LONG iSlot = InterlockedIncrement( &pContext->iNextIndex ) - 1;
+		if ( iSlot >= LONG( pContext->uiNumWorkItems ) )
 			break;
 
-		CompileShaderComboPermutation( pContext, TUINT( iIndex ) );
+		CompileShaderComboPermutation( pContext, pContext->pWorkIndices[ iSlot ] );
 	}
 
 	return 0;
@@ -294,66 +295,115 @@ TBOOL remaster::dx11::ShaderCombo::CompileFromFile( const TCHAR* a_pchFilepath, 
 
 	m_vecBlobs.SetSize( a_uiNumPermutations, TNULL );
 
+	const TUINT uiStage = ( a_pTarget && a_pTarget[ 0 ] == 'v' ) ? SHADERCOMBOSTAGE_VS : SHADERCOMBOSTAGE_PS;
+
+	TUINT* pCanonical  = new TUINT[ a_uiNumPermutations ];
+	TUINT* pUnique     = new TUINT[ a_uiNumPermutations ];
+	TUINT  uiNumUnique = 0;
+
+	for ( TUINT i = 0; i < a_uiNumPermutations; i++ )
+	{
+		TUINT uiCanonical = i;
+		for ( TUINT c = 0; c < a_uiNumCombos; c++ )
+		{
+			const ShaderComboDefinition& rCombo = a_pCombos[ c ];
+			if ( rCombo.uiStages & uiStage )
+				continue;
+
+			const TUINT uiValueOffset = ( i / rCombo.uiStride ) % TUINT( rCombo.iMaxValue - rCombo.iMinValue + 1 );
+			uiCanonical -= uiValueOffset * rCombo.uiStride;
+		}
+
+		pCanonical[ i ] = uiCanonical;
+		if ( uiCanonical == i )
+			pUnique[ uiNumUnique++ ] = i;
+	}
+
 	const TUINT64  uiCacheHash  = ComputeShaderCacheHash( a_pchFilepath, a_pEntrypoint, a_pTarget, a_pCombos, a_uiNumCombos, a_uiNumPermutations );
 	const TString8 strCachePath = GetShaderCachePath( a_pchFilepath, a_pEntrypoint, a_pTarget );
 
-	if ( LoadShaderCacheBlobs( strCachePath, uiCacheHash, &m_vecBlobs[ 0 ], a_uiNumPermutations ) )
+	const TBOOL bLoadedFromCache = LoadShaderCacheBlobs( strCachePath, uiCacheHash, &m_vecBlobs[ 0 ], a_uiNumPermutations );
+
+	if ( bLoadedFromCache )
 	{
 		InterlockedExchangeAdd( &g_iCompiledShaderPermutations, LONG( a_uiNumPermutations ) );
-		return TTRUE;
-	}
-
-	ShaderCompileWorkerContext context;
-	context.pchFilepath        = a_pchFilepath;
-	context.pchSource          = strSource.GetString();
-	context.pEntrypoint        = a_pEntrypoint;
-	context.pTarget            = a_pTarget;
-	context.pCombos            = a_pCombos;
-	context.uiNumCombos        = a_uiNumCombos;
-	context.uiNumPermutations  = a_uiNumPermutations;
-	context.ppBlobs            = &m_vecBlobs[ 0 ];
-	context.iNextIndex         = 0;
-	context.iFailed            = 0;
-
-	const TUINT uiThreadCount = GetShaderCompileThreadCount( a_uiNumPermutations );
-	if ( uiThreadCount == 1 )
-	{
-		ShaderCompileWorkerProc( &context );
 	}
 	else
 	{
-		T2DynamicVector<HANDLE> vecThreads( GetGlobalAllocator(), uiThreadCount, uiThreadCount );
-		vecThreads.SetSize( uiThreadCount, TNULL );
+		ShaderCompileWorkerContext context;
+		context.pchFilepath    = a_pchFilepath;
+		context.pchSource      = strSource.GetString();
+		context.pEntrypoint    = a_pEntrypoint;
+		context.pTarget        = a_pTarget;
+		context.pCombos        = a_pCombos;
+		context.uiNumCombos    = a_uiNumCombos;
+		context.ppBlobs        = &m_vecBlobs[ 0 ];
+		context.pWorkIndices   = pUnique;
+		context.uiNumWorkItems = uiNumUnique;
+		context.iNextIndex     = 0;
+		context.iFailed        = 0;
 
-		TUINT uiCreatedThreads = 0;
-		for ( TUINT i = 0; i < uiThreadCount; i++ )
+		const TUINT uiThreadCount = GetShaderCompileThreadCount( uiNumUnique );
+		if ( uiThreadCount == 1 )
 		{
-			vecThreads[ i ] = CreateThread( TNULL, 0, ShaderCompileWorkerProc, &context, 0, TNULL );
-			if ( !vecThreads[ i ] )
-				break;
-
-			uiCreatedThreads++;
-		}
-
-		if ( uiCreatedThreads == 0 )
-		{
-			context.iNextIndex = 0;
 			ShaderCompileWorkerProc( &context );
 		}
 		else
 		{
-			WaitForMultipleObjects( uiCreatedThreads, &vecThreads[ 0 ], TRUE, INFINITE );
+			T2DynamicVector<HANDLE> vecThreads( GetGlobalAllocator(), uiThreadCount, uiThreadCount );
+			vecThreads.SetSize( uiThreadCount, TNULL );
 
-			for ( TUINT i = 0; i < uiCreatedThreads; i++ )
-				CloseHandle( vecThreads[ i ] );
+			TUINT uiCreatedThreads = 0;
+			for ( TUINT i = 0; i < uiThreadCount; i++ )
+			{
+				vecThreads[ i ] = CreateThread( TNULL, 0, ShaderCompileWorkerProc, &context, 0, TNULL );
+				if ( !vecThreads[ i ] )
+					break;
+
+				uiCreatedThreads++;
+			}
+
+			if ( uiCreatedThreads == 0 )
+			{
+				context.iNextIndex = 0;
+				ShaderCompileWorkerProc( &context );
+			}
+			else
+			{
+				WaitForMultipleObjects( uiCreatedThreads, &vecThreads[ 0 ], TRUE, INFINITE );
+
+				for ( TUINT i = 0; i < uiCreatedThreads; i++ )
+					CloseHandle( vecThreads[ i ] );
+			}
 		}
+
+		if ( context.iFailed != 0 )
+		{
+			delete[] pCanonical;
+			delete[] pUnique;
+			ReleaseBlobs();
+			return TFALSE;
+		}
+
+		// Aliased permutations count toward the warm-up progress total
+		InterlockedExchangeAdd( &g_iCompiledShaderPermutations, LONG( a_uiNumPermutations - uiNumUnique ) );
 	}
 
-	if ( context.iFailed != 0 )
+	for ( TUINT i = 0; i < a_uiNumPermutations; i++ )
 	{
-		ReleaseBlobs();
-		return TFALSE;
+		if ( pCanonical[ i ] == i )
+			continue;
+
+		if ( m_vecBlobs[ i ] )
+			m_vecBlobs[ i ]->Release();
+
+		m_vecBlobs[ i ] = m_vecBlobs[ pCanonical[ i ] ];
+		if ( m_vecBlobs[ i ] )
+			m_vecBlobs[ i ]->AddRef();
 	}
+
+	delete[] pCanonical;
+	delete[] pUnique;
 
 	for ( TUINT uiIndex = 0; uiIndex < a_uiNumPermutations; uiIndex++ )
 	{
@@ -364,7 +414,8 @@ TBOOL remaster::dx11::ShaderCombo::CompileFromFile( const TCHAR* a_pchFilepath, 
 		}
 	}
 
-	SaveShaderCacheBlobs( strCachePath, uiCacheHash, &m_vecBlobs[ 0 ], a_uiNumPermutations );
+	if ( !bLoadedFromCache )
+		SaveShaderCacheBlobs( strCachePath, uiCacheHash, &m_vecBlobs[ 0 ], a_uiNumPermutations );
 
 	return TTRUE;
 }
@@ -388,6 +439,22 @@ TBOOL remaster::dx11::ShaderCombo::CreateVertexShaders()
 		TVALIDPTR( pBlob );
 		if ( !pBlob )
 			return TFALSE;
+
+		// Aliased permutations share their canonical blob pointer; reuse its shader object
+		TBOOL bReused = TFALSE;
+		for ( TINT j = 0; j < i; j++ )
+		{
+			if ( m_vecBlobs[ j ] == pBlob )
+			{
+				m_vecVertexShaders[ i ] = m_vecVertexShaders[ j ];
+				m_vecVertexShaders[ i ]->AddRef();
+				bReused = TTRUE;
+				break;
+			}
+		}
+
+		if ( bReused )
+			continue;
 
 		DX11_API_VALIDATE_EXIT( CreateVertexShader( pBlob->GetBufferPointer(), pBlob->GetBufferSize(), &m_vecVertexShaders[ i ] ) );
 	}
@@ -414,6 +481,22 @@ TBOOL remaster::dx11::ShaderCombo::CreatePixelShaders()
 		TVALIDPTR( pBlob );
 		if ( !pBlob )
 			return TFALSE;
+
+		// Aliased permutations share their canonical blob pointer; reuse its shader object
+		TBOOL bReused = TFALSE;
+		for ( TINT j = 0; j < i; j++ )
+		{
+			if ( m_vecBlobs[ j ] == pBlob )
+			{
+				m_vecPixelShaders[ i ] = m_vecPixelShaders[ j ];
+				m_vecPixelShaders[ i ]->AddRef();
+				bReused = TTRUE;
+				break;
+			}
+		}
+
+		if ( bReused )
+			continue;
 
 		DX11_API_VALIDATE_EXIT( CreatePixelShader( pBlob->GetBufferPointer(), pBlob->GetBufferSize(), &m_vecPixelShaders[ i ] ) );
 	}

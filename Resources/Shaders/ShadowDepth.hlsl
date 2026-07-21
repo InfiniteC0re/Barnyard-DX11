@@ -1,6 +1,6 @@
-// STATIC: "ANIMATED" "0..1"
+// STATIC: "ANIMATED" "0..1" [vs]
 // STATIC: "ALPHATEST" "0..1"
-// STATIC: "WIND" "0..1"
+// STATIC: "WIND" "0..1" [vs]
 
 cbuffer ShadowPassBuffer : register(b0)
 {

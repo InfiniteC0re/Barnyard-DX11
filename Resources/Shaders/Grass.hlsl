@@ -1,7 +1,7 @@
-// STATIC: "NO_CSM" "0..1"
-// STATIC: "NO_FOG" "0..1"
-// STATIC: "NO_DYN_LIGHT" "0..1"
-// STATIC: "CLOUD_SHADOWS" "0..1"
+// STATIC: "NO_CSM" "0..1" [ps]
+// STATIC: "NO_FOG" "0..1" [ps]
+// STATIC: "NO_DYN_LIGHT" "0..1" [ps]
+// STATIC: "CLOUD_SHADOWS" "0..1" [ps]
 
 struct VS_IN
 {

@@ -16,9 +16,9 @@ enum ShadowDepthComboFlags : TUINT
 
 static constexpr dx11::ShaderComboDefinition ShadowDepthCombos[] =
 {
-	{ "ANIMATED", 0, 1, 1 },
-	{ "ALPHATEST", 0, 1, 2 },
-	{ "WIND", 0, 1, 4 },
+	{ "ANIMATED", 0, 1, 1, dx11::SHADERCOMBOSTAGE_VS },
+	{ "ALPHATEST", 0, 1, 2, dx11::SHADERCOMBOSTAGE_ALL },
+	{ "WIND", 0, 1, 4, dx11::SHADERCOMBOSTAGE_VS },
 };
 
 static constexpr TUINT ShadowDepthNumCombos = 3;

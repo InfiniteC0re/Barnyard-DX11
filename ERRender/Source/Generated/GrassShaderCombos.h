@@ -17,10 +17,10 @@ enum GrassComboFlags : TUINT
 
 static constexpr dx11::ShaderComboDefinition GrassCombos[] =
 {
-	{ "NO_CSM", 0, 1, 1 },
-	{ "NO_FOG", 0, 1, 2 },
-	{ "NO_DYN_LIGHT", 0, 1, 4 },
-	{ "CLOUD_SHADOWS", 0, 1, 8 },
+	{ "NO_CSM", 0, 1, 1, dx11::SHADERCOMBOSTAGE_PS },
+	{ "NO_FOG", 0, 1, 2, dx11::SHADERCOMBOSTAGE_PS },
+	{ "NO_DYN_LIGHT", 0, 1, 4, dx11::SHADERCOMBOSTAGE_PS },
+	{ "CLOUD_SHADOWS", 0, 1, 8, dx11::SHADERCOMBOSTAGE_PS },
 };
 
 static constexpr TUINT GrassNumCombos = 4;

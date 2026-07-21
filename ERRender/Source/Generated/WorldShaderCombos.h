@@ -23,16 +23,16 @@ enum WorldComboFlags : TUINT
 
 static constexpr dx11::ShaderComboDefinition WorldCombos[] =
 {
-	{ "ALPHAREF", 0, 1, 1 },
-	{ "NO_CSM", 0, 1, 2 },
-	{ "NO_FOG", 0, 1, 4 },
-	{ "NO_DYN_LIGHT", 0, 1, 8 },
-	{ "GLOW", 0, 1, 16 },
-	{ "MATERIAL_MAPS", 0, 1, 32 },
-	{ "PARALLAX", 0, 1, 64 },
-	{ "CLOUD_SHADOWS", 0, 1, 128 },
-	{ "WIND", 0, 1, 256 },
-	{ "FOB", 0, 1, 512 },
+	{ "ALPHAREF", 0, 1, 1, dx11::SHADERCOMBOSTAGE_PS },
+	{ "NO_CSM", 0, 1, 2, dx11::SHADERCOMBOSTAGE_PS },
+	{ "NO_FOG", 0, 1, 4, dx11::SHADERCOMBOSTAGE_PS },
+	{ "NO_DYN_LIGHT", 0, 1, 8, dx11::SHADERCOMBOSTAGE_PS },
+	{ "GLOW", 0, 1, 16, dx11::SHADERCOMBOSTAGE_PS },
+	{ "MATERIAL_MAPS", 0, 1, 32, dx11::SHADERCOMBOSTAGE_PS },
+	{ "PARALLAX", 0, 1, 64, dx11::SHADERCOMBOSTAGE_PS },
+	{ "CLOUD_SHADOWS", 0, 1, 128, dx11::SHADERCOMBOSTAGE_PS },
+	{ "WIND", 0, 1, 256, dx11::SHADERCOMBOSTAGE_VS },
+	{ "FOB", 0, 1, 512, dx11::SHADERCOMBOSTAGE_ALL },
 };
 
 static constexpr TUINT WorldNumCombos = 10;

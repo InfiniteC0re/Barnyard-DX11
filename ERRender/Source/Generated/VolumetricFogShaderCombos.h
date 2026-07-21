@@ -15,8 +15,8 @@ enum VolumetricFogComboFlags : TUINT
 
 static constexpr dx11::ShaderComboDefinition VolumetricFogCombos[] =
 {
-	{ "NO_DYN_LIGHT", 0, 1, 1 },
-	{ "CLOUD_SHADOWS", 0, 1, 2 },
+	{ "NO_DYN_LIGHT", 0, 1, 1, dx11::SHADERCOMBOSTAGE_ALL },
+	{ "CLOUD_SHADOWS", 0, 1, 2, dx11::SHADERCOMBOSTAGE_ALL },
 };
 
 static constexpr TUINT VolumetricFogNumCombos = 2;
