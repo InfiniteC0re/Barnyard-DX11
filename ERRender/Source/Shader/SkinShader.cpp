@@ -257,9 +257,12 @@ TBOOL remaster::SkinShaderDX11::TryValidate()
 	return TTRUE;
 }
 
-const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetSkinPipeline( TBOOL a_bBakedLighting, TBOOL a_bDynLighting, TBOOL a_bIsAnimated, TBOOL a_bHasMaps, TBOOL a_bWind, TBOOL a_bParallax ) const
+const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetSkinPipeline( TBOOL a_bBakedLighting, TBOOL a_bDynLighting, TBOOL a_bIsAnimated, TBOOL a_bHasMaps, TBOOL a_bWind, TBOOL a_bParallax, TBOOL a_bAlphaTest ) const
 {
 	TUINT uiComboFlags = 0;
+
+	if ( a_bAlphaTest )
+		uiComboFlags |= shadercombos::Skin_ALPHATEST;
 
 	if ( a_bHasMaps )
 		uiComboFlags |= shadercombos::Skin_MATERIAL_MAPS;
@@ -441,7 +444,10 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	// Parallax occlusion mapping compiles in only for meshes that ship a height map
 	const TBOOL bParallax = pSpecParams && pSpecParams->pHeightMap;
 
-	g_pRender->SetShaderPipelineState( GetSkinPipeline( bUseBakedLighting, bHasDynLight, bIsAnimated, bHasMaps, bWind, bParallax ) );
+	// Alpha test only when the texture isn't opaque
+	const TBOOL bAlphaTest = !remaster::TextureResource_IsOpaque( pMaterial->GetTexture() );
+
+	g_pRender->SetShaderPipelineState( GetSkinPipeline( bUseBakedLighting, bHasDynLight, bIsAnimated, bHasMaps, bWind, bParallax, bAlphaTest ) );
 
 	if ( bUseBakedLighting )
 	{

@@ -18,6 +18,7 @@ enum SkinComboFlags : TUINT
 	Skin_CLOUD_SHADOWS = BITFLAG( 6 ),
 	Skin_WIND = BITFLAG( 7 ),
 	Skin_PARALLAX = BITFLAG( 8 ),
+	Skin_ALPHATEST = BITFLAG( 9 ),
 };
 
 static constexpr dx11::ShaderComboDefinition SkinCombos[] =
@@ -31,10 +32,11 @@ static constexpr dx11::ShaderComboDefinition SkinCombos[] =
 	{ "CLOUD_SHADOWS", 0, 1, 64, dx11::SHADERCOMBOSTAGE_PS },
 	{ "WIND", 0, 1, 128, dx11::SHADERCOMBOSTAGE_VS },
 	{ "PARALLAX", 0, 1, 256, dx11::SHADERCOMBOSTAGE_PS },
+	{ "ALPHATEST", 0, 1, 512, dx11::SHADERCOMBOSTAGE_PS },
 };
 
-static constexpr TUINT SkinNumCombos = 9;
-static constexpr TUINT SkinNumPermutations = 512;
+static constexpr TUINT SkinNumCombos = 10;
+static constexpr TUINT SkinNumPermutations = 1024;
 
 TINLINE TUINT GetSkinComboIndex( TUINT a_uiComboFlags )
 {
@@ -48,6 +50,7 @@ TINLINE TUINT GetSkinComboIndex( TUINT a_uiComboFlags )
 	uiIndex += ( ( ( a_uiComboFlags & Skin_CLOUD_SHADOWS ) ? 1U : 0U ) - 0U ) * 64U;
 	uiIndex += ( ( ( a_uiComboFlags & Skin_WIND ) ? 1U : 0U ) - 0U ) * 128U;
 	uiIndex += ( ( ( a_uiComboFlags & Skin_PARALLAX ) ? 1U : 0U ) - 0U ) * 256U;
+	uiIndex += ( ( ( a_uiComboFlags & Skin_ALPHATEST ) ? 1U : 0U ) - 0U ) * 512U;
 	return uiIndex;
 }
 

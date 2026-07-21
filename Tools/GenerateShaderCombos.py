@@ -41,7 +41,15 @@ DEFAULT_SHADERS = [
 
 AGGREGATE_HEADER_NAME = "ShaderCombos.h"
 
-COMBO_RE = re.compile(r'^\s*//\s*(STATIC|DYNAMIC):\s*"([^"]+)"\s*"(-?\d+)\.\.(-?\d+)"')
+# Optional trailing [vs]/[ps] tag marks the combo as only affecting that stage;
+# untagged combos affect both stages.
+COMBO_RE = re.compile(r'^\s*//\s*(STATIC|DYNAMIC):\s*"([^"]+)"\s*"(-?\d+)\.\.(-?\d+)"(?:\s*\[(vs|ps)\])?')
+
+STAGE_MASKS = {
+    None: "dx11::SHADERCOMBOSTAGE_ALL",
+    "vs": "dx11::SHADERCOMBOSTAGE_VS",
+    "ps": "dx11::SHADERCOMBOSTAGE_PS",
+}
 ENTRYPOINT_RE = re.compile(r'^\s*[A-Za-z_][A-Za-z0-9_<>]*\s+((?:vs|ps)_[A-Za-z0-9_]+)\s*\(')
 
 
@@ -63,13 +71,13 @@ def parse_combos(path: Path):
         if not match:
             continue
 
-        _, name, min_value, max_value = match.groups()
+        _, name, min_value, max_value, stage = match.groups()
         min_value = int(min_value)
         max_value = int(max_value)
         if min_value > max_value:
             raise ValueError(f"{path}: invalid combo range for {name}")
 
-        combos.append((name, min_value, max_value))
+        combos.append((name, min_value, max_value, stage))
 
     return combos
 
@@ -112,7 +120,7 @@ def emit_shader(out, name: str, shader_path: Path, combos):
     out.append("{")
 
     if combos:
-        for index, (combo_name, _, _) in enumerate(combos):
+        for index, (combo_name, _, _, _) in enumerate(combos):
             out.append(f"\t{name}_{sanitize(combo_name)} = BITFLAG( {index} ),")
     else:
         out.append(f"\t{name}_NoCombos = 0,")
@@ -122,16 +130,16 @@ def emit_shader(out, name: str, shader_path: Path, combos):
 
     stride = 1
     ranges = []
-    for combo_name, min_value, max_value in combos:
-        ranges.append((combo_name, min_value, max_value, stride))
+    for combo_name, min_value, max_value, stage in combos:
+        ranges.append((combo_name, min_value, max_value, stride, stage))
         stride *= max_value - min_value + 1
 
     if ranges:
         out.append(f"static constexpr dx11::ShaderComboDefinition {name}Combos[] =")
         out.append("{")
 
-        for combo_name, min_value, max_value, combo_stride in ranges:
-            out.append(f'\t{{ "{combo_name}", {min_value}, {max_value}, {combo_stride} }},')
+        for combo_name, min_value, max_value, combo_stride, stage in ranges:
+            out.append(f'\t{{ "{combo_name}", {min_value}, {max_value}, {combo_stride}, {STAGE_MASKS[stage]} }},')
 
         out.append("};")
     else:
@@ -145,7 +153,7 @@ def emit_shader(out, name: str, shader_path: Path, combos):
     out.append("{")
     out.append("\tTUINT uiIndex = 0;")
 
-    for combo_name, min_value, max_value, combo_stride in ranges:
+    for combo_name, min_value, max_value, combo_stride, _ in ranges:
         value = f"( ( a_uiComboFlags & {name}_{sanitize(combo_name)} ) ? 1U : 0U )"
         if min_value != 0 or max_value != 1:
             out.append(f"\t// {combo_name} uses range {min_value}..{max_value}; boolean flags select min/max.")

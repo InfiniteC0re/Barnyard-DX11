@@ -7,6 +7,7 @@
 // STATIC: "CLOUD_SHADOWS" "0..1" [ps]
 // STATIC: "WIND" "0..1" [vs]
 // STATIC: "PARALLAX" "0..1" [ps]
+// STATIC: "ALPHATEST" "0..1" [ps]
 
 struct VS_IN
 {
@@ -325,7 +326,10 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 
     float4 albedo   = SAMPLE_SKIN(texture0, uv); // raw albedo, kept for the metallic tint
     float4 texColor = albedo;
+	// Compiled out for known-opaque textures: a discard-free shader keeps early depth writes
+#if ALPHATEST
 	clip(texColor.a - In.AlphaRef);
+#endif
 
 	// Sun shadow visibility, up front so the directional lighting term can be gated by it.
 #if !NO_CSM
