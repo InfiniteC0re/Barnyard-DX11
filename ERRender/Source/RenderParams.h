@@ -1,5 +1,6 @@
 #pragma once
 #include <Toshi/Typedefs.h>
+#include <ToshiTools/T2CommandLine.h>
 
 // Shared render/graphics tunables, edited live from the editor UI and read by the render
 // passes and shader binders. Defined in ERRenderWrapper.cpp, except g_bEnvSpecular (CSMManager.cpp)
@@ -68,6 +69,9 @@ extern TBOOL  g_bEnvSpecular;
 
 // Wind
 extern TBOOL  g_bWindEnabled;
+
+extern const Toshi::T2CommandLine* g_pCommandLine;
+
 extern TFLOAT g_flWindStrength;              // max world-unit sway at blue = 1
 extern TFLOAT g_flWindSpeed;                 // phase advance per second
 extern TFLOAT g_flWindDir[ 2 ];              // world-space XZ sway direction

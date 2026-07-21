@@ -1,4 +1,6 @@
 #pragma once
+#include "RenderDX11.h"
+
 #include <Toshi/Typedefs.h>
 
 namespace remaster
@@ -14,6 +16,10 @@ void Save( const TCHAR* a_szPath, const GraphicsSettings& a_rcDisplay );
 
 TBOOL                   HasDisplaySettings();
 const GraphicsSettings& GetDisplaySettings();
+
+void  OverrideDisplayResolution( TUINT a_uiWidth, TUINT a_uiHeight );
+void  OverrideDisplayMode( DisplayMode a_eMode );
+TBOOL IsDisplayResolutionForced();
 
 // UI window
 extern TBOOL g_bRenderUI;

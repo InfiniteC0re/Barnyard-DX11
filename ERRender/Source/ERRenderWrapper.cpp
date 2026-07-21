@@ -51,6 +51,7 @@
 
 #include <Toshi/TTask.h>
 #include <Render/TTMDWin.h>
+#include <ToshiTools/T2CommandLine.h>
 
 #include <AHooks.h>
 #include <HookHelpers.h>
@@ -3140,6 +3141,22 @@ void remaster::SetupRenderHooks()
 
 	// Load persisted user settings
 	remaster::GameSettings::Load( "Data\\GameSettings.xml" );
+
+	// -width/-height/-windowed/-fullscreen/-borderless command line parameters
+	if ( remaster::g_pCommandLine )
+	{
+		const TINT iWidth  = T2String8::StringToInt( remaster::g_pCommandLine->GetParameterValue( "-width", "0" ).GetString() );
+		const TINT iHeight = T2String8::StringToInt( remaster::g_pCommandLine->GetParameterValue( "-height", "0" ).GetString() );
+		if ( iWidth > 0 && iHeight > 0 )
+			remaster::GameSettings::OverrideDisplayResolution( TUINT( iWidth ), TUINT( iHeight ) );
+
+		if ( remaster::g_pCommandLine->HasParameter( "-windowed" ) || remaster::g_pCommandLine->HasParameter( "-window" ) )
+			remaster::GameSettings::OverrideDisplayMode( remaster::DISPLAY_WINDOWED );
+		else if ( remaster::g_pCommandLine->HasParameter( "-fullscreen" ) )
+			remaster::GameSettings::OverrideDisplayMode( remaster::DISPLAY_FULLSCREEN );
+		else if ( remaster::g_pCommandLine->HasParameter( "-borderless" ) )
+			remaster::GameSettings::OverrideDisplayMode( remaster::DISPLAY_BORDERLESS );
+	}
 
 	SetupRenderHooks_GrassShader();
 	SetupRenderHooks_SkinShader();

@@ -127,6 +127,27 @@ const GraphicsSettings& GameSettings::GetDisplaySettings()
 	return s_oDisplay;
 }
 
+static TBOOL s_bDisplayResolutionForced = TFALSE;
+
+void GameSettings::OverrideDisplayResolution( TUINT a_uiWidth, TUINT a_uiHeight )
+{
+	s_oDisplay.uiWidth         = a_uiWidth;
+	s_oDisplay.uiHeight        = a_uiHeight;
+	s_bHasDisplay              = TTRUE;
+	s_bDisplayResolutionForced = TTRUE;
+}
+
+void GameSettings::OverrideDisplayMode( DisplayMode a_eMode )
+{
+	s_oDisplay.eDisplayMode = a_eMode;
+	s_bHasDisplay           = TTRUE;
+}
+
+TBOOL GameSettings::IsDisplayResolutionForced()
+{
+	return s_bDisplayResolutionForced;
+}
+
 TBOOL GameSettings::IsCSMEnabled() { return g_bCSMEnabled && s_bUserCSMEnabled; }
 TBOOL GameSettings::AreCloudShadowsEnabled() { return g_bCloudShadowsEnabled && s_bUserCloudShadowsEnabled; }
 TBOOL GameSettings::IsAOEnabled() { return g_bHBAOEnabled && s_bUserAOEnabled; }

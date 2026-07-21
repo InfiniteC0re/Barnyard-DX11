@@ -27,6 +27,13 @@
 
 TOSHI_NAMESPACE_USING
 
+namespace remaster
+{
+
+const T2CommandLine* g_pCommandLine = TNULL;
+
+} // namespace remaster
+
 static void Bridge_GatherStaticLights( const TSphere& a_rcBounds, TINT8* a_pOutIDs )
 {
 	if ( remaster::g_pLightManager )
@@ -155,6 +162,7 @@ extern "C"
 		*(TUINT32*)( 0x007838bc ) |= 1;
 		*(TVector4*)( 0x007838ac ) = TVector4::VEC_ZERO;
 
+		remaster::g_pCommandLine = a_pCommandLine;
 		remaster::fontrenderer::SetHDEnabled( !a_pCommandLine->HasParameter( "-nohdfonts" ) );
 
 		return new ERRenderMod();

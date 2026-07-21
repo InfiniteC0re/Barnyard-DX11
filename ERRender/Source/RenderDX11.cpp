@@ -175,6 +175,34 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		pDisplayParams->uiHeight      = 600;
 	}
 
+	const TBOOL bHasSavedSettings = GameSettings::HasDisplaySettings();
+	DisplayMode eBootDisplayMode  = DISPLAY_WINDOWED;
+	if ( bHasSavedSettings )
+	{
+		const GraphicsSettings& rcSaved   = GameSettings::GetDisplaySettings();
+		DISPLAYPARAMS*          pOverride = (DISPLAYPARAMS*)&a_rParams;
+
+		eBootDisplayMode = rcSaved.eDisplayMode;
+
+		if ( rcSaved.uiWidth != 0 && rcSaved.uiHeight != 0 )
+		{
+			pOverride->uiWidth  = rcSaved.uiWidth;
+			pOverride->uiHeight = rcSaved.uiHeight;
+		}
+
+		// Borderless always runs at the desktop resolution, unless -width/-height forced one
+		if ( eBootDisplayMode == DISPLAY_BORDERLESS && !GameSettings::IsDisplayResolutionForced() )
+		{
+			TINT            iDisplayIndex = SDL_GetWindowDisplayIndex( m_Window.GetSDLHandle() );
+			SDL_DisplayMode oSDLMode;
+			if ( SDL_GetDesktopDisplayMode( iDisplayIndex, &oSDLMode ) == 0 )
+			{
+				pOverride->uiWidth  = TUINT( oSDLMode.w );
+				pOverride->uiHeight = TUINT( oSDLMode.h );
+			}
+		}
+	}
+
 	// Find appropriate device for the display parameters
 	m_pAdapterDevice = TSTATICCAST( RenderAdapterDX11::Mode::Device, FindDevice( a_rParams ) );
 	m_oDisplayParams = a_rParams;
@@ -193,7 +221,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 
 		// Clamp the desired MSAA sample count to what this device actually supports
 		// for the render-target and depth formats before we create any MSAA resources.
-		m_uiMSAASampleCount = GetSupportedMSAASampleCount( MSAA_SAMPLE_COUNT );
+		m_uiMSAASampleCount = GetSupportedMSAASampleCount( bHasSavedSettings ? GameSettings::GetDisplaySettings().uiMSAASamples : MSAA_SAMPLE_COUNT );
 
 		// Create swapchain
 		IDXGIDevice* dxgiDevice = TNULL;
@@ -252,38 +280,45 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		// can release and recreate them without re-running the whole CreateDisplay path.
 		CreateSwapchainSizedResources();
 
-		// Seed the runtime graphics settings from the values resolved above so the
-		// pending/active snapshots match the live device state.
-		m_oActiveSettings.uiWidth       = m_oSwapChainDesc.BufferDesc.Width;
-		m_oActiveSettings.uiHeight      = m_oSwapChainDesc.BufferDesc.Height;
-		m_oActiveSettings.eDisplayMode  = pDisplayParams->bWindowed ? DISPLAY_WINDOWED : DISPLAY_BORDERLESS;
-		m_oActiveSettings.bVSync        = ( m_uiSyncInterval != 0 );
-		m_oActiveSettings.uiMSAASamples = m_uiMSAASampleCount;
-		m_oActiveSettings.eCSMPreset    = m_oCSMManager.GetPreset();
-		m_oPendingSettings              = m_oActiveSettings;
-		m_uiGraphicsDirty               = GFX_DIRTY_NONE;
-
-		// TODO: apply immediately on start
-		if ( GameSettings::HasDisplaySettings() )
+		// Use user display settings
+		if ( bHasSavedSettings )
 		{
 			const GraphicsSettings& rcSaved = GameSettings::GetDisplaySettings();
-			RequestDisplayMode( rcSaved.eDisplayMode );
-			RequestResolution( rcSaved.uiWidth, rcSaved.uiHeight );
-			RequestVSync( rcSaved.bVSync );
-			RequestMSAA( rcSaved.uiMSAASamples );
-			RequestCSMPreset( rcSaved.eCSMPreset );
-			RequestAAMode( rcSaved.eAAMode );
+			m_uiSyncInterval                = rcSaved.bVSync ? 1 : 0;
+			m_oActiveSettings.eAAMode       = rcSaved.eAAMode;
+			m_oActiveSettings.eCSMPreset    = rcSaved.eCSMPreset;
 		}
+		m_oActiveSettings.uiWidth       = m_oSwapChainDesc.BufferDesc.Width;
+		m_oActiveSettings.uiHeight      = m_oSwapChainDesc.BufferDesc.Height;
+		m_oActiveSettings.eDisplayMode  = eBootDisplayMode;
+		m_oActiveSettings.bVSync        = ( m_uiSyncInterval != 0 );
+		m_oActiveSettings.uiMSAASamples = m_uiMSAASampleCount;
+		m_oPendingSettings              = m_oActiveSettings;
+		m_uiGraphicsDirty               = GFX_DIRTY_NONE;
 
 		s_pRenderHeap = g_pMemory->CreateMemBlock( HEAPSIZE, "RenderDX11", TNULL, 0 );
 		CreateRenderObjects();
 		CreateRenderTargets();
 
-		// Set window position and size
-		m_Window.SetPosition( SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, a_rParams.uiWidth, a_rParams.uiHeight );
+		if ( m_oActiveSettings.eCSMPreset != m_oCSMManager.GetPreset() )
+			m_oCSMManager.ApplyResolution( m_oActiveSettings.eCSMPreset );
 
 		// Set window mode
-		m_Window.SetFullscreen( !pDisplayParams->bWindowed, TTRUE );
+		// Set window position and size
+		if ( eBootDisplayMode == DISPLAY_WINDOWED )
+		{
+			m_Window.SetFullscreen( TFALSE, TFALSE );
+			m_Window.SetPosition( SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, a_rParams.uiWidth, a_rParams.uiHeight );
+		}
+		else if ( eBootDisplayMode == DISPLAY_BORDERLESS )
+		{
+			m_Window.SetFullscreen( TTRUE, TTRUE );
+		}
+		else
+		{
+			m_Window.SetExclusiveDisplayMode( a_rParams.uiWidth, a_rParams.uiHeight );
+			m_Window.SetFullscreen( TTRUE, TFALSE );
+		}
 		m_Window.Show();
 
 		// Cache the display's supported modes now the window is on its final monitor
