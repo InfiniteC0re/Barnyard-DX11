@@ -35,8 +35,12 @@ struct MaterialParams
 	TFLOAT fParallaxScale;     // parallax occlusion depth (0 = off, ~0.02-0.08 typical)
 	TFLOAT fEmissiveIntensity; // final-color multiplier; >1 pushes into HDR range for bloom (1 = neutral)
 	TBOOL  bWind;              // enable wind vertex deformation (blue vertex channel = strength)
-	TFLOAT fWindMin;           // blue value that maps to 0 wind strength
-	TFLOAT fWindMax;           // blue value that maps to full wind strength
+	TFLOAT fWindMin;           // mask value mapping to 0 wind strength; with fWindFactor > 0:
+	                           // object-space height below which sway is 0 (windHeightMin)
+	TFLOAT fWindMax;           // mask value mapping to full strength; with fWindFactor > 0:
+	                           // height at which sway is full (windHeightMax; <= min = uniform)
+	TFLOAT fWindFactor;        // constant wind strength; > 0 replaces the per-vertex mask (World
+	                           // blue channel / Skin roughness blue) so foliage without one can sway
 	TBOOL  bFOB;               // Wii-style FOB tree billboard: vertex colour blends shadow->lit,
 	                           // lit colour comes from the per-instance tint/exposure selector
 	TINT8  iShadowAlphaTest;   // alpha-tested shadow casters: -1 = auto (diffuse texture has a

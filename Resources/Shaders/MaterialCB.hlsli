@@ -6,5 +6,6 @@ cbuffer MaterialCB : register(b5)
     float4 mat_Reflectivity; // x = SSR reflectivity, y = fresnel power, z = specular intensity, w = specular power
     float4 mat_MapParams;    // x = normal-map strength, y = roughness-map strength, z = parallax scale, w = roughness
     float4 mat_Params2;      // x = metallic, y = per-material IBL strength, z = F0, w = emissive intensity
-    float4 mat_Wind;         // x = windMin, y = windMax, z = map flags (1 = normal, 2 = rough, 4 = metal)
+    float4 mat_Wind;         // x = windMin, y = windMax, z = map flags (1 = normal, 2 = rough, 4 = metal),
+                             // w = constant wind factor (0 = per-vertex mask: World blue channel / Skin roughness blue)
 };

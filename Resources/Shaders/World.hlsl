@@ -72,17 +72,30 @@ PS_IN vs_main(VS_IN In)
     float3 objPos = In.ObjPos;
 
     // Wind repurposes the blue vertex-color channel as sway strength, so it can't feed lighting;
-    // substitute green (r, g, g) to keep the baked lighting plausible
+    // substitute green (r, g, g) to keep the baked lighting plausible. A constant per-material
+    // factor (mat_Wind.w > 0) leaves blue as real lighting data, so keep the full colour then
 #if WIND
-    float3 vtxColor = float3(In.Color.x, In.Color.y, In.Color.y);
+    float3 vtxColor = mat_Wind.w > 0.0f ? In.Color.xyz : float3(In.Color.x, In.Color.y, In.Color.y);
 #else
     float3 vtxColor = In.Color.xyz;
 #endif
 
 #if WIND
-    // Blue channel remapped through [windMin, windMax] gives [0,1] sway strength (0 = trunk, 1 = tip).
+    // Blue channel remapped through [windMin, windMax] gives [0,1] sway strength (0 = trunk, 1 = tip)
+    // mat_Wind.w > 0 replaces it with a constant factor (foliage with no authored wind channel)
+    // and x/y then repurpose as an object-space height fade (y <= x disables)
     // Phase drifts with world XZ so the wave ripples across the surface, not in lockstep
-    float  windMask  = saturate((In.Color.z - mat_Wind.x) / max(mat_Wind.y - mat_Wind.x, 1e-4f));
+    float windMask;
+    if (mat_Wind.w > 0.0f)
+    {
+        windMask = saturate(mat_Wind.w);
+        if (mat_Wind.y > mat_Wind.x)
+            windMask *= saturate((objPos.z - mat_Wind.x) / (mat_Wind.y - mat_Wind.x));
+    }
+    else
+    {
+        windMask = saturate((In.Color.z - mat_Wind.x) / max(mat_Wind.y - mat_Wind.x, 1e-4f));
+    }
     float  windPhase = pp_WindParams.w + dot(objPos.xz, float2(0.35f, 0.35f));
     float  sway      = sin(windPhase) + 0.5f * sin(windPhase * 2.7f + 1.3f);
     objPos.xz += pp_WindParams.xy * (sway * pp_WindParams.z * windMask);
@@ -362,6 +375,10 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 
 #if !NO_CSM
     float shadow = SampleShadow(In.WorldPos, In.WorldNormal, In.ProjPos.w);
+#if !FOB
+    float sunFacing = saturate(dot(Ngeo, pp_SunDirection.xyz) * 4.0f);
+    shadow = min(shadow, sunFacing);
+#endif
     float shadowStrength = cb_ShadowParams.w;
     float shadowScale = shadow * shadowStrength + (1.0f - shadowStrength);
     // Specular uses the *raw* shadow (no ambient floor): a sun highlight shouldn't survive

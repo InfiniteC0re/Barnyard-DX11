@@ -359,10 +359,10 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	{
 		auto pCBuffer = g_pRender->GetDepthPassConstantBuffer();
 
-		// Match the main pass's wind so the shadow silhouette sways; needs a roughness map for the
-		// wind-strength (blue) channel in the shadow VS
+		// Match the main pass's wind so the shadow silhouette sways; strength comes from the
+		// roughness map's blue channel or the constant per-material factor
 		const remaster::MaterialParams* pShadowParams = pMaterial->GetMaterialParams();
-		const TBOOL bWind = GameSettings::IsWindEnabled() && pShadowParams && pShadowParams->bWind && pShadowParams->pRoughnessMap;
+		const TBOOL bWind = GameSettings::IsWindEnabled() && pShadowParams && pShadowParams->bWind && ( pShadowParams->pRoughnessMap || pShadowParams->fWindFactor > 0.0f );
 
 		// Explicit MaterialParams override wins, otherwise auto from the diffuse alpha mask
 		const TBOOL bShadowAlphaTest = ( pShadowParams && pShadowParams->iShadowAlphaTest >= 0 )
@@ -384,13 +384,13 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 			if ( bWind )
 			{
 				pExtra[ 1 ] = TVector4( g_flWindDir[ 0 ], g_flWindDir[ 1 ], g_flWindStrength, g_flWindTime );
-				pExtra[ 2 ] = TVector4( pShadowParams->fWindMin, pShadowParams->fWindMax, 0.0f, 0.0f );
+				pExtra[ 2 ] = TVector4( pShadowParams->fWindMin, pShadowParams->fWindMax, pShadowParams->fWindFactor, 0.0f );
 			}
 
 			g_pRender->GetD3D11DeviceContext()->Unmap( pCBuffer, 0 );
 		}
 
-		if ( bWind )
+		if ( bWind && pShadowParams->pRoughnessMap )
 		{
 			g_pRender->VSSetShaderResource( 8, (ID3D11ShaderResourceView*)pShadowParams->pRoughnessMap );
 			g_pRender->VSSetSamplerState( 0, SAMPLER_LINEAR_WRAP );
@@ -437,9 +437,9 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	const remaster::MaterialParams* pSpecParams = pMaterial->GetMaterialParams();
 	const TBOOL bHasMaps = pSpecParams && ( pSpecParams->pNormalMap || pSpecParams->pRoughnessMap || pSpecParams->pMetallicMap );
 
-	// Wind reads the roughness map's blue channel in the VS, so it needs both the per-material
-	// opt-in and a roughness map to sample. Master-gated by GameSettings::IsWindEnabled()
-	const TBOOL bWind = GameSettings::IsWindEnabled() && pSpecParams && pSpecParams->bWind && pSpecParams->pRoughnessMap;
+	// Wind strength comes from the roughness map's blue channel or the constant per-material
+	// factor. Master-gated by GameSettings::IsWindEnabled()
+	const TBOOL bWind = GameSettings::IsWindEnabled() && pSpecParams && pSpecParams->bWind && ( pSpecParams->pRoughnessMap || pSpecParams->fWindFactor > 0.0f );
 
 	// Parallax occlusion mapping compiles in only for meshes that ship a height map
 	const TBOOL bParallax = pSpecParams && pSpecParams->pHeightMap;
@@ -566,9 +566,10 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	g_pRender->PassBufferSetVec4( PASSBUF_ENV_PROBE_POS2, TVector4( rBlend.vProbeFrom.x, rBlend.vProbeFrom.y, rBlend.vProbeFrom.z, 0.0f ) );
 
 	// Wind (vertex stage): deformation samples the roughness map's blue channel in the VS, so bind
-	// SRV+sampler there. Direction/strength/time per-pass; [windMin,windMax] remap rides in the material record
+	// SRV+sampler there (skipped for the constant-factor path). Direction/strength/time per-pass;
+	// [windMin,windMax] remap + constant factor ride in the material record
 	g_pRender->PassBufferSetVec4( PASSBUF_WIND_PARAMS, TVector4( g_flWindDir[ 0 ], g_flWindDir[ 1 ], g_flWindStrength, g_flWindTime ) );
-	if ( bWind )
+	if ( bWind && pSpecParams->pRoughnessMap )
 	{
 		g_pRender->VSSetShaderResource( 8, (ID3D11ShaderResourceView*)pSpecParams->pRoughnessMap );
 		g_pRender->VSSetSamplerState( 0, SAMPLER_LINEAR_WRAP );

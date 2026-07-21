@@ -33,7 +33,7 @@ struct MaterialGPURecord
 	TFLOAT flReflectivity, flFresnelPower, flSpecularIntensity, flSpecularPower;
 	TFLOAT flNormalStrength, flRoughnessStrength, flParallaxScale, flRoughness;
 	TFLOAT flMetallic, flEnvSpecIntensity, flSpecularF0, flEmissiveIntensity;
-	TFLOAT flWindMin, flWindMax, flMapFlags, flUnused;
+	TFLOAT flWindMin, flWindMax, flMapFlags, flWindFactor;
 };
 TSTATICASSERT( sizeof( MaterialGPURecord ) == 64 );
 
@@ -83,7 +83,7 @@ static void FillMaterialRecord( MaterialGPURecord& a_rRecord, const remaster::Ma
 	a_rRecord.flWindMin           = a_rParams.fWindMin;
 	a_rRecord.flWindMax           = a_rParams.fWindMax;
 	a_rRecord.flMapFlags          = TFLOAT( ( a_rParams.szNormalMap[ 0 ] ? 1 : 0 ) | ( a_rParams.szRoughnessMap[ 0 ] ? 2 : 0 ) | ( a_rParams.szMetallicMap[ 0 ] ? 4 : 0 ) );
-	a_rRecord.flUnused            = 0.0f;
+	a_rRecord.flWindFactor        = a_rParams.fWindFactor;
 }
 
 // Reserved default pages (one per shader) for materials with no XML entry; World and Skin fallbacks differ
@@ -336,6 +336,14 @@ void remaster::LoadMaterialParamsDB( const TCHAR* a_szPath )
 		oParams.bWind                 = pElem->BoolAttribute( "wind", false );
 		oParams.fWindMin              = pElem->FloatAttribute( "windMin", 0.0f );
 		oParams.fWindMax              = pElem->FloatAttribute( "windMax", 1.0f );
+		oParams.fWindFactor           = pElem->FloatAttribute( "windFactor", 0.0f );
+		
+		// The constant factor replaces the per-vertex mask
+		if ( oParams.fWindFactor > 0.0f )
+		{
+			oParams.fWindMin = pElem->FloatAttribute( "windHeightMin", 0.0f );
+			oParams.fWindMax = pElem->FloatAttribute( "windHeightMax", 0.0f );
+		}
 		oParams.bFOB                  = pElem->BoolAttribute( "fob", false );
 
 		TBOOL bShadowAlphaTestAttr = TFALSE;

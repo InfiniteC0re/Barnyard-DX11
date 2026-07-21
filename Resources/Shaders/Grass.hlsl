@@ -94,6 +94,8 @@ PS_OUT ps_main(PS_IN In)
 
 #if !NO_CSM
     float shadow = SampleShadow(In.WorldPos, In.WorldNormal, In.ProjPos.w);
+    float sunFacing = saturate(dot(normalize(In.WorldNormal), pp_SunDirection.xyz) * 4.0f);
+    shadow = min(shadow, sunFacing);
     float shadowStrength = cb_ShadowParams.w;
     // No glow-based un-shadowing lerp anymore: additive point light is not scaled by the sun
     // shadow, so lit grass in shade brightens on its own

@@ -29,10 +29,20 @@ Texture2D windRoughnessMap : register(t8);
 
 // Shared with World/Skin: remap strength through [windMin, windMax], offset along wind dir by two
 // summed sines whose phase drifts with world XZ. Must match the main-pass deformation or shadows
-// won't align
+// won't align. cb_WindRemap.z > 0 = constant per-material factor
 float3 ApplyWind(float3 a_pos, float a_strengthRaw)
 {
-    float mask  = saturate((a_strengthRaw - cb_WindRemap.x) / max(cb_WindRemap.y - cb_WindRemap.x, 1e-4f));
+    float mask;
+    if (cb_WindRemap.z > 0.0f)
+    {
+        mask = saturate(cb_WindRemap.z);
+        if (cb_WindRemap.y > cb_WindRemap.x)
+            mask *= saturate((a_pos.z - cb_WindRemap.x) / (cb_WindRemap.y - cb_WindRemap.x));
+    }
+    else
+    {
+        mask = saturate((a_strengthRaw - cb_WindRemap.x) / max(cb_WindRemap.y - cb_WindRemap.x, 1e-4f));
+    }
     float phase = cb_WindParams.w + dot(a_pos.xz, float2(0.35f, 0.35f));
     float sway  = sin(phase) + 0.5f * sin(phase * 2.7f + 1.3f);
     a_pos.xz   += cb_WindParams.xy * (sway * cb_WindParams.z * mask);
@@ -119,7 +129,8 @@ VS_OUT vs_main_skin(VS_IN_SKIN In)
 #endif // !ANIMATED
 
 #if WIND
-    float windBlue = windRoughnessMap.SampleLevel(sampler0, In.UV, 0).b; // roughness blue = strength
+    // Constant factor (cb_WindRemap.z > 0) needs no map sample; ApplyWind picks it up
+    float windBlue = cb_WindRemap.z > 0.0f ? 0.0f : windRoughnessMap.SampleLevel(sampler0, In.UV, 0).b;
     vertex = ApplyWind(vertex, windBlue);
 #endif
 

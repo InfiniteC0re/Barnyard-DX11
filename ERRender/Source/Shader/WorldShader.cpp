@@ -289,7 +289,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		if ( bShadowWind )
 		{
 			g_pRender->VSBufferSetVec4( 5, TVector4( g_flWindDir[ 0 ], g_flWindDir[ 1 ], g_flWindStrength, g_flWindTime ) );
-			g_pRender->VSBufferSetVec4( 6, TVector4( pMatParams->fWindMin, pMatParams->fWindMax, 0.0f, 0.0f ) );
+			g_pRender->VSBufferSetVec4( 6, TVector4( pMatParams->fWindMin, pMatParams->fWindMax, pMatParams->fWindFactor, 0.0f ) );
 		}
 
 		TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );

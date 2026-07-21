@@ -137,9 +137,23 @@ PS_IN vs_main(VS_IN In)
 
 #if WIND
     // Skin has no vertex color, so wind strength is the roughness map's blue channel (mip 0 -- no
-    // gradients in the VS), remapped through [windMin, windMax] and driven by the same two-sine sway
-    float  windBlue  = roughnessMap.SampleLevel(sampler0, In.UV, 0).b;
-    float  windMask  = saturate((windBlue - mat_Wind.x) / max(mat_Wind.y - mat_Wind.x, 1e-4f));
+    // gradients in the VS) remapped through [windMin, windMax]; mat_Wind.w > 0 replaces it with a
+    // constant per-material factor (no roughness map needed). Same two-sine sway either way
+    float windMask;
+    if (mat_Wind.w > 0.0f)
+    {
+        windMask = saturate(mat_Wind.w);
+        // Constant factor repurposes x/y as a height fade along object-space +Z (the
+        // models' up axis): no sway at/below x, full at/above y (y <= x disables).
+        // Keeps trunks planted without a mask texture
+        if (mat_Wind.y > mat_Wind.x)
+            windMask *= saturate((vertex.z - mat_Wind.x) / (mat_Wind.y - mat_Wind.x));
+    }
+    else
+    {
+        float windBlue = roughnessMap.SampleLevel(sampler0, In.UV, 0).b;
+        windMask = saturate((windBlue - mat_Wind.x) / max(mat_Wind.y - mat_Wind.x, 1e-4f));
+    }
     float  windPhase = pp_WindParams.w + dot(vertex.xz, float2(0.35f, 0.35f));
     float  sway      = sin(windPhase) + 0.5f * sin(windPhase * 2.7f + 1.3f);
     vertex.xz += pp_WindParams.xy * (sway * pp_WindParams.z * windMask);
