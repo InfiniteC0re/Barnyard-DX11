@@ -24,7 +24,6 @@ struct PS_IN
     centroid float4 Color : Color;
     centroid float2 UV0 : TEXCOORD0;
     centroid float3 WorldPos : TEXCOORD1;
-    centroid float ViewDepth : TEXCOORD2;
     centroid float3 WorldNormal : TEXCOORD3;
     centroid float4 WorldTangent : TEXCOORD4; // xyz = world-space tangent, w = handedness
 };
@@ -91,7 +90,6 @@ PS_IN vs_main(VS_IN In)
 
     Out.WorldPos = mul(float4(objPos, 1.0f), cb_matModel).xyz;
     Out.ProjPos = mul(float4(Out.WorldPos, 1.0f), pp_matViewProj);
-    Out.ViewDepth = Out.ProjPos.w;
     Out.WorldNormal = normalize(mul(In.normal, (float3x3)cb_matModel));
     Out.WorldTangent = float4(normalize(mul(In.Tangent.xyz, (float3x3)cb_matModel)), In.Tangent.w);
 
@@ -115,12 +113,6 @@ PS_IN vs_main(VS_IN In)
     Out.UV0 = In.UV + cb_TexCoordOffsetAndAlpha.xy;
 
     return Out;
-}
-
-float CalculateExponentialFog(float distance, float fogStart, float density)
-{
-    if (distance <= fogStart) return 1.0f;
-    return exp(-density * distance);
 }
 
 float CalculateExponentialSquaredFog(float distance, float fogStart, float density)
@@ -258,7 +250,7 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
     // the normal-map bump highlight further down). They all rely on stable mip selection
     // and small per-pixel UV variation, both of which break down past this range and
     // start to shimmer.
-    float  detailFade     = 1.0f - smoothstep(15.0f, 30.0f, In.ViewDepth);
+    float  detailFade     = 1.0f - smoothstep(15.0f, 30.0f, In.ProjPos.w);
 
     // Parallax occlusion mapping: shift the UV so the height map reads as depth. Gated by the
     // material's parallax scale (masked off during the reflection-cube capture); later samples use
@@ -369,7 +361,7 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 #endif
 
 #if !NO_CSM
-    float shadow = SampleShadow(In.WorldPos, In.WorldNormal, In.ViewDepth);
+    float shadow = SampleShadow(In.WorldPos, In.WorldNormal, In.ProjPos.w);
     float shadowStrength = cb_ShadowParams.w;
     float shadowScale = shadow * shadowStrength + (1.0f - shadowStrength);
     // Specular uses the *raw* shadow (no ambient floor): a sun highlight shouldn't survive

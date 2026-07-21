@@ -5,6 +5,8 @@
 #include "RenderDX11Utils.h"
 #include "ShaderCache.h"
 #include "MaterialParams.h"
+#include "GameSettings.h"
+#include "Resource/OrderTable.h"
 #include "UI/FontRenderer.h"
 #include "Generated/ShaderCombos.h"
 
@@ -260,6 +262,18 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 		m_oActiveSettings.eCSMPreset    = m_oCSMManager.GetPreset();
 		m_oPendingSettings              = m_oActiveSettings;
 		m_uiGraphicsDirty               = GFX_DIRTY_NONE;
+
+		// TODO: apply immediately on start
+		if ( GameSettings::HasDisplaySettings() )
+		{
+			const GraphicsSettings& rcSaved = GameSettings::GetDisplaySettings();
+			RequestDisplayMode( rcSaved.eDisplayMode );
+			RequestResolution( rcSaved.uiWidth, rcSaved.uiHeight );
+			RequestVSync( rcSaved.bVSync );
+			RequestMSAA( rcSaved.uiMSAASamples );
+			RequestCSMPreset( rcSaved.eCSMPreset );
+			RequestAAMode( rcSaved.eAAMode );
+		}
 
 		s_pRenderHeap = g_pMemory->CreateMemBlock( HEAPSIZE, "RenderDX11", TNULL, 0 );
 		CreateRenderObjects();
@@ -554,6 +568,7 @@ void RenderDX11::FlushOrderTables()
 
 	for ( auto it = m_OrderTables.Begin(); it != m_OrderTables.End(); it++ )
 	{
+		remaster::DepthSortOrderTable( it.Get() );
 		it->Flush();
 	}
 }
@@ -1526,8 +1541,9 @@ void RenderDX11::CreateRenderObjects()
 	m_RasterizerState.SlopeScaledDepthBias               = 0.0f;
 
 	// Other states
-	m_eCurrentTopology     = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
-	m_pCurrentVertexBuffer = TNULL;
+	m_eCurrentTopology          = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
+	m_pCurrentVertexBuffer[ 0 ] = TNULL;
+	m_pCurrentVertexBuffer[ 1 ] = TNULL;
 
 	CreatePostAAStaticResources();
 

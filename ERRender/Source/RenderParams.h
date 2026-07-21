@@ -92,6 +92,9 @@ extern TFLOAT g_flVolumetricFogColor[ 3 ];
 // Boot warm-up screen (set by BootState after a grace period so cached boots don't flash it)
 extern TBOOL g_bBootScreenVisible;
 
+// Front-to-back depth sort
+extern TBOOL g_bDepthSortOrderTables;
+
 // Debug
 extern TBOOL  g_bDebugTangents;
 

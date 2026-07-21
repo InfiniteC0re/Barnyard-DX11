@@ -13,7 +13,7 @@ static constexpr TINT   CSM_CASCADE_COUNT                           = 3;
 // Default (MEDIUM preset) shadow-map sizes. The active sizes are runtime members on
 // CSMManager (see m_iResolution / m_aiCascadeResolution) so they can be changed live.
 static constexpr TINT   CSM_RESOLUTION                              = 2048;
-static constexpr TINT   CSM_CASCADE_RESOLUTION[ CSM_CASCADE_COUNT ] = { 2048, 1024, 512 };
+static constexpr TINT   CSM_CASCADE_RESOLUTION[ CSM_CASCADE_COUNT ] = { 2048, 1024, 1024 };
 
 // CSM shadow-map quality presets. The base resolution drives cascade 0; the finer
 // cascades keep the default {2048,1024,512}/2048 ratio (HIGH -> {4096,2048,1024}).
@@ -25,6 +25,7 @@ enum CSMPreset : TUINT
 
 	CSM_PRESET_COUNT,
 };
+static constexpr TUINT  CSM_CLOUD_BAKE_INTERVAL                     = 30;
 static constexpr TFLOAT CSM_SPLIT_LAMBDA                            = 0.1f;
 static constexpr TFLOAT CSM_DEPTH_BIAS_SLOPE                        = 2.0f;
 static constexpr TINT   CSM_DEPTH_BIAS_UNITS                        = 5;
@@ -77,6 +78,7 @@ public:
 	);
 
 	TBOOL IsRenderingShadowPass() const { return m_bRenderingShadowPass; }
+	TBOOL IsCloudBakeFrame() const { return m_bCloudBakeFrame; }
 	const Toshi::TMatrix44& GetCurrentLightProjection() const { return m_LightProj[ m_iCurrentCascade ]; }
 	const Toshi::TMatrix44& GetCurrentLightViewProj() const { return m_LightViewProj[ m_iCurrentCascade ]; }
 	TINT GetCurrentCascade() const { return m_iCurrentCascade; }
@@ -120,6 +122,13 @@ private:
 	TBOOL m_bForceAllCascades;   // forces a full update (first frame, leaving debug view)
 	TINT  m_iLastDebugCascade;   // detects debug-cascade changes to trigger a full update
 
+	// Cloud shadow baked state
+	TBOOL  m_bCloudBakeFrame;
+	TFLOAT m_afCloudRegionMin[ 2 ];
+	TFLOAT m_fCloudRegionSize;
+	TFLOAT m_afCloudBakeWind[ 2 ];
+	TFLOAT m_afCloudBakeShape[ 6 ];
+
 	// Runtime shadow-map sizing (driven by ApplyResolution); seeded to the MEDIUM preset.
 	CSMPreset m_ePreset;
 	TINT      m_iResolution;                            // atlas texture size (square)
@@ -160,12 +169,18 @@ extern TFLOAT      g_flCloudShadowDensity;      // cloud opacity multiplier
 extern TFLOAT      g_flCloudShadowContrast;     // hardness of the cloud edges
 extern TFLOAT      g_flCloudShadowSpeed;        // wind scroll speed
 extern TFLOAT      g_flCloudShadowWindDir[ 2 ]; // wind direction (XZ)
+extern TFLOAT      g_flCloudShadowTime;         // accumulated wind phase, advanced per frame by the render wrapper
 extern ID3D11ShaderResourceView* g_pCloudShadowSRV;
 extern ID3D11SamplerState*       g_pCloudShadowSampler;
 
 // Reflection cubemap captured each frame; world shader samples it for environment specular
 extern ID3D11ShaderResourceView* g_pSkyCubeSRV;
 extern TINT                      g_iSkyCubeMaxMip;
+
+// Manual cascade split distances (m); index i = where cascade i hands over to i+1.
+// 0 = derive that split from the lambda formula. The last cascade always ends at
+// g_flShadowDistance
+extern TFLOAT      g_aflShadowSplitOverride[ CSM_CASCADE_COUNT - 1 ];
 
 // Per-cascade shadow tunables.
 extern TFLOAT      g_aflShadowCasterPadding[ CSM_CASCADE_COUNT ];

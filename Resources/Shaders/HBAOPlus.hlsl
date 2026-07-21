@@ -11,19 +11,17 @@ cbuffer HBAOCBuffer : register( b1 )
     float4 cb_BufferSize;      // width, height, invWidth, invHeight
 };
 
-static const int NUM_DIRECTIONS = 8;
-static const int NUM_STEPS      = 4;
+static const int NUM_DIRECTIONS = 6;
+static const int NUM_STEPS      = 3;
 
-static const float2 BASE_DIRS[8] =
+static const float2 BASE_DIRS[6] =
 {
     float2(  1.00000f,  0.00000f ),
-    float2(  0.70711f,  0.70711f ),
-    float2(  0.00000f,  1.00000f ),
-    float2( -0.70711f,  0.70711f ),
+    float2(  0.50000f,  0.86603f ),
+    float2( -0.50000f,  0.86603f ),
     float2( -1.00000f,  0.00000f ),
-    float2( -0.70711f, -0.70711f ),
-    float2(  0.00000f, -1.00000f ),
-    float2(  0.70711f, -0.70711f ),
+    float2( -0.50000f, -0.86603f ),
+    float2(  0.50000f, -0.86603f ),
 };
 
 float LinearizeDepth( float hardwareDepth )
@@ -142,8 +140,11 @@ float ps_main( PS_IN i ) : SV_TARGET
     }
 
     float amountScale = cb_Params.z / max( 1.0f - bias, 0.0001f );
-    float ao = smallScaleAO * ( amountScale * 2.0f ) + largeScaleAO * amountScale;
-    ao /= (float)( NUM_DIRECTIONS * ( NUM_STEPS + 1 ) );
+    
+    // Normalize
+    float smallMean = smallScaleAO / (float)NUM_DIRECTIONS;
+    float largeMean = largeScaleAO / (float)( NUM_DIRECTIONS * ( NUM_STEPS - 1 ) );
+    float ao = ( smallMean * 0.4f + largeMean * 0.6f ) * amountScale;
     ao = saturate( 1.0f - ao );
     ao = pow( ao, cb_Params.w );
 

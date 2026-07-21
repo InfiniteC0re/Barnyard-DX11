@@ -13,8 +13,9 @@ cbuffer SunShaftsCBuffer : register( b1 )
     float  cb_PADDING;
 };
 
-static const int   SAMPLE_COUNT    = 96;
+static const int   SAMPLE_COUNT    = 48;
 static const float INV_SAMPLE_COUNT = 1.0f / (float)SAMPLE_COUNT;
+static const float INTENSITY_NORM  = 2.02978f;
 
 float4 ps_main( PS_IN i ) : SV_TARGET
 {
@@ -40,7 +41,7 @@ float4 ps_main( PS_IN i ) : SV_TARGET
         uv       -= uvDir;
     }
 
-    rayColor = Uncharted2Tonemap( rayColor * cb_vRaysTint * cb_fSunAlpha );
+    rayColor = Uncharted2Tonemap( rayColor * INTENSITY_NORM * cb_vRaysTint * cb_fSunAlpha );
 
     // No dither here on purpose -- the Kawase blur that follows would average it away. The shaft is
     // dithered at its final additive store instead (CopyTexture.hlsl, post-blur)

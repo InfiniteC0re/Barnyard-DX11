@@ -3,6 +3,7 @@
 
 #include "RenderDX11.h"
 #include "RenderParams.h"
+#include "GameSettings.h"
 #include "Shader/WorldShader.h"
 
 #include <HookHelpers.h>
@@ -55,6 +56,9 @@ TFLOAT      g_flCloudShadowDensity            = 4.0f;
 TFLOAT      g_flCloudShadowContrast           = 0.78f;
 TFLOAT      g_flCloudShadowSpeed              = 0.025f;
 TFLOAT      g_flCloudShadowWindDir[ 2 ]       = { -1.0f, 1.3f };
+TFLOAT      g_flCloudShadowTime               = 0.0f;
+
+TFLOAT      g_aflShadowSplitOverride[ CSM_CASCADE_COUNT - 1 ]    = { 0.0f, 0.0f };
 
 // Per-cascade defaults.
 TFLOAT      g_aflShadowCasterPadding[ CSM_CASCADE_COUNT ]        = { 3.0f, 3.0f, 3.0f };
@@ -74,10 +78,15 @@ CSMManager::CSMManager()
     , m_uiCascadeRenderMask( 0 )
     , m_bForceAllCascades( TTRUE )
     , m_iLastDebugCascade( -1 )
+    , m_bCloudBakeFrame( TTRUE )
+    , m_fCloudRegionSize( 0.0f )
     , m_ePreset( CSM_PRESET_MEDIUM )
     , m_iResolution( CSM_RESOLUTION )
 {
 	TUtil::MemClear( m_pCascadeDSV, sizeof( m_pCascadeDSV ) );
+	TUtil::MemClear( m_afCloudRegionMin, sizeof( m_afCloudRegionMin ) );
+	TUtil::MemClear( m_afCloudBakeWind, sizeof( m_afCloudBakeWind ) );
+	TUtil::MemClear( m_afCloudBakeShape, sizeof( m_afCloudBakeShape ) );
 	TUtil::MemClear( &m_oShadowCBufferData, sizeof( m_oShadowCBufferData ) );
 	m_LightView.Identity();
 
@@ -249,6 +258,16 @@ void CSMManager::UpdateCascades( TRenderContext* a_pRenderContext )
 		m_CascadeSplits[ i ]       = g_flShadowSplitLambda * ( fLogSplit - fUniformSplit ) + fUniformSplit;
 	}
 
+	// Manual split overrides
+	TFLOAT fPrevSplit = fNearZ;
+	for ( TINT i = 0; i < CSM_CASCADE_COUNT - 1; i++ )
+	{
+		if ( g_aflShadowSplitOverride[ i ] > 0.0f )
+			m_CascadeSplits[ i ] = g_aflShadowSplitOverride[ i ];
+		TMath::Clip( m_CascadeSplits[ i ], fPrevSplit + 0.1f, fFarZ - 0.1f );
+		fPrevSplit = m_CascadeSplits[ i ];
+	}
+
 	// Decide which cascades to (re)build this frame. A change to the debug cascade
 	// (including entering/leaving the debug view) forces a full update so stale
 	// slices are refreshed for the new configuration.
@@ -347,11 +366,48 @@ void CSMManager::UpdateCascades( TRenderContext* a_pRenderContext )
 
 	// Cloud shadow region: a world square centred on the camera. The bake pass covers
 	// it and receivers map worldPos.xz into [0,1]. Strength 0 disables sampling in-shader.
-	const TFLOAT fCloudSize = TMath::Max( g_flCloudShadowRegionSize, 1.0f );
-	m_oShadowCBufferData.cloudParams[ 0 ] = m_oCameraWorldPos.x - fCloudSize * 0.5f;
-	m_oShadowCBufferData.cloudParams[ 1 ] = m_oCameraWorldPos.z - fCloudSize * 0.5f;
-	m_oShadowCBufferData.cloudParams[ 2 ] = 1.0f / fCloudSize;
-	m_oShadowCBufferData.cloudParams[ 3 ] = g_bCloudShadowsEnabled ? g_flCloudShadowStrength : 0.0f;
+	const TFLOAT fCloudSize    = TMath::Max( g_flCloudShadowRegionSize, 1.0f );
+	const TFLOAT fFeatureScale = TMath::Max( g_flCloudShadowFeatureScale, 1e-6f );
+
+	const TFLOAT afBakeShape[ 6 ] = {
+		fFeatureScale,
+		g_flCloudShadowWindDir[ 0 ],
+		g_flCloudShadowWindDir[ 1 ],
+		g_flCloudShadowCoverage,
+		g_flCloudShadowDensity,
+		g_flCloudShadowContrast,
+	};
+	TBOOL bBakeInputsChanged = m_fCloudRegionSize != fCloudSize;
+	for ( TINT i = 0; i < 6; i++ )
+	{
+		if ( m_afCloudBakeShape[ i ] != afBakeShape[ i ] )
+			bBakeInputsChanged = TTRUE;
+	}
+
+	const TFLOAT fWindDeltaX = g_flCloudShadowWindDir[ 0 ] * g_flCloudShadowTime - m_afCloudBakeWind[ 0 ];
+	const TFLOAT fWindDeltaZ = g_flCloudShadowWindDir[ 1 ] * g_flCloudShadowTime - m_afCloudBakeWind[ 1 ];
+	const TFLOAT fCentreX    = m_afCloudRegionMin[ 0 ] - fWindDeltaX / fFeatureScale + m_fCloudRegionSize * 0.5f;
+	const TFLOAT fCentreZ    = m_afCloudRegionMin[ 1 ] - fWindDeltaZ / fFeatureScale + m_fCloudRegionSize * 0.5f;
+	const TFLOAT fCameraDrift = TMath::Max( TMath::Abs( m_oCameraWorldPos.x - fCentreX ), TMath::Abs( m_oCameraWorldPos.z - fCentreZ ) );
+
+	m_bCloudBakeFrame = ( m_uiFrameCounter % CSM_CLOUD_BAKE_INTERVAL ) == 1 || bBakeInputsChanged || fCameraDrift > fCloudSize * 0.15f;
+	if ( m_bCloudBakeFrame )
+	{
+		m_afCloudRegionMin[ 0 ] = m_oCameraWorldPos.x - fCloudSize * 0.5f;
+		m_afCloudRegionMin[ 1 ] = m_oCameraWorldPos.z - fCloudSize * 0.5f;
+		m_fCloudRegionSize      = fCloudSize;
+		m_afCloudBakeWind[ 0 ]  = g_flCloudShadowWindDir[ 0 ] * g_flCloudShadowTime;
+		m_afCloudBakeWind[ 1 ]  = g_flCloudShadowWindDir[ 1 ] * g_flCloudShadowTime;
+		for ( TINT i = 0; i < 6; i++ )
+			m_afCloudBakeShape[ i ] = afBakeShape[ i ];
+	}
+
+	const TFLOAT fOutWindDeltaX = g_flCloudShadowWindDir[ 0 ] * g_flCloudShadowTime - m_afCloudBakeWind[ 0 ];
+	const TFLOAT fOutWindDeltaZ = g_flCloudShadowWindDir[ 1 ] * g_flCloudShadowTime - m_afCloudBakeWind[ 1 ];
+	m_oShadowCBufferData.cloudParams[ 0 ] = m_afCloudRegionMin[ 0 ] - fOutWindDeltaX / fFeatureScale;
+	m_oShadowCBufferData.cloudParams[ 1 ] = m_afCloudRegionMin[ 1 ] - fOutWindDeltaZ / fFeatureScale;
+	m_oShadowCBufferData.cloudParams[ 2 ] = 1.0f / m_fCloudRegionSize;
+	m_oShadowCBufferData.cloudParams[ 3 ] = GameSettings::AreCloudShadowsEnabled() ? g_flCloudShadowStrength : 0.0f;
 }
 
 void CSMManager::RenderShadowMaps()
@@ -703,26 +759,28 @@ void CSMManager::BuildCascade( TRenderContext* a_pRenderContext, TINT a_iCascade
 	TFLOAT fMinZ = FLT_MAX;
 	TFLOAT fMaxZ = -FLT_MAX;
 	TVector3 aWorldCorners[ TARRAYSIZE( aViewCorners ) ];
-	TVector3 oWorldCenter( 0.0f, 0.0f, 0.0f );
 
 	for ( TINT i = 0; i < TARRAYSIZE( aViewCorners ); i++ )
 	{
 		TMatrix44::TransformVector( aWorldCorners[ i ], oViewWorld, aViewCorners[ i ] );
-		oWorldCenter += aWorldCorners[ i ];
-	}
 
-	oWorldCenter.Divide( TFLOAT( TARRAYSIZE( aWorldCorners ) ) );
-
-	TFLOAT fRadius = 0.0f;
-	for ( TINT i = 0; i < TARRAYSIZE( aWorldCorners ); i++ )
-	{
 		TVector3 lightPos;
 		TMatrix44::TransformVector( lightPos, m_LightView, aWorldCorners[ i ] );
-
-		fRadius = TMath::Max( fRadius, TVector3::Distance( oWorldCenter, aWorldCorners[ i ] ) );
-		fMinZ   = TMath::Min( fMinZ, lightPos.z );
-		fMaxZ   = TMath::Max( fMaxZ, lightPos.z );
+		fMinZ = TMath::Min( fMinZ, lightPos.z );
+		fMaxZ = TMath::Max( fMaxZ, lightPos.z );
 	}
+
+	const TFLOAT fNearDiagSq = fNearHalfX * fNearHalfX + fNearHalfY * fNearHalfY;
+	const TFLOAT fFarDiagSq  = fFarHalfX * fFarHalfX + fFarHalfY * fFarHalfY;
+	TFLOAT       fCenterZ    = ( a_fFarZ * a_fFarZ + fFarDiagSq - a_fNearZ * a_fNearZ - fNearDiagSq ) / ( 2.0f * TMath::Max( a_fFarZ - a_fNearZ, 0.001f ) );
+	TMath::Clip( fCenterZ, a_fNearZ, a_fFarZ );
+
+	const TFLOAT fNearDistSq = fNearDiagSq + ( fCenterZ - a_fNearZ ) * ( fCenterZ - a_fNearZ );
+	const TFLOAT fFarDistSq  = fFarDiagSq + ( a_fFarZ - fCenterZ ) * ( a_fFarZ - fCenterZ );
+	TFLOAT       fRadius     = TMath::Sqrt( TMath::Max( fNearDistSq, fFarDistSq ) );
+
+	TVector3 oWorldCenter;
+	TMatrix44::TransformVector( oWorldCenter, oViewWorld, TVector3( 0.0f, 0.0f, fCenterZ ) );
 
 	fRadius += g_aflShadowCascadePadding[ a_iCascade ];
 

@@ -376,6 +376,8 @@ public:
 	// for both the colour and depth-stencil formats (falls back to 1 if none).
 	TUINT GetSupportedMSAASampleCount( TUINT a_uiDesired ) const;
 
+	TUINT GetMSAASampleCount() const { return m_uiMSAASampleCount; }
+
 public:
 	//-----------------------------------------------------------------------------
 	// Buffers management
@@ -451,9 +453,12 @@ public:
 		m_pCurrentRenderTargetView       = decltype( m_pCurrentRenderTargetView )( ~TUINT( m_pCurrentRenderTargetView ) );
 		m_pCurrentDepthStencilView       = decltype( m_pCurrentDepthStencilView )( ~TUINT( m_pCurrentDepthStencilView ) );
 		m_eCurrentTopology               = decltype( m_eCurrentTopology )( ~TUINT( m_eCurrentTopology ) );
-		m_pCurrentVertexBuffer           = decltype( m_pCurrentVertexBuffer )( ~TUINT( m_pCurrentVertexBuffer ) );
-		m_uiVBCurrentStride              = decltype( m_uiVBCurrentStride )( ~TUINT( m_uiVBCurrentStride ) );
-		m_uiVBCurrentOffset              = decltype( m_uiVBCurrentOffset )( ~TUINT( m_uiVBCurrentOffset ) );
+		m_pCurrentVertexBuffer[ 0 ]      = (ID3D11Buffer*)( ~TUINT( m_pCurrentVertexBuffer[ 0 ] ) );
+		m_pCurrentVertexBuffer[ 1 ]      = (ID3D11Buffer*)( ~TUINT( m_pCurrentVertexBuffer[ 1 ] ) );
+		m_uiVBCurrentStride[ 0 ]         = (TUINT)( ~TUINT( m_uiVBCurrentStride[ 0 ] ) );
+		m_uiVBCurrentStride[ 1 ]         = (TUINT)( ~TUINT( m_uiVBCurrentStride[ 1 ] ) );
+		m_uiVBCurrentOffset[ 0 ]         = (TUINT)( ~TUINT( m_uiVBCurrentOffset[ 0 ] ) );
+		m_uiVBCurrentOffset[ 1 ]         = (TUINT)( ~TUINT( m_uiVBCurrentOffset[ 1 ] ) );
 		m_pCurrentIndexBuffer            = decltype( m_pCurrentIndexBuffer )( ~TUINT( m_pCurrentIndexBuffer ) );
 		m_eIBCurrentFormat               = decltype( m_eIBCurrentFormat )( ~TUINT( m_eIBCurrentFormat ) );
 		m_uiIBCurrentOffset              = decltype( m_uiIBCurrentOffset )( ~TUINT( m_uiIBCurrentOffset ) );
@@ -507,22 +512,15 @@ public:
 		}
 	}
 
-	void SetVertexBuffer( ID3D11Buffer* a_pVertexBuffer, TUINT a_uiStride, TUINT a_uiOffset )
+	void SetVertexBuffer( ID3D11Buffer* a_pVertexBuffer, TUINT a_uiStride, TUINT a_uiOffset, TUINT a_uiSlot = 0 )
 	{
-		if ( a_pVertexBuffer != m_pCurrentVertexBuffer || a_uiStride != m_uiVBCurrentStride || a_uiOffset != m_uiVBCurrentOffset )
+		if ( a_pVertexBuffer != m_pCurrentVertexBuffer[ a_uiSlot ] || a_uiStride != m_uiVBCurrentStride[ a_uiSlot ] || a_uiOffset != m_uiVBCurrentOffset[ a_uiSlot ] )
 		{
-			m_pDeviceContext->IASetVertexBuffers( 0, 1, &a_pVertexBuffer, &a_uiStride, &a_uiOffset );
-			m_pCurrentVertexBuffer = a_pVertexBuffer;
-			m_uiVBCurrentStride    = a_uiStride;
-			m_uiVBCurrentOffset    = a_uiOffset;
+			m_pDeviceContext->IASetVertexBuffers( a_uiSlot, 1, &a_pVertexBuffer, &a_uiStride, &a_uiOffset );
+			m_pCurrentVertexBuffer[ a_uiSlot ] = a_pVertexBuffer;
+			m_uiVBCurrentStride[ a_uiSlot ]    = a_uiStride;
+			m_uiVBCurrentOffset[ a_uiSlot ]    = a_uiOffset;
 		}
-	}
-
-	// Bind an additional vertex stream at an arbitrary input slot (e.g. the world
-	// tangent stream at slot 1). Uncached, so the per-slot-0 cache above is unaffected.
-	void SetVertexBufferStream( TUINT a_uiSlot, ID3D11Buffer* a_pVertexBuffer, TUINT a_uiStride, TUINT a_uiOffset )
-	{
-		m_pDeviceContext->IASetVertexBuffers( a_uiSlot, 1, &a_pVertexBuffer, &a_uiStride, &a_uiOffset );
 	}
 
 	void SetIndexBuffer( ID3D11Buffer* a_pIndexBuffer, DXGI_FORMAT a_eFormat, TUINT a_uiOffset )
@@ -672,8 +670,8 @@ public:
 
 	void DiscardView( ID3D11View* a_pView )
 	{
-// 		if ( m_pDeviceContext1 )
-// 			m_pDeviceContext1->DiscardView( a_pView );
+		if ( m_pDeviceContext1 )
+			m_pDeviceContext1->DiscardView( a_pView );
 	}
 
 	void ClearCurrentRenderTarget( const TFLOAT a_pColorRGBA[ 4 ] )
@@ -966,9 +964,9 @@ private:
 
 	// Device states
 	D3D11_PRIMITIVE_TOPOLOGY m_eCurrentTopology;
-	ID3D11Buffer*            m_pCurrentVertexBuffer;
-	TUINT                    m_uiVBCurrentStride;
-	TUINT                    m_uiVBCurrentOffset;
+	ID3D11Buffer*            m_pCurrentVertexBuffer[ 2 ];
+	TUINT                    m_uiVBCurrentStride[ 2 ];
+	TUINT                    m_uiVBCurrentOffset[ 2 ];
 
 	ID3D11Buffer* m_pCurrentIndexBuffer;
 	DXGI_FORMAT   m_eIBCurrentFormat;

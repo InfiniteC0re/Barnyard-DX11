@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "Editor.h"
-#include "Settings.h"
+#include "GameSettings.h"
 #include "LightManager.h"
 #include "CubemapAnchors.h"
 #include "StaticLightsFile.h"
@@ -238,7 +238,7 @@ static TBOOL s_bDebugInputLocked = TFALSE;
 // let it drift above zero and never release, so track our own held state to keep it balanced
 static void SyncDebugInputLock()
 {
-	const TBOOL bWantLock = g_bEnabled || settings::g_bEnabled;
+	const TBOOL bWantLock = g_bEnabled || remaster::GameSettings::g_bRenderUI;
 	if ( bWantLock == s_bDebugInputLocked )
 		return;
 
@@ -259,7 +259,7 @@ MEMBER_HOOK( 0x004293d0, AGameStateController, AGameStateController_ProcessInput
 		if ( pKeyboard->IsAltDown() && a_pInputEvent->GetDoodad() == TInputDeviceKeyboard::KEY_Z )
 		{
 			g_bEnabled = !g_bEnabled;
-			if ( g_bEnabled ) settings::g_bEnabled = TFALSE; // only one debug overlay open at a time
+			if ( g_bEnabled ) remaster::GameSettings::g_bRenderUI = TFALSE; // only one debug overlay open at a time
 
 			SyncDebugInputLock();
 			return TTRUE;
@@ -267,8 +267,8 @@ MEMBER_HOOK( 0x004293d0, AGameStateController, AGameStateController_ProcessInput
 
 		if ( pKeyboard->IsAltDown() && a_pInputEvent->GetDoodad() == TInputDeviceKeyboard::KEY_G )
 		{
-			settings::g_bEnabled = !settings::g_bEnabled;
-			if ( settings::g_bEnabled ) g_bEnabled = TFALSE; // only one debug overlay open at a time
+			remaster::GameSettings::g_bRenderUI = !remaster::GameSettings::g_bRenderUI;
+			if ( remaster::GameSettings::g_bRenderUI ) g_bEnabled = TFALSE; // only one debug overlay open at a time
 
 			SyncDebugInputLock();
 			return TTRUE;
@@ -510,6 +510,10 @@ static const LevelSetting s_aLevelSettings[] = {
 	LS_FLOAT( "shadowIntensity", remaster::g_flShadowIntensity ),
 	LS_FLOAT( "shadowDistance", remaster::g_flShadowDistance ),
 	LS_FLOAT( "shadowSplitLambda", remaster::g_flShadowSplitLambda ),
+	LS_FLOATN( "shadowSplitOverride", remaster::g_aflShadowSplitOverride, remaster::CSM_CASCADE_COUNT - 1 ),
+	LS_INT( "shadowForcedCascade", remaster::g_iCSMDebugCascade ),
+	LS_BOOL( "shadowForcedCascadeFullRange", remaster::g_bCSMDebugFullRange ),
+	LS_BOOL( "shadowForcedCascadeMask", remaster::g_bCSMDebugMaskBySplit ),
 	LS_FLOAT( "shadowCascadeBlend", remaster::g_flShadowCascadeBlend ),
 	LS_FLOAT( "shadowMinSlopeBias", remaster::g_flShadowMinSlopeScaledDepthBias ),
 	LS_FLOAT( "shadowReceiverPlaneBias", remaster::g_flShadowReceiverPlaneBias ),
@@ -780,7 +784,7 @@ static void FXSlotSet( const LevelSetting& a_rSetting, TINT a_iElem, TFLOAT a_fV
 	switch ( a_rSetting.eType )
 	{
 		case LevelSetting::T_BOOL: *(TBOOL*)a_rSetting.pValue = a_fValue > 0.5f; break;
-		case LevelSetting::T_INT: *(TINT*)a_rSetting.pValue = (TINT)( a_fValue + 0.5f ); break;
+		case LevelSetting::T_INT: *(TINT*)a_rSetting.pValue = (TINT)std::floor( a_fValue + 0.5f ); break;
 		default: ( (TFLOAT*)a_rSetting.pValue )[ a_iElem ] = a_fValue; break;
 	}
 }
@@ -1218,6 +1222,8 @@ static void DrawRenderSettingsTab()
 	ImGui::SliderFloat( "Shadow Intensity", &remaster::g_flShadowIntensity, 0.0f, 1.0f );
 	ImGui::DragFloat( "Shadow Distance", &remaster::g_flShadowDistance, 1.0f, 10.0f, 500.0f, "%.0f m" );
 	ImGui::SliderFloat( "Split Lambda", &remaster::g_flShadowSplitLambda, 0.0f, 1.0f, "%.2f" );
+	ImGui::DragFloat( "Split 0 (end of cascade 0)", &remaster::g_aflShadowSplitOverride[ 0 ], 0.5f, 0.0f, 500.0f, remaster::g_aflShadowSplitOverride[ 0 ] > 0.0f ? "%.1f m" : "auto (lambda)" );
+	ImGui::DragFloat( "Split 1 (end of cascade 1)", &remaster::g_aflShadowSplitOverride[ 1 ], 0.5f, 0.0f, 500.0f, remaster::g_aflShadowSplitOverride[ 1 ] > 0.0f ? "%.1f m" : "auto (lambda)" );
 	ImGui::SliderFloat( "Cascade Blend", &remaster::g_flShadowCascadeBlend, 0.0f, 0.5f, "%.2f" );
 	ImGui::DragFloat( "Min Slope Depth Bias", &remaster::g_flShadowMinSlopeScaledDepthBias, 0.01f, 0.0f, 5.0f, "%.2f" );
 	ImGui::SliderFloat( "Receiver Plane Bias", &remaster::g_flShadowReceiverPlaneBias, 0.0f, 2.0f, "%.2f" );
@@ -1347,6 +1353,10 @@ static void DrawRenderSettingsTab()
 	}
 
 	ImGui::PopID();
+	ImGui::Separator();
+	ImGui::TextUnformatted( "Performance" );
+	ImGui::Checkbox( "Depth-Sort Order Tables", &remaster::g_bDepthSortOrderTables );
+
 	ImGui::Separator();
 	ImGui::TextUnformatted( "Tangents" );
 	ImGui::Checkbox( "Debug Tangents (world)", &remaster::g_bDebugTangents );

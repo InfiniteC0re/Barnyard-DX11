@@ -1,15 +1,19 @@
 #include "pch.h"
 #include "RenderDX11.h"
 #include "RenderParams.h"
+#include "GameSettings.h"
 #include "MaterialParams.h"
 #include "Shader/GrassShader.h"
 #include "Shader/SkinShader.h"
 #include "Shader/SkinMesh.h"
 #include "Shader/WorldShader.h"
+#include "Shader/WorldMesh.h"
 #include "Shader/StaticInstanceShader.h"
 #include "Shader/SysShader.h"
 #include "Ref/AWorld.h"
 #include "Ref/AWorldVIS.h"
+#include "Ref/ASkinShader/ASkinMaterial.h"
+#include "Ref/AWorldShader/AWorldMaterial.h"
 #include "Resource/TextureResource.h"
 #include "Resource/Viewport.h"
 #include "Resource/OrderTable.h"
@@ -118,6 +122,8 @@ TBOOL  g_bReflectTerrain    = TTRUE; // terrain in the probe is dynamic-lit, no 
 // Parallax box half-extents for the camera-follow fallback (level has no authored anchor)
 TFLOAT g_flSkyCubeParallaxHorizontal = 40.0f; // world units (X/Z)
 TFLOAT g_flSkyCubeParallaxVertical   = 20.0f; // world units (Y)
+
+TBOOL g_bDepthSortOrderTables = TTRUE;
 
 TBOOL g_bDebugTangents = TFALSE;
 
@@ -344,6 +350,13 @@ HOOK( 0x005e83e0, RenderCellMeshWin, void, CellMeshSphere* a_pMeshSphere, Render
 	vecColour *= fLightMag;
 
 	TSTATICCAST( remaster::WorldShaderDX11, remaster::WorldShaderDX11::GetSingleton() )->SetColours( vecColour, vecColour );
+
+	if ( pMesh->GetMaterial() && pMesh->GetMaterial()->GetShader() == remaster::WorldShaderDX11::GetSingleton() )
+		TSTATICCAST( remaster::WorldMesh, pMesh )->SetWorldBoundsCentre(
+		    a_pMeshSphere->m_BoundingSphere.AsVector4().x,
+		    -a_pMeshSphere->m_BoundingSphere.AsVector4().z,
+		    a_pMeshSphere->m_BoundingSphere.AsVector4().y );
+
 	pMesh->Render();
 
 	if ( bNormalPass )
@@ -395,7 +408,14 @@ HOOK( 0x005e7d10, RenderCellMeshDefault, void, CellMeshSphere* a_pMeshSphere, Re
 		}
 	}
 
-	a_pMeshSphere->m_pCellMesh->pMesh->Render();
+	TMesh* pCellMesh = a_pMeshSphere->m_pCellMesh->pMesh;
+	if ( pCellMesh->GetMaterial() && pCellMesh->GetMaterial()->GetShader() == remaster::WorldShaderDX11::GetSingleton() )
+		TSTATICCAST( remaster::WorldMesh, pCellMesh )->SetWorldBoundsCentre(
+		    a_pMeshSphere->m_BoundingSphere.AsVector4().x,
+		    -a_pMeshSphere->m_BoundingSphere.AsVector4().z,
+		    a_pMeshSphere->m_BoundingSphere.AsVector4().y );
+
+	pCellMesh->Render();
 
 	if ( bNormalPass )
 	{
@@ -453,21 +473,21 @@ struct TangentAccum
 	TFLOAT tx, ty, tz, bx, by, bz;
 };
 
-// Per-vertex tangents (Lengyel's method) for a triangle-strip world mesh: writes float4 per vertex
-// (xyz = orthonormal tangent, w = handedness) into a_pOut. Winding-independent; skips degenerate/zero-UV tris
-void GenerateWorldMeshTangents( const WorldVertex* a_pVerts, TUINT a_uiNumVerts, const TUINT16* a_pIndices, TUINT a_uiNumIndices, TFLOAT* a_pOut )
+// Per-vertex tangent accumulation (Lengyel's method) over one triangle-strip index
+// list. Winding-independent; skips degenerate/zero-UV tris. Shared by the world and
+// skin vertex types (both expose Position/Normal/UV)
+template <class TVertexType>
+static void AccumulateStripTangents( const TVertexType* a_pVerts, TUINT a_uiNumVerts, const TUINT16* a_pIndices, TUINT a_uiNumIndices, TangentAccum* a_pAccum )
 {
-	TangentAccum* pAccum = new TangentAccum[ a_uiNumVerts ]();
-
 	for ( TUINT i = 0; i + 2 < a_uiNumIndices; i++ )
 	{
 		const TUINT16 i0 = a_pIndices[ i ], i1 = a_pIndices[ i + 1 ], i2 = a_pIndices[ i + 2 ];
 		if ( i0 == i1 || i1 == i2 || i0 == i2 ) continue; // degenerate strip stitch
 		if ( i0 >= a_uiNumVerts || i1 >= a_uiNumVerts || i2 >= a_uiNumVerts ) continue;
 
-		const WorldVertex& v0 = a_pVerts[ i0 ];
-		const WorldVertex& v1 = a_pVerts[ i1 ];
-		const WorldVertex& v2 = a_pVerts[ i2 ];
+		const TVertexType& v0 = a_pVerts[ i0 ];
+		const TVertexType& v1 = a_pVerts[ i1 ];
+		const TVertexType& v2 = a_pVerts[ i2 ];
 
 		const TFLOAT e1x = v1.Position.x - v0.Position.x, e1y = v1.Position.y - v0.Position.y, e1z = v1.Position.z - v0.Position.z;
 		const TFLOAT e2x = v2.Position.x - v0.Position.x, e2y = v2.Position.y - v0.Position.y, e2z = v2.Position.z - v0.Position.z;
@@ -485,7 +505,7 @@ void GenerateWorldMeshTangents( const WorldVertex* a_pVerts, TUINT a_uiNumVerts,
 		const TUINT16 tri[ 3 ] = { i0, i1, i2 };
 		for ( TINT j = 0; j < 3; j++ )
 		{
-			TangentAccum& a = pAccum[ tri[ j ] ];
+			TangentAccum& a = a_pAccum[ tri[ j ] ];
 			a.tx += tx;
 			a.ty += ty;
 			a.tz += tz;
@@ -494,11 +514,16 @@ void GenerateWorldMeshTangents( const WorldVertex* a_pVerts, TUINT a_uiNumVerts,
 			a.bz += bz;
 		}
 	}
+}
 
+// Orthonormalize the accumulated tangents against the vertex normals
+template <class TVertexType>
+static void FinalizeTangents( const TVertexType* a_pVerts, TUINT a_uiNumVerts, const TangentAccum* a_pAccum, TFLOAT* a_pOut )
+{
 	for ( TUINT i = 0; i < a_uiNumVerts; i++ )
 	{
 		const TVector3&     N = a_pVerts[ i ].Normal;
-		const TangentAccum& a = pAccum[ i ];
+		const TangentAccum& a = a_pAccum[ i ];
 
 		// Gram-Schmidt orthonormalize against the normal
 		const TFLOAT ndt = N.x * a.tx + N.y * a.ty + N.z * a.tz;
@@ -539,7 +564,14 @@ void GenerateWorldMeshTangents( const WorldVertex* a_pVerts, TUINT a_uiNumVerts,
 		pOut[ 2 ]    = tz;
 		pOut[ 3 ]    = handedness;
 	}
+}
 
+// Per-vertex tangents for a triangle-strip world mesh
+void GenerateWorldMeshTangents( const WorldVertex* a_pVerts, TUINT a_uiNumVerts, const TUINT16* a_pIndices, TUINT a_uiNumIndices, TFLOAT* a_pOut )
+{
+	TangentAccum* pAccum = new TangentAccum[ a_uiNumVerts ]();
+	AccumulateStripTangents( a_pVerts, a_uiNumVerts, a_pIndices, a_uiNumIndices, pAccum );
+	FinalizeTangents( a_pVerts, a_uiNumVerts, pAccum, a_pOut );
 	delete[] pAccum;
 }
 
@@ -575,6 +607,47 @@ HOOK( 0x00613a40, AModelLoader_LoadWorldMeshTRB_Tangents, void, TModel* a_pModel
 	CallOriginal( a_pModel, a_iLODIndex, a_pLOD, a_pLODHeader );
 
 	GenerateWorldTangentsForLOD( a_pLOD );
+}
+
+void GenerateSkinTangentsForLOD( TModelLOD* a_pLOD )
+{
+	for ( TINT k = 0; k < a_pLOD->iNumMeshes; k++ )
+	{
+		ASkinMesh* pMesh = TSTATICCAST( ASkinMesh, a_pLOD->ppMeshes[ k ] );
+		if ( !pMesh ) continue;
+
+		auto pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
+		if ( !pVertexPool ) continue;
+
+		const TUINT            uiNumVerts = pVertexPool->GetNumVertices();
+		const TTMDWin::Vertex* pVerts     = TREINTERPRETCAST( const TTMDWin::Vertex*, pVertexPool->GetManagedStream( 0 ) );
+		TFLOAT*                pTangents  = TREINTERPRETCAST( TFLOAT*, pVertexPool->GetManagedStream( 1 ) );
+		if ( !pVerts || !pTangents || uiNumVerts == 0 ) continue;
+
+		TangentAccum* pAccum = new TangentAccum[ uiNumVerts ]();
+
+		for ( TINT iSub = 0; iSub < pMesh->GetNumSubMeshes(); iSub++ )
+		{
+			TIndexPoolResource* pIndexPool = TSTATICCAST( TIndexPoolResource, pMesh->GetSubMesh( iSub )->pIndexPool );
+			if ( !pIndexPool ) continue;
+
+			const TUINT16* pIndices     = pIndexPool->GetIndices();
+			const TUINT    uiNumIndices = pIndexPool->GetNumIndices();
+			if ( !pIndices || uiNumIndices < 3 ) continue;
+
+			AccumulateStripTangents( pVerts, uiNumVerts, pIndices, uiNumIndices, pAccum );
+		}
+
+		FinalizeTangents( pVerts, uiNumVerts, pAccum, pTangents );
+		delete[] pAccum;
+	}
+}
+
+HOOK( 0x006135d0, AModelLoader_LoadSkinLOD_Tangents, void, TModel* a_pModel, TINT a_iLODIndex, TModelLOD* a_pLOD, TTMDWin::TRBLODHeader* a_pLODHeader )
+{
+	CallOriginal( a_pModel, a_iLODIndex, a_pLOD, a_pLODHeader );
+
+	GenerateSkinTangentsForLOD( a_pLOD );
 }
 
 static ID3D11Texture2D*          s_pSkyMaskTexture            = TNULL;
@@ -1385,7 +1458,7 @@ MEMBER_HOOK( 0x005e17a0, AInstanceManager, AInstanceManager_Render, TBOOL )
 
 static void CaptureCubeMap( TFLOAT a_flDeltaTime )
 {
-	if ( !remaster::g_bSkyCubeEnabled || !s_pSkyCubeTexture[ 0 ] )
+	if ( !remaster::GameSettings::IsSkyCubeEnabled() || !s_pSkyCubeTexture[ 0 ] )
 		return;
 
 	ASkyDome* pSky = ARenderer::GetSingleton()->m_pSkyDome;
@@ -1684,17 +1757,22 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	g_pLightDataPacketAllocator->Reset();
 
 	// Advance the world-wind animation phase (consumed by the World_WIND shader permutation)
-	if ( remaster::g_bWindEnabled )
+	if ( remaster::GameSettings::IsWindEnabled() )
 		remaster::g_flWindTime += a_flDeltaTime * remaster::g_flWindSpeed;
 
 	auto pSwapChainDesc = remaster::g_pRender->GetSwapChainDesc();
 
 	auto& csmManager = remaster::g_pRender->GetCSMManager();
 
+	// Advance the cloud wind phase before UpdateCascades so the receiver-side wind
+	// compensation and this frame's bake (if any) agree on the same time
+	if ( remaster::GameSettings::AreCloudShadowsEnabled() )
+		remaster::g_flCloudShadowTime += a_flDeltaTime * remaster::g_flCloudShadowSpeed;
+
 	csmManager.UpdateCascades( remaster::g_pRender->GetCurrentContext() );
 	remaster::g_pRender->UpdateShadowCBuffer( csmManager.GetShadowCBufferData() );
 
-	if ( remaster::g_bCSMEnabled )
+	if ( remaster::GameSettings::IsCSMEnabled() )
 		csmManager.RenderShadowMaps();
 
 	remaster::g_pRender->GetLightManager().RenderDynamicLightShadowMaps();
@@ -1720,10 +1798,14 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	remaster::g_pRender->GetLightManager().UploadStaticLightsGlobalCBuffer();
 
 	// Cloud shadow bake (animated top-down sun-amount map, sampled in SampleShadow)
-	if ( remaster::g_bCloudShadowsEnabled && s_pCloudShadowRTV )
+	static TBOOL s_bCloudBaked = TFALSE;
+	if ( remaster::GameSettings::AreCloudShadowsEnabled() && s_pCloudShadowRTV &&
+	     ( csmManager.IsCloudBakeFrame() || !s_bCloudBaked ) )
 	{
-		static TFLOAT s_flCloudTime = 0.0f;
-		s_flCloudTime += a_flDeltaTime * remaster::g_flCloudShadowSpeed;
+		TPROFILER_NAMED( "Cloud Shadow Bake" );
+		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "Cloud Shadow Bake" );
+
+		s_bCloudBaked = TTRUE;
 
 		const auto&  shadowData  = csmManager.GetShadowCBufferData();
 		const TFLOAT fRegionSize = ( shadowData.cloudParams[ 2 ] > 0.0f ) ? ( 1.0f / shadowData.cloudParams[ 2 ] ) : remaster::g_flCloudShadowRegionSize;
@@ -1733,7 +1815,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		cbData.region[ 1 ]        = shadowData.cloudParams[ 1 ];
 		cbData.region[ 2 ]        = fRegionSize;
 		cbData.region[ 3 ]        = remaster::g_flCloudShadowFeatureScale;
-		cbData.anim[ 0 ]          = s_flCloudTime;
+		cbData.anim[ 0 ]          = remaster::g_flCloudShadowTime;
 		cbData.anim[ 1 ]          = remaster::g_flCloudShadowWindDir[ 0 ];
 		cbData.anim[ 2 ]          = remaster::g_flCloudShadowWindDir[ 1 ];
 		cbData.anim[ 3 ]          = remaster::g_flCloudShadowCoverage;
@@ -1772,7 +1854,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 	// Bind the G-buffer on slot 1 for the whole scene pass (only when SSR needs it);
 	// it persists across the glow path's colour-target swaps via the secondary RTV
-	const TBOOL bGBufferActive = remaster::g_bSSREnabled;
+	const TBOOL bGBufferActive = remaster::GameSettings::IsSSREnabled();
 	if ( bGBufferActive )
 	{
 		remaster::g_pRender->ClearRenderTarget( remaster::g_pRender->GetD3D11GBufferRTV(), aflSkyMaskClearColor );
@@ -1790,8 +1872,30 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 	// HACK: make sure depth is not cleared before skymask is generated
 	remaster::g_bAllowClearingDepth = TFALSE;
-	CallOriginal( a_flDeltaTime );
+	
+	{
+		TPROFILER_NAMED( "Scene" );
+		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "Scene" );
+		CallOriginal( a_flDeltaTime );
+	}
+
 	remaster::g_bAllowClearingDepth = TTRUE;
+
+	// ResolveSubresource is invalid on 1-sample resources
+	const TBOOL bMSAA     = remaster::g_pRender->GetMSAASampleCount() > 1;
+	auto        fnResolve = [ bMSAA ]( ID3D11Texture2D* a_pDst, ID3D11Texture2D* a_pSrc, DXGI_FORMAT a_eFormat ) {
+		if ( bMSAA )
+			remaster::g_pRender->GetD3D11DeviceContext()->ResolveSubresource( a_pDst, 0, a_pSrc, 0, a_eFormat );
+		else
+			remaster::g_pRender->GetD3D11DeviceContext()->CopyResource( a_pDst, a_pSrc );
+	};
+
+	// Skip the resolves and helper passes whose only consumers are disabled this frame
+	const TBOOL bSunShaftsOn       = remaster::GameSettings::AreSunShaftsEnabled();
+	const TBOOL bFogOn             = remaster::GameSettings::IsCSMEnabled() && remaster::GameSettings::IsVolumetricFogEnabled();
+	const TBOOL bAOOn              = remaster::GameSettings::IsAOEnabled();
+	const TBOOL bNeedResolvedColor = bSunShaftsOn || bFogOn || bAOOn || bGBufferActive || ( remaster::GameSettings::IsSkyCubeEnabled() && remaster::g_bSkyCubeDebugView );
+	const TBOOL bNeedResolvedDepth = bSunShaftsOn || bFogOn || bAOOn || bGBufferActive;
 
 	// Detach the G-buffer and resolve it (MSAA -> non-MSAA) for SSR
 	if ( bGBufferActive )
@@ -1802,26 +1906,27 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		    remaster::g_pRender->GetD3D11RenderTargetView(),
 		    remaster::g_pRender->GetD3D11DepthStencilView()
 		);
-		remaster::g_pRender->GetD3D11DeviceContext()->ResolveSubresource(
-		    s_pResolvedGBufferTexture, 0, remaster::g_pRender->GetD3D11GBufferTexture(), 0, DXGI_FORMAT_R8G8B8A8_UNORM
-		);
+		fnResolve( s_pResolvedGBufferTexture, remaster::g_pRender->GetD3D11GBufferTexture(), DXGI_FORMAT_R8G8B8A8_UNORM );
 	}
 
-	// Resolve MSAA color -> non-MSAA (needed by sky mask shader)
+	// Make scene color/glow readable for the screen-space shaders
+	if ( bNeedResolvedColor || g_bHasGlowObjectsThisFrame )
 	{
-		TPROFILER_NAMED( "MSAA Resolve" );
-		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "MSAA Resolve" );
+		TPROFILER_NAMED( "Scene Color Resolve" );
+		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "Scene Color Resolve" );
 
-		remaster::g_pRender->GetD3D11DeviceContext()->ResolveSubresource(
-		    s_pResolvedColorTexture, 0, remaster::g_pRender->GetD3D11RenderTargetTexture(), 0, DXGI_FORMAT_R11G11B10_FLOAT
-		);
+		if ( bNeedResolvedColor )
+			fnResolve( s_pResolvedColorTexture, remaster::g_pRender->GetD3D11RenderTargetTexture(), DXGI_FORMAT_R11G11B10_FLOAT );
 
-		remaster::g_pRender->GetD3D11DeviceContext()->ResolveSubresource(
-		    s_pResolvedGlowTexture, 0, remaster::g_pRender->GetD3D11GlowRenderTargetTexture(), 0, DXGI_FORMAT_R8G8B8A8_UNORM
-		);
+		if ( g_bHasGlowObjectsThisFrame )
+			fnResolve( s_pResolvedGlowTexture, remaster::g_pRender->GetD3D11GlowRenderTargetTexture(), DXGI_FORMAT_R8G8B8A8_UNORM );
 	}
+
+	// With MSAA off the scene depth is single-sample already; consumers read it directly
+	ID3D11ShaderResourceView* pSceneDepthSRV = bMSAA ? s_pResolvedDepthSRV : remaster::g_pRender->GetD3D11DepthStencilSRV();
 
 	// Resolve MSAA depth -> R32_FLOAT via fullscreen pass (full-res viewport)
+	if ( bMSAA && bNeedResolvedDepth )
 	{
 		TPROFILER_NAMED( "MSAA Depth Resolve" );
 		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "MSAA Depth Resolve" );
@@ -1840,8 +1945,8 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 	// Half-res min-depth downsample, consumed by the SSR march and HBAO. Point-sampling full-res depth at half-res
 	// picks an unstable texel per 2x2 (HBAO crawled on grazing ground); min gives one stable depth. XeGTAO and the fog keep full-res
-	const TBOOL bHBAOWantsHalfDepth = remaster::g_bHBAOEnabled && remaster::g_iAOAlgorithm != 1;
-	if ( ( remaster::g_bSSREnabled || bHBAOWantsHalfDepth ) && s_pHalfDepthRTV )
+	const TBOOL bHBAOWantsHalfDepth = remaster::GameSettings::IsAOEnabled() && remaster::g_iAOAlgorithm != 1;
+	if ( ( remaster::GameSettings::IsSSREnabled() || bHBAOWantsHalfDepth ) && s_pHalfDepthRTV )
 	{
 		TPROFILER_NAMED( "Half-Depth Downsample" );
 		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "Half-Depth Downsample" );
@@ -1856,7 +1961,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 		remaster::g_pRender->DiscardView( s_pHalfDepthRTV );
 		remaster::g_pRender->SetRenderTargetView( s_pHalfDepthRTV, TNULL );
-		remaster::g_pRender->PSSetShaderResource( 0, s_pResolvedDepthSRV );
+		remaster::g_pRender->PSSetShaderResource( 0, pSceneDepthSRV );
 		remaster::g_pRender->PSSetSamplerState( 0, s_pPointClampSampler );
 		remaster::g_pRender->SetCullMode( D3D11_CULL_NONE );
 		remaster::g_pRender->SetBlendEnabled( TFALSE );
@@ -1869,7 +1974,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &oOldVP );
 	}
 
-	if ( remaster::g_bHBAOEnabled )
+	if ( remaster::GameSettings::IsAOEnabled() )
 	{
 		TPROFILER_NAMED( "HBAO" );
 		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "HBAO" );
@@ -1889,7 +1994,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->DiscardView( s_pHBAORTV );
 		remaster::g_pRender->SetRenderTargetView( s_pHBAORTV, TNULL );
 		// HBAO reads the half-res min-depth (matches its render target); XeGTAO takes full-res
-		remaster::g_pRender->PSSetShaderResource( 0, remaster::g_iAOAlgorithm == 1 ? s_pResolvedDepthSRV : s_pHalfDepthSRV );
+		remaster::g_pRender->PSSetShaderResource( 0, remaster::g_iAOAlgorithm == 1 ? pSceneDepthSRV : s_pHalfDepthSRV );
 		remaster::g_pRender->PSSetSamplerState( 0, s_pPointClampSampler );
 		remaster::g_pRender->SetCullMode( D3D11_CULL_NONE );
 		remaster::g_pRender->SetBlendEnabled( TFALSE );
@@ -1965,7 +2070,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		const TFLOAT fNearClip = pContext->GetProjectionParams().m_fNearClip;
 		const TFLOAT fFarClip  = pContext->GetProjectionParams().m_fFarClip;
 
-		auto fnBlurHBAO = [ fNearClip, fFarClip ]( ID3D11RenderTargetView* a_pRTV, ID3D11ShaderResourceView* a_pInputSRV, TFLOAT a_fDirX, TFLOAT a_fDirY ) {
+		auto fnBlurHBAO = [ fNearClip, fFarClip, pSceneDepthSRV ]( ID3D11RenderTargetView* a_pRTV, ID3D11ShaderResourceView* a_pInputSRV, TFLOAT a_fDirX, TFLOAT a_fDirY ) {
 			HBAOBlurCBuffer blurData;
 			blurData.blurParams[ 0 ]  = 1.0f / TFLOAT( s_uiHBAOWidth );
 			blurData.blurParams[ 1 ]  = 1.0f / TFLOAT( s_uiHBAOHeight );
@@ -1984,7 +2089,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 			remaster::g_pRender->DiscardView( a_pRTV );
 			remaster::g_pRender->SetRenderTargetView( a_pRTV, TNULL );
 			remaster::g_pRender->PSSetShaderResource( 0, a_pInputSRV );
-			remaster::g_pRender->PSSetShaderResource( 1, s_pResolvedDepthSRV );
+			remaster::g_pRender->PSSetShaderResource( 1, pSceneDepthSRV );
 			remaster::g_pRender->PSSetSamplerState( 0, s_pPointClampSampler );
 			remaster::g_pRender->PSSetSamplerState( 1, s_pLinearClampSampler );
 			remaster::g_pRender->PSSetConstantBuffer( 1, s_pHBAOBlurConstantBuffer );
@@ -2031,11 +2136,11 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	}
 
 	// Gate the capture on the sky cube, not SSR: the forward world/skin IBL samples it even with SSR off (gating on SSR left a stale cube)
-	if ( remaster::g_bSkyCubeEnabled )
+	if ( remaster::GameSettings::IsSkyCubeEnabled() )
 		CaptureCubeMap( a_flDeltaTime );
 
 	// Sky cube debug: draw the cube as a skybox to verify face orientation (replaces SSR while enabled)
-	if ( remaster::g_bSkyCubeEnabled && remaster::g_bSkyCubeDebugView && remaster::g_pSkyCubeSRV )
+	if ( remaster::GameSettings::IsSkyCubeEnabled() && remaster::g_bSkyCubeDebugView && remaster::g_pSkyCubeSRV )
 	{
 		TPROFILER_NAMED( "Sky Cube Debug" );
 
@@ -2077,7 +2182,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->PSSetConstantBuffer( 1, TNULL );
 	}
 
-	if ( remaster::g_bSSREnabled && !remaster::g_bSkyCubeDebugView )
+	if ( remaster::GameSettings::IsSSREnabled() && !remaster::g_bSkyCubeDebugView )
 	{
 		TPROFILER_NAMED( "SSR" );
 		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "SSR" );
@@ -2127,7 +2232,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 		// Sky cubemap fallback: enabled only when the cube was captured this frame
 		cbData.skyCubeParams[ 0 ] = TFLOAT( remaster::g_iSkyCubeMaxMip );
-		cbData.skyCubeParams[ 1 ] = ( remaster::g_bSkyCubeEnabled && remaster::g_pSkyCubeSRV ) ? 1.0f : 0.0f;
+		cbData.skyCubeParams[ 1 ] = ( remaster::GameSettings::IsSkyCubeEnabled() && remaster::g_pSkyCubeSRV ) ? 1.0f : 0.0f;
 		cbData.skyCubeParams[ 2 ] = remaster::g_flSkyCubeIntensity;
 		cbData.skyCubeParams[ 3 ] = 0.0f;
 
@@ -2181,7 +2286,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		fnUploadSSRCB();
 		remaster::g_pRender->DiscardView( s_pSSRRTV );
 		remaster::g_pRender->SetRenderTargetView( s_pSSRRTV, TNULL );
-		remaster::g_pRender->PSSetShaderResource( 0, s_pResolvedDepthSRV ); // full-res depth
+		remaster::g_pRender->PSSetShaderResource( 0, pSceneDepthSRV ); // full-res depth
 		remaster::g_pRender->PSSetShaderResource( 1, s_pResolvedColorSRV );
 		remaster::g_pRender->PSSetShaderResource( 3, s_pResolvedGBufferSRV );
 		remaster::g_pRender->PSSetShaderResource( 4, remaster::g_oSkyCubeBlend.pSRVTo );   // active cube fallback
@@ -2204,7 +2309,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 			remaster::g_pRender->DiscardView( a_pRTV );
 			remaster::g_pRender->SetRenderTargetView( a_pRTV, TNULL );
-			remaster::g_pRender->PSSetShaderResource( 0, s_pResolvedDepthSRV ); // full-res depth
+			remaster::g_pRender->PSSetShaderResource( 0, pSceneDepthSRV ); // full-res depth
 			remaster::g_pRender->PSSetShaderResource( 2, a_pInput );
 			remaster::g_pRender->PSSetShaderResource( 3, s_pResolvedGBufferSRV ); // roughness for blur width
 			remaster::g_pRender->DrawScreenRectangle(
@@ -2217,11 +2322,10 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		fnBlurSSR( s_pSSRBlurRTV, s_pSSRSRV, 1.0f, 0.0f );
 		fnBlurSSR( s_pSSRRTV, s_pSSRBlurSRV, 0.0f, 1.0f );
 
+		remaster::g_pRender->PSSetShaderResource( 0, TNULL );
+
 		remaster::g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &oOldVP );
-		remaster::g_pRender->SetRenderTargetView(
-		    remaster::g_pRender->GetD3D11RenderTargetView(),
-		    remaster::g_pRender->GetD3D11DepthStencilView()
-		);
+		remaster::g_pRender->SetRenderTargetView( remaster::g_pRender->GetD3D11RenderTargetView(), TNULL );
 		remaster::g_pRender->SetCullMode( D3D11_CULL_NONE );
 		remaster::g_pRender->SetDepthEnabled( TFALSE );
 		remaster::g_pRender->PSSetShaderResource( 2, s_pSSRSRV );
@@ -2259,7 +2363,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	}
 
 	// Volumetric fog pass (half-res, raymarched, CSM-shadowed)
-	if ( remaster::g_bCSMEnabled && remaster::g_bVolumetricFogEnabled )
+	if ( remaster::GameSettings::IsCSMEnabled() && remaster::GameSettings::IsVolumetricFogEnabled() )
 	{
 		TPROFILER_NAMED( "Volumetrics" );
 		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "Volumetrics" );
@@ -2383,7 +2487,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->ClearRenderTarget( s_pVolumetricFogRTV, aflFogClear );
 		remaster::g_pRender->SetRenderTargetView( s_pVolumetricFogRTV, TNULL );
 		// Full-res depth; half-res min-depth stabilised grazing ground but its nearest-bias haloed the fog at silhouettes
-		remaster::g_pRender->PSSetShaderResource( 0, s_pResolvedDepthSRV );
+		remaster::g_pRender->PSSetShaderResource( 0, pSceneDepthSRV );
 		remaster::g_pRender->PSSetShaderResource( 1, csmManager.GetShadowSRV() );
 		remaster::g_pRender->PSSetShaderResource( 3, s_pVolumetricFogNoiseSRV );
 		remaster::g_pRender->PSSetSamplerState( 0, s_pPointClampSampler );
@@ -2391,7 +2495,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->PSSetSamplerState( 3, s_pVolumetricFogNoiseSampler );
 		remaster::g_pRender->PSSetConstantBuffer( 1, s_pVolumetricFogConstantBuffer );
 		TUINT uiVolumetricFogComboFlags = 0;
-		if ( !remaster::g_bDynamicLightEnabled ||
+		if ( !remaster::GameSettings::AreDynamicLightsEnabled() ||
 		     remaster::g_iVolumetricFogCompositeMode == 1
 		)
 		{
@@ -2402,7 +2506,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 			remaster::g_pRender->GetLightManager().UploadVolumetricDynamicLightsCBuffer();
 		}
 		// Cloud shadows in the fog are an independent toggle (the per-step tap is the priciest consumer); bind + compile only when both are on
-		const TBOOL bFogClouds = remaster::g_bCloudShadowsEnabled && remaster::g_bCloudShadowsVolumetrics;
+		const TBOOL bFogClouds = remaster::GameSettings::AreCloudShadowsEnabled() && remaster::g_bCloudShadowsVolumetrics;
 		if ( bFogClouds )
 		{
 			uiVolumetricFogComboFlags |= remaster::shadercombos::VolumetricFog_CLOUD_SHADOWS;
@@ -2469,14 +2573,9 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->PSSetShaderResource( 3, TNULL );
 
 		remaster::g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &oFogOldVP );
-		remaster::g_pRender->SetRenderTargetView(
-		    remaster::g_pRender->GetD3D11RenderTargetView(),
-		    remaster::g_pRender->GetD3D11DepthStencilView()
-		);
+		remaster::g_pRender->SetRenderTargetView( remaster::g_pRender->GetD3D11RenderTargetView(), TNULL );
 		// Re-resolve MSAA color so the fog composite sees the post-AO scene (the HBAO composite drew scene*ao after the first resolve)
-		remaster::g_pRender->GetD3D11DeviceContext()->ResolveSubresource(
-		    s_pResolvedColorTexture, 0, remaster::g_pRender->GetD3D11RenderTargetTexture(), 0, DXGI_FORMAT_R11G11B10_FLOAT
-		);
+		fnResolve( s_pResolvedColorTexture, remaster::g_pRender->GetD3D11RenderTargetTexture(), DXGI_FORMAT_R11G11B10_FLOAT );
 
 		// Ping-pong temporal <-> history so next frame's temporal pass reads what we just wrote, no GPU copy
 		{
@@ -2495,7 +2594,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->SetBlendEnabled( TFALSE );
 		remaster::g_pRender->PSSetShaderResource( 0, s_pVolumetricFogTemporalSRV );
 		remaster::g_pRender->PSSetShaderResource( 1, s_pResolvedColorSRV );
-		remaster::g_pRender->PSSetShaderResource( 2, s_pResolvedDepthSRV );
+		remaster::g_pRender->PSSetShaderResource( 2, pSceneDepthSRV );
 		remaster::g_pRender->PSSetSamplerState( 0, s_pLinearClampSampler );
 		remaster::g_pRender->PSSetSamplerState( 1, s_pLinearClampSampler );
 		remaster::g_pRender->PSSetSamplerState( 2, s_pPointClampSampler );
@@ -2527,15 +2626,13 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 	);
 
 	// HDR bloom runs before the glow composite so the bright-pass doesn't re-bloom glow
-	if ( remaster::g_bHDRBloomEnabled )
+	if ( remaster::GameSettings::IsHDRBloomEnabled() )
 	{
 		TPROFILER_NAMED( "HDR Bloom" );
 		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "HDR Bloom" );
 
 		// Re-resolve so the bright-pass sees the latest post-fog scene
-		remaster::g_pRender->GetD3D11DeviceContext()->ResolveSubresource(
-		    s_pResolvedColorTexture, 0, remaster::g_pRender->GetD3D11RenderTargetTexture(), 0, DXGI_FORMAT_R11G11B10_FLOAT
-		);
+		fnResolve( s_pResolvedColorTexture, remaster::g_pRender->GetD3D11RenderTargetTexture(), DXGI_FORMAT_R11G11B10_FLOAT );
 
 		D3D11_VIEWPORT oHDRBloomOldViewport;
 		TUINT          uiHDRBloomNumViewports = 1;
@@ -2638,7 +2735,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		);
 		remaster::g_pRender->PSSetShaderResource( 0, TNULL );
 
-		if ( remaster::g_bGlowBloomEnabled )
+		if ( remaster::GameSettings::IsGlowBloomEnabled() )
 		{
 			D3D11_VIEWPORT oGlowOldViewport;
 			TUINT          uiGlowNumViewports = 1;
@@ -2733,6 +2830,16 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->ClearStateCache();
 	}
 
+	// Don't need skymask if sunshafts are disabled and they are the last effect
+	if ( !bSunShaftsOn )
+	{
+		remaster::g_pRender->SetRenderTargetView(
+		    remaster::g_pRender->GetD3D11RenderTargetView(),
+		    remaster::g_pRender->GetD3D11DepthStencilView()
+		);
+		return;
+	}
+
 	// Skymask for the sunshafts; rendered at half resolution, so halve the viewport
 	D3D11_VIEWPORT oOldViewport;
 	D3D11_VIEWPORT oNewViewport;
@@ -2760,7 +2867,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->DiscardView( s_pSkyMaskRenderTargetView );
 		remaster::g_pRender->ClearRenderTarget( s_pSkyMaskRenderTargetView, aflSkyMaskClearColor );
 		remaster::g_pRender->SetRenderTargetView( s_pSkyMaskRenderTargetView, TNULL );
-		remaster::g_pRender->PSSetShaderResource( 0, s_pResolvedDepthSRV );
+		remaster::g_pRender->PSSetShaderResource( 0, pSceneDepthSRV );
 		remaster::g_pRender->PSSetShaderResource( 1, s_pResolvedColorSRV );
 		remaster::g_pRender->PSSetSamplerState( 0, s_pSkyMaskSampler );
 		remaster::g_pRender->PSSetSamplerState( 1, s_pSkyMaskSampler );
@@ -2812,7 +2919,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		TFLOAT vz = sunDirView.z;
 
 		// Sun is behind the camera or effect is disabled - skip the draw entirely
-		if ( vz <= 0.0f || !remaster::g_bSunShaftsEnabled )
+		if ( vz <= 0.0f || !remaster::GameSettings::AreSunShaftsEnabled() )
 		{
 			fnRestoreState();
 			return;
@@ -2958,6 +3065,23 @@ HOOK( 0x006119d0, AModelLoader_CreateMaterial, TMaterial*, TINT a_iOffset, const
 	// Attach remaster material params authored in Data/MaterialParams.xml
 	remaster::AttachMaterialParams( pMaterial, a_szMaterialName );
 
+	// We can reorder some materials for better performance
+	if ( pMaterial )
+	{
+		if ( pMaterial->GetShader() == remaster::WorldShaderDX11::GetSingleton() )
+		{
+			AWorldMaterial* pWorldMat = TSTATICCAST( AWorldMaterial, pMaterial );
+			if ( pWorldMat->GetBlendMode() == 1 && remaster::TextureResource_IsOpaque( pWorldMat->GetTexture( 0 ) ) )
+				pWorldMat->SetBlendMode( 0 );
+		}
+		else if ( pMaterial->GetShader() == remaster::SkinShaderDX11::GetSingleton() )
+		{
+			ASkinMaterial* pSkinMat = TSTATICCAST( ASkinMaterial, pMaterial );
+			if ( pSkinMat->GetBlendMode() == 1 && remaster::TextureResource_IsOpaque( pSkinMat->GetTexture() ) )
+				pSkinMat->SetBlendMode( 0 );
+		}
+	}
+
 	return pMaterial;
 }
 
@@ -3003,6 +3127,7 @@ void remaster::SetupRenderHooks()
 	InstallHook<RenderCellMeshDefault>();
 	InstallHook<AModelInstance_RenderInstanceCallback>();
 	InstallHook<AModelLoader_LoadWorldMeshTRB_Tangents>();
+	InstallHook<AModelLoader_LoadSkinLOD_Tangents>();
 	InstallHook<AGlowViewport_AddGlowObject>();
 	InstallHook<AModelLoader_CreateMaterial>();
 
@@ -3011,6 +3136,9 @@ void remaster::SetupRenderHooks()
 
 	// Load per-level sky-cube probe anchors (parallax anchoring for reflections)
 	remaster::CubemapAnchors_Load( "Data\\CubemapAnchors.xml" );
+
+	// Load persisted user settings
+	remaster::GameSettings::Load( "Data\\GameSettings.xml" );
 
 	SetupRenderHooks_GrassShader();
 	SetupRenderHooks_SkinShader();

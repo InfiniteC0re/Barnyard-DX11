@@ -1,11 +1,13 @@
 #include "pch.h"
 #include "WorldShader.h"
+#include "GameSettings.h"
 #include "MaterialParams.h"
 #include "WorldMaterial.h"
 #include "WorldMesh.h"
 #include "Generated/WorldShaderCombos.h"
 #include "Generated/ShadowDepthShaderCombos.h"
 #include "Resource/ClassPatcher.h"
+#include "Resource/TextureResource.h"
 #include "Ref/AWorld.h"
 
 #include "RenderDX11.h"
@@ -96,14 +98,14 @@ void remaster::WorldShaderDX11::StartFlush()
 
 	g_pRender->SetAlphaToCoverageEnabled( TTRUE );
 
-	if ( g_bInMainScenePass && g_bCSMEnabled && g_pCSMManager && g_flShadowIntensity > 0.0f )
+	if ( g_bInMainScenePass && GameSettings::IsCSMEnabled() && g_pCSMManager && g_flShadowIntensity > 0.0f )
 	{
 		g_pRender->PSSetShaderResource( 2, g_pCSMManager->GetShadowSRV() );
 		g_pRender->PSSetSamplerState( 2, g_pCSMManager->GetShadowSampler() );
 		g_pRender->PSSetConstantBuffer( 1, g_pRender->GetShadowConstantBuffer() );
 
 		// Animated cloud shadow map (t9/s3), sampled by world XZ in SampleShadow.
-		if ( g_bCloudShadowsEnabled )
+		if ( GameSettings::AreCloudShadowsEnabled() )
 		{
 			g_pRender->PSSetShaderResource( 9, g_pCloudShadowSRV );
 			g_pRender->PSSetSamplerState( 3, g_pCloudShadowSampler );
@@ -227,6 +229,14 @@ TBOOL remaster::WorldShaderDX11::Validate()
 	TASSERT( shadercombos::CreateWorldShaderPipelines( rWorldVSCombo, &rWorldPSCombo, pWorldInputLayout, m_vecWorldPipelines, "World" ) );
 	TASSERT( shadercombos::CreateShadowDepthShaderPipelines( rShadowDepthVSCombo, &rShadowDepthPSCombo, pShadowInputLayout, m_vecShadowDepthPipelines, "World_Shadow" ) );
 
+	// HACK: Disable pixel shader manually, because generator doesn't
+	const TUINT uiAlphaTestBit = shadercombos::GetShadowDepthComboIndex( shadercombos::ShadowDepth_ALPHATEST );
+	for ( TINT i = 0; i < m_vecShadowDepthPipelines.Size(); i++ )
+	{
+		if ( !( TUINT( i ) & uiAlphaTestBit ) )
+			m_vecShadowDepthPipelines[ i ].ppPixelShader = TNULL;
+	}
+
 	return BaseClass::Validate();
 }
 
@@ -261,9 +271,13 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	{
 		// Match the main pass's wind so the shadow silhouette sways with the geometry
 		const remaster::MaterialParams* pShadowParams = pMaterial->GetMaterialParams();
-		const TBOOL bShadowWind = g_bWindEnabled && pShadowParams && pShadowParams->bWind;
+		const TBOOL bShadowWind = GameSettings::IsWindEnabled() && pShadowParams && pShadowParams->bWind;
 
-		TUINT uiShadowFlags = shadercombos::ShadowDepth_ALPHATEST;
+		const TBOOL bShadowAlphaTest = ( pShadowParams && pShadowParams->iShadowAlphaTest >= 0 )
+		    ? pShadowParams->iShadowAlphaTest != 0
+		    : remaster::TextureResource_HasTransparency( pMaterial->GetTexture( 0 ) );
+
+		TUINT uiShadowFlags = bShadowAlphaTest ? shadercombos::ShadowDepth_ALPHATEST : 0;
 		if ( bShadowWind )
 			uiShadowFlags |= shadercombos::ShadowDepth_WIND;
 		g_pRender->SetShaderPipelineState( m_vecShadowDepthPipelines[ shadercombos::GetShadowDepthComboIndex( uiShadowFlags ) ] );
@@ -324,7 +338,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	const TFLOAT flPacketAlpha = a_pRenderPacket->GetAlpha();
 	const TBOOL  bIsBlending   = pMaterial->GetBlendMode() != 0 || flPacketAlpha < 1.0f || pMaterial->IsBlending();
-	const TBOOL  bHasDynLight  = g_bDynamicLightEnabled && RenderPacketHasDynamicLights( a_pRenderPacket ) && !bIsGlowing;
+	const TBOOL  bHasDynLight  = GameSettings::AreDynamicLightsEnabled() && RenderPacketHasDynamicLights( a_pRenderPacket ) && !bIsGlowing;
 	g_pRender->SetBlendEnabled( bIsBlending );
 
 	const remaster::MaterialParams* pSSRParams = pMaterial->GetMaterialParams();
@@ -332,11 +346,11 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	// Use either blending shader or alpharef shader
 	// The only used alpharef value is 128, so no need to dynamically change it
 	TUINT uiComboFlags = bIsBlending ? 0 : shadercombos::World_ALPHAREF;
-	if ( !g_bInMainScenePass || bIsGlowing || pMesh->IsWater() || !g_bCSMEnabled || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
+	if ( !g_bInMainScenePass || bIsGlowing || pMesh->IsWater() || !GameSettings::IsCSMEnabled() || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
 		uiComboFlags |= shadercombos::World_NO_CSM;
 	if ( bIsGlowing || !pCurrentContext->IsFogEnabled() || s_flFogDensity <= 0.0f )
 		uiComboFlags |= shadercombos::World_NO_FOG;
-	if ( !g_bDynamicLightEnabled )
+	if ( !GameSettings::AreDynamicLightsEnabled() )
 		uiComboFlags |= shadercombos::World_NO_DYN_LIGHT;
 	if ( bIsGlowing )
 		uiComboFlags |= shadercombos::World_GLOW;
@@ -347,11 +361,11 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		uiComboFlags |= shadercombos::World_MATERIAL_MAPS;
 	if ( pSSRParams && pSSRParams->pHeightMap )
 		uiComboFlags |= shadercombos::World_PARALLAX;
-	if ( g_bCloudShadowsEnabled )
+	if ( GameSettings::AreCloudShadowsEnabled() )
 		uiComboFlags |= shadercombos::World_CLOUD_SHADOWS;
 	// Wind vertex deformation (blue vertex-color channel = strength); opt-in via the XML "wind"
 	// flag + global master toggle. Glow meshes opt out so their geometry stays put
-	const TBOOL bWind = g_bWindEnabled && !bIsGlowing && pSSRParams && pSSRParams->bWind;
+	const TBOOL bWind = GameSettings::IsWindEnabled() && !bIsGlowing && pSSRParams && pSSRParams->bWind;
 	if ( bWind )
 		uiComboFlags |= shadercombos::World_WIND;
 
@@ -445,7 +459,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	// Per-pass env-specular vec4: [intensity (0 while capturing/off), cube max mip (roughness->LOD),
 	// capture-active mask (kills metallic/parallax so metals' darkened diffuse doesn't bake into the
 	// cube they'll later reflect), tangent-debug]
-	const TFLOAT flEnvIntensity = ( g_bReflectionCaptureActive || !g_bEnvSpecular ) ? 0.0f : 1.0f;
+	const TFLOAT flEnvIntensity = ( g_bReflectionCaptureActive || !GameSettings::IsEnvSpecularEnabled() ) ? 0.0f : 1.0f;
 	g_pRender->PassBufferSetVec4( PASSBUF_ENV_SPECULAR,
 	    TVector4( flEnvIntensity, TFLOAT( g_iSkyCubeMaxMip ), g_bReflectionCaptureActive ? 1.0f : 0.0f, remaster::g_bDebugTangents ? 1.0f : 0.0f ) );
 
@@ -482,7 +496,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	// Bind the per-vertex tangent stream on slot 1. DrawIndexed applies the per-mesh
 	// vertex offset via BaseVertexLocation, so both streams share it at byte 0.
 	if ( vertexBuffer.uiNumStreams > 1 && vertexBuffer.apVertexBuffers[ 1 ] )
-		g_pRender->SetVertexBufferStream( 1, (ID3D11Buffer*)vertexBuffer.apVertexBuffers[ 1 ], sizeof( TVector4 ), 0 );
+		g_pRender->SetVertexBuffer( (ID3D11Buffer*)vertexBuffer.apVertexBuffers[ 1 ], sizeof( TVector4 ), 0, 1 );
 
 	// Draw mesh
 	g_pRender->DrawIndexed(

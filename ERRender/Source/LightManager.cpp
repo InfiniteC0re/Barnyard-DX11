@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "LightManager.h"
+#include "GameSettings.h"
 #include "RenderDX11.h"
 #include "CSM/CSMManager.h"
 
@@ -221,7 +222,7 @@ static TBOOL FillDynamicLightCBufferEntry(
 	{
 		a_rCBuffer.matLightVP[ a_iLightIndex ] = a_pShadowViewProj[ a_iShadowIndex ];
 
-		if ( g_bDynamicLightShadowsEnabled )
+		if ( GameSettings::AreDynamicLightShadowsEnabled() )
 		{
 			a_rCBuffer.shadowParams[ a_iLightIndex ] = TVector4(
 			    TFLOAT( a_iShadowIndex ),
@@ -400,7 +401,7 @@ TBOOL LightManager::CreateShadowResources()
 	}
 
 	D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Format                          = DXGI_FORMAT_R16_FLOAT;
+	srvDesc.Format                          = DXGI_FORMAT_R16_UNORM;
 	srvDesc.ViewDimension                   = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
 	srvDesc.Texture2DArray.MostDetailedMip  = 0;
 	srvDesc.Texture2DArray.MipLevels        = 1;
@@ -500,7 +501,7 @@ void LightManager::RenderDynamicLightShadowMaps()
 {
 	m_iNumShadowLights = 0;
 
-	if ( !g_bDynamicLightEnabled )
+	if ( !GameSettings::AreDynamicLightsEnabled() )
 		return;
 
 	AGlowViewport* pGlowViewport = AGlowViewport::GetSingleton();
@@ -510,7 +511,12 @@ void LightManager::RenderDynamicLightShadowMaps()
 	if ( !CreateShadowResources() )
 		return;
 
-	const TBOOL bRenderShadows = g_bDynamicLightShadowsEnabled && g_pCSMManager;
+	TPROFILER_NAMED( "Dynamic Light Shadows" );
+	TracyD3D11Zone( g_pRender->GetTracyGpuContext(), "Dynamic Light Shadows" );
+
+	g_pRender->PSSetShaderResource( 6, TNULL );
+
+	const TBOOL bRenderShadows = GameSettings::AreDynamicLightShadowsEnabled() && g_pCSMManager;
 
 	// Cull by distance from the gameplay camera (falling back to the render context's eye).
 	TVector3 vCameraPos = g_pRender->GetCurrentContext()->GetViewWorldMatrix().GetTranslation3();
@@ -549,7 +555,7 @@ void LightManager::RenderDynamicLightShadowMaps()
 			TRenderContext::ComputePerspectiveProjection( oLightProjection, pGlowObject->m_oViewportParams, pGlowObject->m_oProjectionParams );
 
 		const TINT iShadowIndex = m_iNumShadowLights++;
-		m_aiShadowLightIDs[ iShadowIndex ] = pGlowObject->m_iID;
+		m_aiShadowLightIDs[ iShadowIndex ]  = pGlowObject->m_iID;
 		m_aShadowLightViewProj[ iShadowIndex ].Multiply( oLightProjection, oLightView );
 
 		if ( bRenderShadows )
@@ -611,7 +617,7 @@ void LightManager::UploadDynamicLightsCBuffer( Toshi::TRenderPacket* a_pRenderPa
 			iNumLights++;
 	}
 
-	cbData.params.x = g_bDynamicLightEnabled ? TFLOAT( iNumLights ) : 0.0f;
+	cbData.params.x = GameSettings::AreDynamicLightsEnabled() ? TFLOAT( iNumLights ) : 0.0f;
 
 	UploadCBufferData( cbData );
 }
@@ -634,7 +640,7 @@ void LightManager::UploadVolumetricDynamicLightsCBuffer()
 			iNumLights++;
 	}
 
-	cbData.params.x = g_bDynamicLightEnabled ? TFLOAT( iNumLights ) : 0.0f;
+	cbData.params.x = GameSettings::AreDynamicLightsEnabled() ? TFLOAT( iNumLights ) : 0.0f;
 
 	UploadCBufferData( cbData );
 }

@@ -21,6 +21,7 @@ TOSHI_NAMESPACE_USING
 TDEFINE_CLASS_PATCHED( remaster::WorldMesh, 0x0079a950 );
 
 remaster::WorldMesh::WorldMesh()
+    : m_bHasWorldBounds( TFALSE )
 {
 }
 

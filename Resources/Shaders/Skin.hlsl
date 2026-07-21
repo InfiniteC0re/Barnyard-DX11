@@ -15,6 +15,7 @@ struct VS_IN
 	float4 Weights	: BLENDWEIGHT;	// Weights
 	float4 MIndices	: BLENDINDICES;	// Matrix Indices
 	float2 UV		: TEXCOORD0;	// UV
+	float4 Tangent	: TANGENT;		// xyz = object-space tangent, w = handedness
 };
 
 struct PS_IN
@@ -33,9 +34,9 @@ struct PS_IN
 	centroid float3 DirectLight : TEXCOORD8; // NdotL * lightColor -- the sun term, gated by shadow in the PS
 #endif // !BAKED_LIGHTING
 	centroid float3 WorldPos    : TEXCOORD2;
-	centroid float ViewDepth    : TEXCOORD3;
 	centroid float AlphaRef     : TEXCOORD4;
 	centroid float3 WorldNormal : TEXCOORD7;
+	centroid float4 WorldTangent : TEXCOORD9; // xyz = world-space tangent, w = handedness
 };
 
 // Per-draw constants. Per-pass values live in PerPass.hlsli (b4); static per-material in
@@ -79,7 +80,7 @@ cbuffer BoneCBuffer : register(b1)
 #endif
 
 #include "StaticPointLights.hlsli"
-#include "ShaderUtils.hlsli" // PerturbNormalDeriv (derivative TBN normal mapping)
+#include "ShaderUtils.hlsli" // ComputeDerivedWorldNormalT, EnvSpecular
 #include "GBuffer.hlsli"     // OctEncodeNormal / PackFresnelRoughness for SSR
 
 // Declared before vs_main so the wind path can sample the roughness map in the vertex stage
@@ -114,6 +115,7 @@ PS_IN vs_main(VS_IN In)
 
     float3 vertex = 0;
 	float3 normal = 0;
+	float3 tangent = 0;
 	for (int i = 0; i < 4; ++i)
 	{
 		float4x3 BoneMatrix = cb_bones[BoneIndices[i]];
@@ -121,12 +123,14 @@ PS_IN vs_main(VS_IN In)
 
 		float3x3 BoneNormal = (float3x3)BoneMatrix;
 		normal += mul(In.Normal, BoneNormal) * BoneWeights[i];
+		tangent += mul(In.Tangent.xyz, BoneNormal) * BoneWeights[i];
 	}
-	
+
 #else // ANIMATED
-	
+
 	float3 vertex = In.ObjPos;
 	float3 normal = In.Normal;
+	float3 tangent = In.Tangent.xyz;
 
 #endif // !ANIMATED
 
@@ -142,9 +146,11 @@ PS_IN vs_main(VS_IN In)
 
 	Out.WorldPos = mul(float4(vertex, 1.0), cb_matModel).xyz;
 	Out.ProjPos = mul(float4(Out.WorldPos, 1.0), pp_matViewProj);
-	Out.ViewDepth = Out.ProjPos.w;
 	Out.AlphaRef = cb_lightColor.w;
 	Out.WorldNormal = normalize(mul(normal, (float3x3)cb_matModel));
+
+	float3 worldT = mul(tangent, (float3x3)cb_matModel);
+	Out.WorldTangent = float4(worldT * rsqrt(max(dot(worldT, worldT), 1e-8f)), In.Tangent.w);
     Out.UV0 = In.UV;
 
 	// cb_lightDirection is pre-multiplied by the inverse model on the CPU. Bring it back to
@@ -180,12 +186,6 @@ PS_IN vs_main(VS_IN In)
 #endif // !BAKED_LIGHTING
 
     return Out;
-}
-
-float CalculateExponentialFog(float distance, float fogStart, float density)
-{
-    if (distance <= fogStart) return 1.0f;
-    return exp(-density * distance);
 }
 
 float CalculateExponentialSquaredFog(float distance, float fogStart, float density)
@@ -292,29 +292,32 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 {
     float2 uv = In.UV0;
     float  parallaxShadow = 1.0f;
+
+    float3 Ngeo = normalize(In.WorldNormal);
+    float3 Traw = In.WorldTangent.xyz - Ngeo * dot(Ngeo, In.WorldTangent.xyz);
+    float3 T    = Traw * rsqrt(max(dot(Traw, Traw), 1e-8f));
+    float3 B    = cross(Ngeo, T) * In.WorldTangent.w;
+    float3 V    = normalize(pp_CameraPos.xyz - In.WorldPos);
+    float  detailFade    = 1.0f - smoothstep(15.0f, 30.0f, In.ProjPos.w);
+    float3 worldLightDir = -mul(cb_lightDirection.xyz, (float3x3)cb_matModel);
+
 #if PARALLAX
     float2 dUVdx = ddx(In.UV0);
     float2 dUVdy = ddy(In.UV0);
-    float  detailFade = 1.0f - smoothstep(15.0f, 30.0f, In.ViewDepth);
     // Parallax scale masked off during the reflection-cube capture (not worth the march there)
     float  materialParallax = mat_MapParams.z * (1.0f - pp_EnvSpecular.z);
     if (materialParallax > 0.0f && detailFade > 0.0f)
     {
-        float3   Ngeo   = normalize(In.WorldNormal);
-        float3x3 TBN    = DerivTBN(In.WorldPos, Ngeo, In.UV0);
-        float3   Vw     = normalize(pp_CameraPos.xyz - In.WorldPos);
-        float3   viewTS = mul(TBN, Vw);
-        float    grazeFade = smoothstep(0.05f, 0.35f, viewTS.z);
-        float    scale     = materialParallax * grazeFade * detailFade;
+        float3 viewTS    = float3(dot(V, T), dot(V, B), dot(V, Ngeo));
+        float  grazeFade = smoothstep(0.05f, 0.35f, viewTS.z);
+        float  scale     = materialParallax * grazeFade * detailFade;
         uv = ParallaxOcclusionUV(uv, viewTS, scale, dUVdx, dUVdy);
 
-        float3 worldLightDir = -mul(cb_lightDirection.xyz, (float3x3)cb_matModel);
-        float3 T = TBN[0]; float3 B = TBN[1];
-        float3 lightTS = float3(dot(worldLightDir, T), dot(worldLightDir, B), dot(worldLightDir, Ngeo));
         if (scale > 0.0f)
         {
-            float hitDepth  = 1.0f - heightMap.SampleGrad(sampler0, uv, dUVdx, dUVdy).r;
-            float rawSelf   = ParallaxSelfShadow(uv, hitDepth, lightTS, scale, dUVdx, dUVdy);
+            float3 lightTS  = float3(dot(worldLightDir, T), dot(worldLightDir, B), dot(worldLightDir, Ngeo));
+            float  hitDepth = 1.0f - heightMap.SampleGrad(sampler0, uv, dUVdx, dUVdy).r;
+            float  rawSelf  = ParallaxSelfShadow(uv, hitDepth, lightTS, scale, dUVdx, dUVdy);
             parallaxShadow  = lerp(1.0f, rawSelf, detailFade * 0.4f);
         }
     }
@@ -326,7 +329,14 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 
 	// Sun shadow visibility, up front so the directional lighting term can be gated by it.
 #if !NO_CSM
-	float shadow = SampleShadow(In.WorldPos, In.WorldNormal, In.ViewDepth);
+	float shadow = SampleShadow(In.WorldPos, In.WorldNormal, In.ProjPos.w);
+	// Terminator clamp: a surface facing away from the sun cannot be sunlit, so cap the
+	// shadow term by sun-facing-ness (fade completes at NdotL ~0.25). Kills shadow-map
+	// acne on curved skinned surfaces, where depth precision fights right at the
+	// terminator and the PCF compare flickers per texel. Uses the geometric normal on
+	// purpose: normal-mapped bumps must not un-shadow past the terminator
+	float sunFacing = saturate(dot(Ngeo, pp_SunDirection.xyz) * 4.0f);
+	shadow = min(shadow, sunFacing);
 #else
 	float shadow = 1.0f;
 #endif
@@ -346,10 +356,10 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 	texColor.a *= cb_ambientColor.a;
 #endif // !BAKED_LIGHTING
 
-	// Per-material normal/roughness/metallic maps. Skin has no tangent stream, so the TBN is built
-	// from screen derivatives. mat_Wind.z packs presence bits (1 = normal, 2 = rough, 4 = metallic)
+	// Per-material normal/roughness/metallic maps. mat_Wind.z packs presence bits
+	// (1 = normal, 2 = rough, 4 = metallic)
 	int    mapFlags      = (int)mat_Wind.z;
-	float3 worldN        = normalize(In.WorldNormal);
+	float3 worldN        = Ngeo;
 	float  surfRoughness = mat_MapParams.w;
 	// Metallic masked off during the reflection-cube capture, or metals' softened diffuse bakes dark
 	// into the cube they'll later reflect
@@ -360,7 +370,7 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 	{
 		float3 nt = SAMPLE_SKIN(normalMap, uv).xyz * 2.0f - 1.0f;
 		nt.xy    *= mat_MapParams.x; // normal strength
-		worldN    = PerturbNormalDeriv(In.WorldPos, worldN, uv, nt);
+		worldN    = normalize(T * nt.x + B * nt.y + Ngeo * nt.z);
 	}
 	if (mapFlags & 2)
 	{
@@ -376,9 +386,7 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 	// the VS-computed lighting
 #if MATERIAL_MAPS && !BAKED_LIGHTING
 	{
-		float3 worldLightDir = -mul(cb_lightDirection.xyz, (float3x3)cb_matModel);
-		float  bumpDelta     = saturate(dot(worldN, worldLightDir)) - saturate(dot(normalize(In.WorldNormal), worldLightDir));
-		float  detailFade    = 1.0f - smoothstep(15.0f, 30.0f, In.ViewDepth);
+		float bumpDelta = saturate(dot(worldN, worldLightDir)) - saturate(dot(Ngeo, worldLightDir));
 		texColor.rgb *= clamp(1.0f + bumpDelta * 1.5f * shadow * parallaxShadow * detailFade, 0.0f, 2.0f);
 	}
 #endif
@@ -387,7 +395,6 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 
 	// Roughness-shaped specular params. Clamp the rough end below the material's specularPower (as in
 	// World) so a narrow-lobe material (specularPower < 8) isn't tighter at high roughness than at low
-	float3 V            = normalize(pp_CameraPos.xyz - In.WorldPos); // toward the camera
 	float  rough        = saturate(surfRoughness);
 	float  matSpecPow   = max(mat_Reflectivity.w, 1.0f);
 	float  roughSpecPow = min(matSpecPow, 8.0f);
@@ -403,7 +410,7 @@ PS_OUT ps_main(PS_IN In, bool a_bFrontFace : SV_IsFrontFace)
 
 #if !NO_DYN_LIGHT
 	// Diffuse uses the bumpy derived normal; specular uses the clean normal-mapped worldN.
-	float3 dynN    = ComputeDerivedWorldNormal(In.WorldPos, worldN, uv, texture0, sampler0, cb_glowLightIntensity[0].y);
+	float3 dynN    = ComputeDerivedWorldNormalT(worldN, In.WorldTangent.xyz, In.WorldTangent.w, uv, texture0, sampler0, cb_glowLightIntensity[0].y);
 	float3 dynSpec = 0.0f;
 	float3 glow    = SampleDynamicGlowLights(In.WorldPos, dynN, worldN, V, specInt, specPow, dynSpec);
 	texColor.rgb  += albedo.rgb * glow; // additive, matching the static lights below

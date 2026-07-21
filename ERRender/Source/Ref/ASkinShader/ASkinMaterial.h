@@ -39,6 +39,8 @@ public:
 		SetTextureNum( 1 );
 	}
 
+	Toshi::TTexture* GetTexture() const { return m_pTexture; }
+
 	Toshi::TTextureResourceHAL* GetLightingTexture( ELightingTexture a_eTexture )
 	{
 		TASSERT( a_eTexture < LT_NUMOF );

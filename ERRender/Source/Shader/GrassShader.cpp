@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "GrassShader.h"
+#include "GameSettings.h"
 #include "GrassMesh.h"
 #include "GrassMaterial.h"
 #include "Generated/GrassShaderCombos.h"
@@ -89,14 +90,14 @@ void remaster::GrassShaderDX11::StartFlush()
 	g_pRender->PSSetSamplerState( 0, 2 );
 	g_pRender->SetDepthWrite( TTRUE );
 
-	if ( g_bCSMEnabled && g_pCSMManager && g_flShadowIntensity > 0.0f )
+	if ( GameSettings::IsCSMEnabled() && g_pCSMManager && g_flShadowIntensity > 0.0f )
 	{
 		g_pRender->PSSetShaderResource( 2, g_pCSMManager->GetShadowSRV() );
 		g_pRender->PSSetSamplerState( 2, g_pCSMManager->GetShadowSampler() );
 		g_pRender->PSSetConstantBuffer( 1, g_pRender->GetShadowConstantBuffer() );
 
 		// Animated cloud shadow map (t9/s3), sampled by world XZ in SampleShadow.
-		if ( g_bCloudShadowsEnabled )
+		if ( GameSettings::AreCloudShadowsEnabled() )
 		{
 			g_pRender->PSSetShaderResource( 9, g_pCloudShadowSRV );
 			g_pRender->PSSetSamplerState( 3, g_pCloudShadowSampler );
@@ -249,16 +250,16 @@ void remaster::GrassShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		return;
 	}
 
-	const TBOOL bHasDynLight = g_bDynamicLightEnabled && RenderPacketHasDynamicLights( a_pRenderPacket );
+	const TBOOL bHasDynLight = GameSettings::AreDynamicLightsEnabled() && RenderPacketHasDynamicLights( a_pRenderPacket );
 
 	TUINT uiComboFlags = 0;
-	if ( !g_bCSMEnabled || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
+	if ( !GameSettings::IsCSMEnabled() || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
 		uiComboFlags |= shadercombos::Grass_NO_CSM;
 	if ( !pCurrentContext->IsFogEnabled() || s_flFogDensity <= 0.0f )
 		uiComboFlags |= shadercombos::Grass_NO_FOG;
 	if ( !bHasDynLight )
 		uiComboFlags |= shadercombos::Grass_NO_DYN_LIGHT;
-	if ( g_bCloudShadowsEnabled )
+	if ( GameSettings::AreCloudShadowsEnabled() )
 		uiComboFlags |= shadercombos::Grass_CLOUD_SHADOWS;
 
 	g_pRender->SetShaderPipelineState( m_vecGrassPipelines[ shadercombos::GetGrassComboIndex( uiComboFlags ) ] );

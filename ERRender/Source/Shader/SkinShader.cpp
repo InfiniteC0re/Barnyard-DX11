@@ -1,10 +1,12 @@
 #include "pch.h"
 #include "SkinShader.h"
+#include "GameSettings.h"
 #include "MaterialParams.h"
 #include "SkinMaterial.h"
 #include "SkinMesh.h"
 #include "WorldShader.h"
 #include "Resource/ClassPatcher.h"
+#include "Resource/TextureResource.h"
 
 #include "RenderDX11.h"
 #include "RenderDX11Utils.h"
@@ -111,14 +113,14 @@ void remaster::SkinShaderDX11::StartFlush()
 
 	g_pRender->SetZMode( TTRUE, D3D11_COMPARISON_LESS_EQUAL, D3D11_DEPTH_WRITE_MASK_ALL );
 
-	if ( g_bInMainScenePass && g_bCSMEnabled && g_pCSMManager && g_flShadowIntensity > 0.0f )
+	if ( g_bInMainScenePass && GameSettings::IsCSMEnabled() && g_pCSMManager && g_flShadowIntensity > 0.0f )
 	{
 		g_pRender->PSSetShaderResource( 5, g_pCSMManager->GetShadowSRV() );
 		g_pRender->PSSetSamplerState( 5, g_pCSMManager->GetShadowSampler() );
 		g_pRender->PSSetConstantBuffer( 1, g_pRender->GetShadowConstantBuffer() );
 
 		// Animated cloud shadow map (t9/s3), sampled by world XZ in SampleShadow.
-		if ( g_bCloudShadowsEnabled )
+		if ( GameSettings::AreCloudShadowsEnabled() )
 		{
 			g_pRender->PSSetShaderResource( 9, g_pCloudShadowSRV );
 			g_pRender->PSSetSamplerState( 3, g_pCloudShadowSampler );
@@ -189,6 +191,7 @@ TBOOL remaster::SkinShaderDX11::Validate()
 		{ .SemanticName = "BLENDWEIGHT", .SemanticIndex = 0, .Format = DXGI_FORMAT_R8G8B8A8_UNORM, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
 		{ .SemanticName = "BLENDINDICES", .SemanticIndex = 0, .Format = DXGI_FORMAT_R8G8B8A8_UNORM, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
 		{ .SemanticName = "TEXCOORD", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32_FLOAT, .InputSlot = 0, .AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
+		{ .SemanticName = "TANGENT", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32A32_FLOAT, .InputSlot = 1, .AlignedByteOffset = 0, .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA, .InstanceDataStepRate = 0 },
 	};
 
 	ID3D11InputLayout* pSkinInputLayout = TNULL;
@@ -215,6 +218,14 @@ TBOOL remaster::SkinShaderDX11::Validate()
 
 	TASSERT( shadercombos::CreateSkinShaderPipelines( rSkinVSCombo, &rSkinPSCombo, pSkinInputLayout, m_vecSkinPipelines, "Skin" ) );
 	TASSERT( shadercombos::CreateShadowDepthShaderPipelines( rSkinShadowVSCombo, &rSkinShadowPSCombo, pShadowInputLayout, m_vecSkinShadowPipelines, "Skin_Shadow" ) );
+
+	// HACK: Disable pixel shader manually, because generator doesn't
+	const TUINT uiAlphaTestBit = shadercombos::GetShadowDepthComboIndex( shadercombos::ShadowDepth_ALPHATEST );
+	for ( TINT i = 0; i < m_vecSkinShadowPipelines.Size(); i++ )
+	{
+		if ( !( TUINT( i ) & uiAlphaTestBit ) )
+			m_vecSkinShadowPipelines[ i ].ppPixelShader = TNULL;
+	}
 
 	if ( !m_pBoneCBuffer )
 	{
@@ -259,7 +270,7 @@ const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetSk
 	if ( a_bParallax )
 		uiComboFlags |= shadercombos::Skin_PARALLAX;
 
-	if ( g_bCloudShadowsEnabled )
+	if ( GameSettings::AreCloudShadowsEnabled() )
 		uiComboFlags |= shadercombos::Skin_CLOUD_SHADOWS;
 
 	if ( a_bBakedLighting )
@@ -268,20 +279,20 @@ const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetSk
 	if ( a_bIsAnimated )
 		uiComboFlags |= shadercombos::Skin_ANIMATED;
 
-	if ( !g_bInMainScenePass || !g_bCSMEnabled || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
+	if ( !g_bInMainScenePass || !GameSettings::IsCSMEnabled() || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
 		uiComboFlags |= shadercombos::Skin_NO_CSM;
 
 	RenderContextD3D11* pCurrentContext = TSTATICCAST( RenderContextD3D11, g_pRender->GetCurrentContext() );
 	if ( !pCurrentContext->IsFogEnabled() || s_flFogDensity <= 0.0f )
 		uiComboFlags |= shadercombos::Skin_NO_FOG;
 
-	if ( !g_bDynamicLightEnabled || !a_bDynLighting )
+	if ( !GameSettings::AreDynamicLightsEnabled() || !a_bDynLighting )
 		uiComboFlags |= shadercombos::Skin_NO_DYN_LIGHT;
 
 	return m_vecSkinPipelines[ shadercombos::GetSkinComboIndex( uiComboFlags ) ];
 }
 
-const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetShadowPipeline( TBOOL a_bIsAnimated, TBOOL a_bWind ) const
+const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetShadowPipeline( TBOOL a_bIsAnimated, TBOOL a_bWind, TBOOL a_bAlphaTest ) const
 {
 	TUINT uiComboFlags = 0;
 
@@ -291,7 +302,8 @@ const remaster::RenderDX11::ShaderPipelineState& remaster::SkinShaderDX11::GetSh
 	if ( a_bWind )
 		uiComboFlags |= shadercombos::ShadowDepth_WIND;
 
-	uiComboFlags |= shadercombos::ShadowDepth_ALPHATEST;
+	if ( a_bAlphaTest )
+		uiComboFlags |= shadercombos::ShadowDepth_ALPHATEST;
 
 	return m_vecSkinShadowPipelines[ shadercombos::GetShadowDepthComboIndex( uiComboFlags ) ];
 }
@@ -347,9 +359,14 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 		// Match the main pass's wind so the shadow silhouette sways; needs a roughness map for the
 		// wind-strength (blue) channel in the shadow VS
 		const remaster::MaterialParams* pShadowParams = pMaterial->GetMaterialParams();
-		const TBOOL bWind = g_bWindEnabled && pShadowParams && pShadowParams->bWind && pShadowParams->pRoughnessMap;
+		const TBOOL bWind = GameSettings::IsWindEnabled() && pShadowParams && pShadowParams->bWind && pShadowParams->pRoughnessMap;
 
-		g_pRender->SetShaderPipelineState( GetShadowPipeline( bIsAnimated, bWind ) );
+		// Explicit MaterialParams override wins, otherwise auto from the diffuse alpha mask
+		const TBOOL bShadowAlphaTest = ( pShadowParams && pShadowParams->iShadowAlphaTest >= 0 )
+		    ? pShadowParams->iShadowAlphaTest != 0
+		    : TextureResource_HasTransparency( pMaterial->GetTexture() );
+
+		g_pRender->SetShaderPipelineState( GetShadowPipeline( bIsAnimated, bWind, bShadowAlphaTest ) );
 
 		// Upload MVP (+ cascade, + wind params) to the depth-pass constant buffer at b0
 		{
@@ -412,14 +429,14 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 
 	const TFLOAT flPacketAlpha     = a_pRenderPacket->GetAlpha();
 	const TBOOL  bUseBakedLighting = pMaterial->IsHDLighting() && pMaterial->HasLighting1Tex() && pMaterial->HasLighting2Tex();
-	const TBOOL  bHasDynLight      = g_bDynamicLightEnabled && RenderPacketHasDynamicLights( a_pRenderPacket );
+	const TBOOL  bHasDynLight      = GameSettings::AreDynamicLightsEnabled() && RenderPacketHasDynamicLights( a_pRenderPacket );
 
 	const remaster::MaterialParams* pSpecParams = pMaterial->GetMaterialParams();
 	const TBOOL bHasMaps = pSpecParams && ( pSpecParams->pNormalMap || pSpecParams->pRoughnessMap || pSpecParams->pMetallicMap );
 
 	// Wind reads the roughness map's blue channel in the VS, so it needs both the per-material
-	// opt-in and a roughness map to sample. Master-gated by g_bWindEnabled
-	const TBOOL bWind = g_bWindEnabled && pSpecParams && pSpecParams->bWind && pSpecParams->pRoughnessMap;
+	// opt-in and a roughness map to sample. Master-gated by GameSettings::IsWindEnabled()
+	const TBOOL bWind = GameSettings::IsWindEnabled() && pSpecParams && pSpecParams->bWind && pSpecParams->pRoughnessMap;
 
 	// Parallax occlusion mapping compiles in only for meshes that ship a height map
 	const TBOOL bParallax = pSpecParams && pSpecParams->pHeightMap;
@@ -519,7 +536,7 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 
 	// Per-pass env-specular vec4: [intensity, cube max mip, capture-active mask (kills
 	// metallic/parallax), tangent-debug]. Must match the world shader's write
-	const TFLOAT flEnvIntensity = ( g_bReflectionCaptureActive || !g_bEnvSpecular ) ? 0.0f : 1.0f;
+	const TFLOAT flEnvIntensity = ( g_bReflectionCaptureActive || !GameSettings::IsEnvSpecularEnabled() ) ? 0.0f : 1.0f;
 	g_pRender->PassBufferSetVec4( PASSBUF_ENV_SPECULAR,
 	    TVector4( flEnvIntensity, TFLOAT( g_iSkyCubeMaxMip ), g_bReflectionCaptureActive ? 1.0f : 0.0f, remaster::g_bDebugTangents ? 1.0f : 0.0f ) );
 
@@ -554,7 +571,7 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	// Set vertices
 	TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
 	TVALIDPTR( pVertexPool );
-	
+
 	for (TINT i = 0; i < pMesh->GetNumSubMeshes(); i++)
 	{
 		ASkinSubMesh* pSubMesh = pMesh->GetSubMesh( i );
@@ -567,6 +584,10 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 
 		TIndexBlockResource::HALBuffer indexBuffer;
 		CALL_THIS( 0x006d6180, TIndexPoolResource*, TBOOL, pIndexPool, TIndexBlockResource::HALBuffer&, indexBuffer ); // pIndexPool->GetHALBuffer( &indexBuffer );
+
+		// Tangent stream
+		if ( vertexBuffer.uiNumStreams > 1 && vertexBuffer.apVertexBuffers[ 1 ] )
+			g_pRender->SetVertexBuffer( (ID3D11Buffer*)vertexBuffer.apVertexBuffers[ 1 ], sizeof( TVector4 ), 0, 1 );
 
 		if ( bIsAnimated )
 			UploadBonePalette( m_pBoneCBuffer, pSkeletonInstance, pSubMesh );

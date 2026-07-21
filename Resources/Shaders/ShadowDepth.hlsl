@@ -49,8 +49,6 @@ struct VS_IN_SKIN
     float2 UV : TEXCOORD0;
 };
 
-#ifdef ALPHATEST
-
 struct VS_IN_WORLD
 {
     float3 ObjPos : POSITION;
@@ -59,19 +57,20 @@ struct VS_IN_WORLD
     float2 UV : TEXCOORD0;
 };
 
+#if ALPHATEST
 struct PS_IN
 {
     float4 ProjPos : SV_POSITION;
     float2 UV : TEXCOORD0;
 };
+#else
+struct PS_IN
+{
+    float4 ProjPos : SV_POSITION;
+};
+#endif
 
 #define VS_OUT PS_IN
-
-#else  // ALPHATEST
-
-#define VS_OUT float4
-
-#endif // !ALPHATEST
 
 VS_OUT vs_main_world(VS_IN_WORLD In)
 {
@@ -81,19 +80,12 @@ VS_OUT vs_main_world(VS_IN_WORLD In)
 #endif
     float4 proj = mul(float4(objPos, 1.0), cb_matShadowMVP);
 
-#ifdef ALPHATEST
-
     VS_OUT result;
     result.ProjPos = proj;
+#if ALPHATEST
     result.UV = In.UV;
-
+#endif
     return result;
-
-#else  // ALPHATEST
-
-    return proj;
-
-#endif // !ALPHATEST
 }
 
 VS_OUT vs_main_skin(VS_IN_SKIN In)
@@ -133,29 +125,19 @@ VS_OUT vs_main_skin(VS_IN_SKIN In)
 
     float4 proj = mul(float4(vertex, 1.0), cb_matShadowMVP);
 
-#ifdef ALPHATEST
-
     VS_OUT result;
     result.ProjPos = proj;
+#if ALPHATEST
     result.UV = In.UV;
-
+#endif
     return result;
-
-#else  // ALPHATEST
-
-    return proj;
-
-#endif // !ALPHATEST
 }
-
-#ifdef ALPHATEST
 
 float4 ps_main(VS_OUT In) : SV_TARGET
 {
+#if ALPHATEST
     float4 texColor = texture0.Sample(sampler0, In.UV);
 	clip(texColor.a - (0.8f - cb_CurrentCascade * 0.35f));
-
+#endif
     return float4(1, 1, 1, 1);
 }
-
-#endif // ALPHATEST

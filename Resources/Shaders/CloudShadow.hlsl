@@ -62,24 +62,18 @@ float ps_main(PS_IN i) : SV_TARGET
 
     // Ridged-noise shape.
     float r = 0.0;
-    float2 ruv = uv - q;
-    float weight = 0.8;
-    [unroll] for (int k = 0; k < 5; k++)
-    {
-        r += abs(weight * noise(ruv));
-        ruv = mul(m, ruv);
-        weight *= 0.7;
-    }
-
-    // Base noise shape.
     float f = 0.0;
-    float2 fuv = uv - q;
-    weight = 0.7;
+    float2 nuv = uv - q;
+    float rWeight = 0.8;
+    float fWeight = 0.7;
     [unroll] for (int k = 0; k < 5; k++)
     {
-        f += weight * noise(fuv);
-        fuv = mul(m, fuv);
-        weight *= 0.6;
+        float n = noise(nuv);
+        r += rWeight * abs(n);
+        f += fWeight * n;
+        nuv = mul(m, nuv);
+        rWeight *= 0.7;
+        fWeight *= 0.6;
     }
     f *= r + f;
 

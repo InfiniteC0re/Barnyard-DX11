@@ -5,7 +5,7 @@
 #include "LightManager.h"
 #include "MaterialParams.h"
 #include "Editor.h"
-#include "Settings.h"
+#include "GameSettings.h"
 #include "CSM/CSMManager.h"
 
 #include <StaticLights.h>
@@ -104,7 +104,7 @@ public:
 	{
 		if ( editor::g_bEnabled ) editor::Render();
 
-		settings::Render();
+		remaster::GameSettings::Render();
 
 		if ( m_bDebugFontAtlas )
 		{
@@ -134,7 +134,7 @@ public:
 
 	virtual TBOOL IsOverlayVisible() OVERRIDE
 	{
-		return ( editor::g_bEnabled || settings::g_bEnabled || m_bDebugFontAtlas );
+		return ( editor::g_bEnabled || remaster::GameSettings::g_bRenderUI || m_bDebugFontAtlas );
 	}
 };
 

@@ -29,6 +29,12 @@ public:
 		m_aTextures[ a_uiStage ] = a_pTexture;
 	}
 
+	Toshi::TTexture* GetTexture( TUINT a_uiStage = 0 ) const
+	{
+		TASSERT( a_uiStage < MAX_TEXTURES );
+		return m_aTextures[ a_uiStage ];
+	}
+
 protected:
 	Toshi::TTexture* m_aTextures[ MAX_TEXTURES ];
 	BLENDMODE        m_eBlendMode;

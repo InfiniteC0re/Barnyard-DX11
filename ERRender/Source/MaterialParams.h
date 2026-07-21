@@ -39,6 +39,8 @@ struct MaterialParams
 	TFLOAT fWindMax;           // blue value that maps to full wind strength
 	TBOOL  bFOB;               // Wii-style FOB tree billboard: vertex colour blends shadow->lit,
 	                           // lit colour comes from the per-instance tint/exposure selector
+	TINT8  iShadowAlphaTest;   // alpha-tested shadow casters: -1 = auto (diffuse texture has a
+	                           // transparency mask), 0 = force depth-only (no PS), 1 = force on
 	TCHAR  szNormalMap[ 64 ];  // normal-map file under Data\Textures (empty = none)
 	TCHAR  szRoughnessMap[ 64 ];
 	TCHAR  szHeightMap[ 64 ];  // height map (white = raised) for parallax

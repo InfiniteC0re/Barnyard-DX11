@@ -73,7 +73,7 @@ private:
 	void                                   RenderImmediate( Toshi::TRenderPacket* a_pRenderPacket );
 	void                                   UploadDynamicLights( Toshi::TRenderPacket* a_pRenderPacket );
 	const RenderDX11::ShaderPipelineState& GetSkinPipeline( TBOOL a_bBakedLighting, TBOOL a_bDynLighting, TBOOL a_bIsAnimated, TBOOL a_bHasMaps, TBOOL a_bWind, TBOOL a_bParallax ) const;
-	const RenderDX11::ShaderPipelineState& GetShadowPipeline( TBOOL a_bIsAnimated, TBOOL a_bWind ) const;
+	const RenderDX11::ShaderPipelineState& GetShadowPipeline( TBOOL a_bIsAnimated, TBOOL a_bWind, TBOOL a_bAlphaTest ) const;
 
 public:
 	Toshi::TOrderTable* GetOrderTable( TUINT a_uiIndex )

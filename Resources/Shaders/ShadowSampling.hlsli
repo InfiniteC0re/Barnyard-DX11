@@ -55,11 +55,8 @@ float SampleCloudLight(float2 worldXZ)
 Texture2DArray         shadowMaps    : register(SHADOW_TEXTURE_REGISTER);
 SamplerComparisonState shadowSampler : register(SHADOW_SAMPLER_REGISTER);
 
-float2 ComputeReceiverPlaneDepthBias(float3 shadowCoord, float texelSize)
+float2 ComputeReceiverPlaneDepthBias(float3 shadowDDX, float3 shadowDDY, float texelSize)
 {
-    float3 shadowDDX = ddx(shadowCoord);
-    float3 shadowDDY = ddy(shadowCoord);
-
     float determinant = shadowDDX.x * shadowDDY.y - shadowDDX.y * shadowDDY.x;
     if (abs(determinant) < 0.000001f)
         return 0.0f;
@@ -80,18 +77,14 @@ float2 ComputeReceiverPlaneDepthBias(float3 shadowCoord, float texelSize)
     );
 }
 
-// Gradient-dependent setup for a cascade. Must be called under uniform control
-// flow because ComputeReceiverPlaneDepthBias uses ddx/ddy. Outputs are consumed
-// by SampleShadowPCF, which carries no gradients and may run conditionally.
-struct ShadowSetup
+struct ShadowReceiver
 {
-    float2 shadowUV;
-    float  shadowZ;
-    float2 depthBiasPerTexel;
-    bool   outside;
+    float3 offsetPos; // normal-offset receiver position (world)
+    float3 posDDX;    // ddx(offsetPos)
+    float3 posDDY;    // ddy(offsetPos)
 };
 
-ShadowSetup ComputeShadowSetup(float3 worldPos, float3 worldNormal, int cascade)
+ShadowReceiver ComputeShadowReceiver(float3 worldPos, float3 worldNormal)
 {
     // Normal-offset bias: push the receiver along its surface normal before
     // projecting. The offset distance MUST be the same for every cascade -- scaling
@@ -109,9 +102,25 @@ ShadowSetup ComputeShadowSetup(float3 worldPos, float3 worldNormal, int cascade)
     float3 toSun       = float3(-cb_LightDirection.x, cb_LightDirection.y, -cb_LightDirection.z);
     float NdotL        = saturate(dot(worldNormal, toSun));
     float grazingScale = clamp(1.0f / max(NdotL, 0.05f), 1.0f, cb_LightDirection.w);
-    worldPos += worldNormal * (cb_CascadeWorldTexelSize.x * cb_CascadeScales.w * grazingScale);
 
-    float4 shadowPos = mul(float4(worldPos, 1.0f), cb_matLightVP[cascade]);
+    ShadowReceiver receiver;
+    receiver.offsetPos = worldPos + worldNormal * (cb_CascadeWorldTexelSize.x * cb_CascadeScales.w * grazingScale);
+    receiver.posDDX    = ddx(receiver.offsetPos);
+    receiver.posDDY    = ddy(receiver.offsetPos);
+    return receiver;
+}
+
+struct ShadowSetup
+{
+    float2 shadowUV;
+    float  shadowZ;
+    float2 depthBiasPerTexel;
+    bool   outside;
+};
+
+ShadowSetup ComputeShadowSetup(ShadowReceiver a_receiver, int cascade)
+{
+    float4 shadowPos = mul(float4(a_receiver.offsetPos, 1.0f), cb_matLightVP[cascade]);
     shadowPos.xyz /= shadowPos.w;
 
     // [0,1] coords within the cascade frustum; scale into the cascade's atlas sub-rect.
@@ -122,9 +131,15 @@ ShadowSetup ComputeShadowSetup(float3 worldPos, float3 worldNormal, int cascade)
     setup.shadowZ = shadowPos.z - cb_CascadeReceiverBias[cascade];
     setup.outside = any(cascadeUV < 0.0f) || any(cascadeUV > 1.0f) || shadowPos.z < 0.0f || shadowPos.z > 1.0f;
 
+    float  uvScale  = cb_CascadeScales[cascade];
+    float3 projDDX  = mul(float4(a_receiver.posDDX, 0.0f), cb_matLightVP[cascade]).xyz;
+    float3 projDDY  = mul(float4(a_receiver.posDDY, 0.0f), cb_matLightVP[cascade]).xyz;
+    float3 coordDDX = float3(projDDX.xy * float2(0.5f, -0.5f) * uvScale, projDDX.z);
+    float3 coordDDY = float3(projDDY.xy * float2(0.5f, -0.5f) * uvScale, projDDY.z);
+
     float texelSize = cb_ShadowParams.y;
     float receiverPlaneBiasScale = cb_ShadowFilterParams.y;
-    setup.depthBiasPerTexel = ComputeReceiverPlaneDepthBias(float3(setup.shadowUV, setup.shadowZ), texelSize) * receiverPlaneBiasScale;
+    setup.depthBiasPerTexel = ComputeReceiverPlaneDepthBias(coordDDX, coordDDY, texelSize) * receiverPlaneBiasScale;
     return setup;
 }
 
@@ -135,13 +150,7 @@ ShadowSetup ComputeShadowSetup(float3 worldPos, float3 worldNormal, int cascade)
 // comparison sampler is LINEAR, so even radius 0 is a hardware 2x2 PCF -- the far cascade stays
 // smooth, just with a smaller footprint. 0 = single (bilinear) tap, 1 = 3x3, 2 = 5x5.
 #ifndef SHADOW_PCF_RADIUS
-#define SHADOW_PCF_RADIUS 1
-#endif
-#ifndef SHADOW_PCF_RADIUS_C0
-#define SHADOW_PCF_RADIUS_C0 SHADOW_PCF_RADIUS // near cascade: full kernel
-#endif
-#ifndef SHADOW_PCF_RADIUS_C1
-#define SHADOW_PCF_RADIUS_C1 SHADOW_PCF_RADIUS // mid cascade: full kernel
+#define SHADOW_PCF_RADIUS 1                    // near/mid cascades: full kernel
 #endif
 #ifndef SHADOW_PCF_RADIUS_C2
 #define SHADOW_PCF_RADIUS_C2 0                 // far cascade: single bilinear tap
@@ -182,14 +191,16 @@ float SampleShadowPCF(ShadowSetup setup, int cascade)
     if (setup.outside)
         return 1.0f;
 
-    if (cascade == 0) return SampleShadowKernel(setup, cascade, SHADOW_PCF_RADIUS_C0);
-    if (cascade == 1) return SampleShadowKernel(setup, cascade, SHADOW_PCF_RADIUS_C1);
+    // One shared kernel for cascades 0/1 so a wave straddling their split runs a single
+    // unrolled kernel instead of two identical copies
+    if (cascade < 2) return SampleShadowKernel(setup, cascade, SHADOW_PCF_RADIUS);
     return SampleShadowKernel(setup, cascade, SHADOW_PCF_RADIUS_C2);
 }
 
 float SampleShadowCascade(float3 worldPos, float3 worldNormal, int cascade)
 {
-    ShadowSetup setup = ComputeShadowSetup(worldPos, worldNormal, cascade);
+    ShadowReceiver receiver = ComputeShadowReceiver(worldPos, worldNormal);
+    ShadowSetup    setup    = ComputeShadowSetup(receiver, cascade);
     return SampleShadowPCF(setup, cascade);
 }
 
@@ -215,19 +226,15 @@ float SampleShadow(float3 worldPos, float3 worldNormalRaw, float viewDepth)
         return SampleShadowCascade(worldPos, worldNormal, forcedCascade);
     }
 
-    // Compute gradient-dependent setup for both the current and next cascade
-    // unconditionally (uniform control flow, required for ddx/ddy). The PCF
-    // loops below carry no gradients, so they can be skipped per-pixel.
-    int nextCascade = min(cascade + 1, 2);
-    ShadowSetup setup     = ComputeShadowSetup(worldPos, worldNormal, cascade);
-    ShadowSetup nextSetup = ComputeShadowSetup(worldPos, worldNormal, nextCascade);
+    ShadowReceiver receiver = ComputeShadowReceiver(worldPos, worldNormal);
+    ShadowSetup    setup    = ComputeShadowSetup(receiver, cascade);
 
     float shadow = SampleShadowPCF(setup, cascade);
 
     // Smooth fade across the cascade boundary: within the last fraction of a
     // cascade's depth range, cross-fade into the next (coarser) cascade so the
-    // transition seam disappears. The expensive second PCF only runs for pixels
-    // that are actually inside the blend band.
+    // transition seam disappears. The expensive second setup + PCF only run for
+    // pixels that are actually inside the blend band.
     float blendFraction = cb_ShadowFilterParams.w;
     float splitDist = (cascade == 0) ? cb_CascadeSplits.x : cb_CascadeSplits.y;
     float prevSplit = (cascade == 0) ? 0.0f : cb_CascadeSplits.x;
@@ -236,8 +243,10 @@ float SampleShadow(float3 worldPos, float3 worldNormalRaw, float viewDepth)
 
     if (blendFraction > 0.0f && cascade < 2 && viewDepth > fadeStart)
     {
+        int   nextCascade = min(cascade + 1, 2);
         float t = saturate((viewDepth - fadeStart) / blendBand);
-        float nextShadow = SampleShadowPCF(nextSetup, nextCascade);
+        ShadowSetup nextSetup  = ComputeShadowSetup(receiver, nextCascade);
+        float       nextShadow = SampleShadowPCF(nextSetup, nextCascade);
         shadow = lerp(shadow, nextShadow, t);
     }
 

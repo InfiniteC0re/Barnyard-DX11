@@ -338,6 +338,12 @@ void remaster::LoadMaterialParamsDB( const TCHAR* a_szPath )
 		oParams.fWindMax              = pElem->FloatAttribute( "windMax", 1.0f );
 		oParams.bFOB                  = pElem->BoolAttribute( "fob", false );
 
+		TBOOL bShadowAlphaTestAttr = TFALSE;
+		if ( pElem->QueryBoolAttribute( "shadowAlphaTest", &bShadowAlphaTestAttr ) == tinyxml2::XML_SUCCESS )
+			oParams.iShadowAlphaTest = bShadowAlphaTestAttr ? 1 : 0;
+		else
+			oParams.iShadowAlphaTest = -1;
+
 		// Optional normal/roughness/height map file names (resolved against Data\Textures).
 		if ( const TCHAR* szNormal = pElem->Attribute( "normalMap" ) )
 			Toshi::TStringManager::String8Copy( oParams.szNormalMap, szNormal, sizeof( oParams.szNormalMap ) );
