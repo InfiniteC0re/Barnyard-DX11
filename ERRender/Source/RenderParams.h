@@ -86,6 +86,7 @@ extern TINT   g_iVolumetricFogCompositeMode;
 extern TFLOAT g_flVolumetricFogDensity;
 extern TFLOAT g_flVolumetricFogG;
 extern TFLOAT g_flVolumetricFogMaxDist;
+extern TFLOAT g_flVolumetricFogStepGrowth;
 extern TFLOAT g_flVolumetricFogIntensity;
 extern TFLOAT g_flVolumetricFogColor[ 3 ];
 

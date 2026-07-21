@@ -182,6 +182,9 @@ extern TINT                      g_iSkyCubeMaxMip;
 // g_flShadowDistance
 extern TFLOAT      g_aflShadowSplitOverride[ CSM_CASCADE_COUNT - 1 ];
 
+// Per-cascade update interval in frames
+extern TINT        g_aiShadowUpdateInterval[ CSM_CASCADE_COUNT ];
+
 // Per-cascade shadow tunables.
 extern TFLOAT      g_aflShadowCasterPadding[ CSM_CASCADE_COUNT ];
 extern TFLOAT      g_aflShadowCascadePadding[ CSM_CASCADE_COUNT ];

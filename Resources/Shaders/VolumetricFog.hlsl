@@ -28,7 +28,7 @@ cbuffer VolumetricFogCBuffer : register( b1 )
     float4   cb_ShadowBias;
     float4x4 cb_matViewWorld;
     float4   cb_Projection;   // m11, m22, m31, m32
-    float4   cb_DepthParams;  // unused, unused, near, far
+    float4   cb_DepthParams;  // step growth, unused, near, far
     float4   cb_LightDirVS;   // view-space direction toward sun
     float4   cb_FogColor;
     float4   cb_FogParams;    // density, anisotropy, max distance, intensity/darkening
@@ -39,13 +39,15 @@ cbuffer VolumetricFogCBuffer : register( b1 )
 };
 
 static const float PI                    = 3.14159265f;
-// 0.25 keeps the per-frame march fine enough to look clean on its own. The coarser 0.4 only
-// works paired with temporal accumulation (ps_temporal), which is currently dormant because
-// the no-reprojection history blend lags the camera -- re-coarsen once reprojection lands.
+// 0.25 keeps the per-frame march fine enough to look clean on its own near the camera;
+// cb_DepthParams.x grows the step geometrically with distance (far fog is low-frequency
+// and jittered, so the coarser far steps don't read as banding at quarter res). A flat
+// coarser step would need the dormant temporal accumulation (no reprojection yet)
 static const int   MAX_LIGHT_STEPS       = 384;
 static const int   MAX_TRANSMITTANCE_STEPS = 64;
 static const float LIGHT_STEP_LENGTH     = 0.25f;
 static const float TRANSMITTANCE_STEP_LENGTH = 0.5f;
+static const float MAX_STEP_GROWTH_FACTOR = 6.0f;
 static const float LIGHT_EXTINCTION_SCALE = 0.05f;
 static const float SHADOW_EXTINCTION_SCALE = 0.25f;
 
@@ -91,7 +93,7 @@ float RayJitter( float2 pixel )
 // scrolls differently and is domain-warped by the base so density churns as it advects. Added
 // zero-mean to preserve the base mean (~0.5)/range the density mapping expects; non-integer freq
 // ratio + WRAP tiling keep the octaves from beating into a visible repeat
-float SampleFogNoise( float3 worldPos )
+float SampleFogNoise( float3 worldPos, float detailWeight )
 {
     static const float DETAIL_FREQ   = 2.9f;
     static const float DETAIL_WARP   = 0.10f;
@@ -103,17 +105,22 @@ float SampleFogNoise( float3 worldPos )
     float3 pBase = float3( worldPos.x + wind.x, worldPos.y, worldPos.z + wind.y ) * scale;
     float  nBase = fogNoiseVolume.SampleLevel( fogNoiseSampler, pBase, 0 ).r;
 
-    float3 pDetail = float3( worldPos.x - wind.x * 1.7f,
-                             worldPos.y + cb_FrameParams.y * 0.6f,
-                             worldPos.z - wind.y * 1.7f ) * ( scale * DETAIL_FREQ );
-    pDetail += ( nBase - 0.5f ) * DETAIL_WARP;
-    float nDetail = fogNoiseVolume.SampleLevel( fogNoiseSampler, pDetail, 0 ).r;
+    if ( detailWeight > 0.01f )
+    {
+        float3 pDetail = float3( worldPos.x - wind.x * 1.7f,
+                                 worldPos.y + cb_FrameParams.y * 0.6f,
+                                 worldPos.z - wind.y * 1.7f ) * ( scale * DETAIL_FREQ );
+        pDetail += ( nBase - 0.5f ) * DETAIL_WARP;
+        float nDetail = fogNoiseVolume.SampleLevel( fogNoiseSampler, pDetail, 0 ).r;
 
-    return saturate( nBase + ( nDetail - 0.5f ) * DETAIL_WEIGHT );
+        return saturate( nBase + ( nDetail - 0.5f ) * ( DETAIL_WEIGHT * detailWeight ) );
+    }
+
+    return saturate( nBase );
 }
 
 // Base fog density modulated by the baked fBm volume (strength 0 = uniform, 1 = 0..2x)
-float FogDensityAt( float3 worldPos )
+float FogDensityAt( float3 worldPos, float rayT )
 {
     float base = max( cb_FogParams.x, 0.0f );
 
@@ -130,7 +137,7 @@ float FogDensityAt( float3 worldPos )
     if ( strength <= 0.0f )
         return base;
 
-    float n = SampleFogNoise( worldPos );
+    float n = SampleFogNoise( worldPos, 1.0f - smoothstep( 15.0f, 25.0f, rayT ) );
 
     return base * lerp( 1.0f, n * 2.0f, strength );
 }
@@ -202,9 +209,8 @@ float3 IntegrateLightRay( float2 uv, float2 pixel )
     float3 marchDirVS = rayToSceneVS / max( length( rayToSceneVS ), 0.0001f );
     float  g        = clamp( cb_FogParams.y, -0.95f, 0.95f );
 
-    int   stepCount = min( MAX_LIGHT_STEPS, max( 8, (int)ceil( rayDistance / LIGHT_STEP_LENGTH ) ) );
-    float stepSize  = rayDistance / (float)stepCount;
-    float jitter    = RayJitter( pixel );
+    float growth = max( cb_DepthParams.x, 1.0f );
+    float jitter = RayJitter( pixel );
 
     // Keep the scattering phase tied to the camera orientation. Using each pixel's
     // view ray makes the same world-space shaft fade as it moves toward screen edges.
@@ -219,16 +225,23 @@ float3 IntegrateLightRay( float2 uv, float2 pixel )
     // noise off density == base, so never skips
     float minDensity = max( cb_FogParams.x, 0.0f ) * 0.05f;
 
+    float t  = 0.0f;
+    float dt = LIGHT_STEP_LENGTH;
+
     [loop]
     for ( int step = 0; step < MAX_LIGHT_STEPS; step++ )
     {
-        if ( step >= stepCount ) break;
+        if ( t >= rayDistance ) break;
 
-        float rayT = ( (float)step + jitter ) * stepSize;
+        float stepSize = min( dt, rayDistance - t );
+        float rayT     = t + jitter * stepSize;
+        t += dt;
+        dt = min( dt * growth, LIGHT_STEP_LENGTH * MAX_STEP_GROWTH_FACTOR );
+
         float3 viewPos = marchDirVS * rayT;
         float3 worldPos = mul( float4( viewPos, 1.0f ), cb_matViewWorld ).xyz;
 
-        float density = FogDensityAt( worldPos );
+        float density = FogDensityAt( worldPos, rayT );
         if ( density < minDensity )
             continue;
 
@@ -278,24 +291,30 @@ float4 ps_visibility( PS_IN i ) : SV_TARGET
     float3 marchDirVS = rayToSceneVS / max( length( rayToSceneVS ), 0.0001f );
     float  amount   = saturate( cb_FogParams.w );
 
-    int   stepCount = min( MAX_TRANSMITTANCE_STEPS, max( 8, (int)ceil( rayDistance / TRANSMITTANCE_STEP_LENGTH ) ) );
-    float stepSize  = rayDistance / (float)stepCount;
-    float jitter    = RayJitter( i.Position.xy );
+    float growth = max( cb_DepthParams.x, 1.0f );
+    float jitter = RayJitter( i.Position.xy );
 
     float shadowedOpticalDepth = 0.0f;
 
     float minDensity = max( cb_FogParams.x, 0.0f ) * 0.05f;
 
+    float t  = 0.0f;
+    float dt = TRANSMITTANCE_STEP_LENGTH;
+
     [loop]
     for ( int step = 0; step < MAX_TRANSMITTANCE_STEPS; step++ )
     {
-        if ( step >= stepCount ) break;
+        if ( t >= rayDistance ) break;
 
-        float rayT = ( (float)step + jitter ) * stepSize;
+        float stepSize = min( dt, rayDistance - t );
+        float rayT     = t + jitter * stepSize;
+        t += dt;
+        dt = min( dt * growth, TRANSMITTANCE_STEP_LENGTH * MAX_STEP_GROWTH_FACTOR );
+
         float3 viewPos = marchDirVS * rayT;
         float3 worldPos = mul( float4( viewPos, 1.0f ), cb_matViewWorld ).xyz;
 
-        float density = FogDensityAt( worldPos );
+        float density = FogDensityAt( worldPos, rayT );
         if ( density < minDensity )
             continue;
 

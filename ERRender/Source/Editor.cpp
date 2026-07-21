@@ -613,6 +613,7 @@ static const LevelSetting s_aFXSettings[] = {
 	LS_FLOAT( "volFogDensity", remaster::g_flVolumetricFogDensity ),
 	LS_FLOAT( "volFogG", remaster::g_flVolumetricFogG ),
 	LS_FLOAT( "volFogMaxDist", remaster::g_flVolumetricFogMaxDist ),
+	LS_FLOAT( "volFogStepGrowth", remaster::g_flVolumetricFogStepGrowth ),
 	LS_FLOAT( "volFogIntensity", remaster::g_flVolumetricFogIntensity ),
 	LS_FLOATN( "volFogColor", remaster::g_flVolumetricFogColor, 3 ),
 	LS_FLOAT( "volFogBottom", remaster::g_flVolumetricFogHeight ),
@@ -1219,6 +1220,9 @@ static void DrawRenderSettingsTab()
 	ImGui::Checkbox( "Delayed Cascade Update", &remaster::g_bCSMDelayedCascadeUpdate );
 	if ( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( "Rebuild far cascades every 4th/8th frame instead of every frame.\nCheaper; far shadows update with slight latency." );
+	ImGui::DragInt3( "Cascade Update Interval", remaster::g_aiShadowUpdateInterval, 0.1f, 1, 32 );
+	if ( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "Frames between rebuilds per cascade (1 = every frame).\nCheaper at higher intervals; shadows update with slight latency." );
 	ImGui::SliderFloat( "Shadow Intensity", &remaster::g_flShadowIntensity, 0.0f, 1.0f );
 	ImGui::DragFloat( "Shadow Distance", &remaster::g_flShadowDistance, 1.0f, 10.0f, 500.0f, "%.0f m" );
 	ImGui::SliderFloat( "Split Lambda", &remaster::g_flShadowSplitLambda, 0.0f, 1.0f, "%.2f" );
@@ -1474,6 +1478,7 @@ static void DrawFXTab()
 		ImGui::DragFloat( "Fog Density", &remaster::g_flVolumetricFogDensity, 0.001f, 0.0f, 1.0f, "%.4f" );
 		ImGui::SliderFloat( "Asymmetry (g)", &remaster::g_flVolumetricFogG, -0.99f, 0.99f, "%.2f" );
 		ImGui::DragFloat( "Max Distance", &remaster::g_flVolumetricFogMaxDist, 1.0f, 1.0f, 500.0f, "%.0f m" );
+		ImGui::SliderFloat( "Step Growth", &remaster::g_flVolumetricFogStepGrowth, 1.0f, 1.08f, "%.3f" );
 		if ( remaster::g_iVolumetricFogCompositeMode == 1 )
 		{
 			ImGui::SliderFloat( "Darkening", &remaster::g_flVolumetricFogIntensity, 0.0f, 1.0f, "%.2f" );

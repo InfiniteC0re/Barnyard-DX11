@@ -60,6 +60,8 @@ TFLOAT      g_flCloudShadowTime               = 0.0f;
 
 TFLOAT      g_aflShadowSplitOverride[ CSM_CASCADE_COUNT - 1 ]    = { 0.0f, 0.0f };
 
+TINT        g_aiShadowUpdateInterval[ CSM_CASCADE_COUNT ]        = { 1, 4, 8 };
+
 // Per-cascade defaults.
 TFLOAT      g_aflShadowCasterPadding[ CSM_CASCADE_COUNT ]        = { 3.0f, 3.0f, 3.0f };
 TFLOAT      g_aflShadowCascadePadding[ CSM_CASCADE_COUNT ]       = { 8.0f, 8.0f, 8.0f };
@@ -282,9 +284,14 @@ void CSMManager::UpdateCascades( TRenderContext* a_pRenderContext )
 	}
 	else if ( g_bCSMDelayedCascadeUpdate )
 	{
-		m_uiCascadeRenderMask = 1u << 0; // cascade 0: every frame
-		if ( m_bForceAllCascades || ( m_uiFrameCounter % 4 ) == 0 ) m_uiCascadeRenderMask |= 1u << 1; // cascade 1: every 4 frames
-		if ( m_bForceAllCascades || ( m_uiFrameCounter % 8 ) == 2 ) m_uiCascadeRenderMask |= 1u << 2; // cascade 2: every 8 frames (offset to avoid colliding with cascade 1)
+		// Per-cascade phase offsets spread the staggered rebuilds across frames
+		m_uiCascadeRenderMask = 0;
+		for ( TINT i = 0; i < CSM_CASCADE_COUNT; i++ )
+		{
+			const TUINT uiInterval = TUINT( TMath::Max( g_aiShadowUpdateInterval[ i ], 1 ) );
+			if ( m_bForceAllCascades || ( ( m_uiFrameCounter + TUINT( i ) ) % uiInterval ) == 0 )
+				m_uiCascadeRenderMask |= 1u << i;
+		}
 	}
 	else
 	{

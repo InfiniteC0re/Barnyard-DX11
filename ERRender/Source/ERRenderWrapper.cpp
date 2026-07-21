@@ -152,6 +152,7 @@ TINT   g_iVolumetricFogCompositeMode = 0;
 TFLOAT g_flVolumetricFogDensity      = 0.019f;
 TFLOAT g_flVolumetricFogG            = 0.0f;
 TFLOAT g_flVolumetricFogMaxDist      = 44.0f;
+TFLOAT g_flVolumetricFogStepGrowth   = 1.02f;
 TFLOAT g_flVolumetricFogIntensity    = 0.20f;
 TFLOAT g_flVolumetricFogColor[ 3 ]   = { 0.937f, 0.8f, 0.5254f };
 // Tint distance-fog colour by the authored colour so the volumetrics track the level's fog palette
@@ -724,7 +725,7 @@ static TUINT s_uiHBAOWidth  = 0;
 static TUINT s_uiHBAOHeight = 0;
 
 // SSR runs at its own resolution (SSR_RESOLUTION_DIVISOR); 1 = full res
-static constexpr TUINT SSR_RESOLUTION_DIVISOR = 1;
+static constexpr TUINT SSR_RESOLUTION_DIVISOR = 2;
 static TUINT           s_uiSSRWidth           = 0;
 static TUINT           s_uiSSRHeight          = 0;
 
@@ -2420,7 +2421,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		cbFog.projection[ 1 ]    = proj.m_f22;
 		cbFog.projection[ 2 ]    = proj.m_f31;
 		cbFog.projection[ 3 ]    = proj.m_f32;
-		cbFog.depthParams[ 0 ]   = 0.0f;
+		cbFog.depthParams[ 0 ]   = remaster::g_flVolumetricFogStepGrowth;
 		cbFog.depthParams[ 1 ]   = 0.0f;
 		cbFog.depthParams[ 2 ]   = pFogCtx->GetProjectionParams().m_fNearClip;
 		cbFog.depthParams[ 3 ]   = pFogCtx->GetProjectionParams().m_fFarClip;
