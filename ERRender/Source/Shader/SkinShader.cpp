@@ -447,6 +447,9 @@ void remaster::SkinShaderDX11::RenderImmediate( Toshi::TRenderPacket* a_pRenderP
 	// Alpha test only when the texture isn't opaque
 	const TBOOL bAlphaTest = !remaster::TextureResource_IsOpaque( pMaterial->GetTexture() );
 
+	const TBOOL bIsBlending = pMaterial->GetBlendMode() != 0 || flPacketAlpha < 1.0f || pMaterial->IsBlending();
+	g_pRender->SetBlendEnabled( bIsBlending );
+
 	g_pRender->SetShaderPipelineState( GetSkinPipeline( bUseBakedLighting, bHasDynLight, bIsAnimated, bHasMaps, bWind, bParallax, bAlphaTest ) );
 
 	if ( bUseBakedLighting )
@@ -665,15 +668,6 @@ ASkinMaterial* remaster::SkinShaderDX11::CreateMaterial( const TCHAR* a_szName )
 
 	if ( TNULL != a_szName )
 		pMaterial->SetName( a_szName );
-
-	/*if ( SkinShaderDX11::IsAlphaBlendMaterial() )
-	{
-		auto pAlphaBlendMaterial = new SkinMaterial();
-		pAlphaBlendMaterial->SetShader( this );
-		pAlphaBlendMaterial->Create( 1 );
-
-		pMaterial->SetAlphaBlendMaterial( pAlphaBlendMaterial );
-	}*/
 
 	return pMaterial;
 }

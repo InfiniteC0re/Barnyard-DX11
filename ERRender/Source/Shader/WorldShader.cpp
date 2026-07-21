@@ -270,12 +270,12 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	if ( g_pCSMManager && g_pCSMManager->IsRenderingShadowPass() )
 	{
 		// Match the main pass's wind so the shadow silhouette sways with the geometry
-		const remaster::MaterialParams* pShadowParams = pMaterial->GetMaterialParams();
-		const TBOOL bShadowWind = GameSettings::IsWindEnabled() && pShadowParams && pShadowParams->bWind;
+		const remaster::MaterialParams* pMatParams = pMaterial->GetMaterialParams();
+		const TBOOL bShadowWind = GameSettings::IsWindEnabled() && pMatParams && pMatParams->bWind;
 
-		const TBOOL bShadowAlphaTest = ( pShadowParams && pShadowParams->iShadowAlphaTest >= 0 )
-		    ? pShadowParams->iShadowAlphaTest != 0
-		    : remaster::TextureResource_HasTransparency( pMaterial->GetTexture( 0 ) );
+		const TBOOL bShadowAlphaTest = ( ( pMatParams && pMatParams->iShadowAlphaTest >= 0 )
+		    ? pMatParams->iShadowAlphaTest != 0
+		    : remaster::TextureResource_HasTransparency( pMaterial->GetTexture( 0 ) ) ) && ( !pMatParams || !pMatParams->bFOB || g_pCSMManager->GetCurrentCascade() <= 1 );
 
 		TUINT uiShadowFlags = bShadowAlphaTest ? shadercombos::ShadowDepth_ALPHATEST : 0;
 		if ( bShadowWind )
@@ -291,7 +291,7 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 		if ( bShadowWind )
 		{
 			g_pRender->VSBufferSetVec4( 5, TVector4( g_flWindDir[ 0 ], g_flWindDir[ 1 ], g_flWindStrength, g_flWindTime ) );
-			g_pRender->VSBufferSetVec4( 6, TVector4( pShadowParams->fWindMin, pShadowParams->fWindMax, 0.0f, 0.0f ) );
+			g_pRender->VSBufferSetVec4( 6, TVector4( pMatParams->fWindMin, pMatParams->fWindMax, 0.0f, 0.0f ) );
 		}
 
 		TVertexPoolResource* pVertexPool = TSTATICCAST( TVertexPoolResource, pMesh->GetVertexPool() );
@@ -341,11 +341,13 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	const TBOOL  bHasDynLight  = GameSettings::AreDynamicLightsEnabled() && RenderPacketHasDynamicLights( a_pRenderPacket ) && !bIsGlowing;
 	g_pRender->SetBlendEnabled( bIsBlending );
 
-	const remaster::MaterialParams* pSSRParams = pMaterial->GetMaterialParams();
+	const remaster::MaterialParams* pMatParams = pMaterial->GetMaterialParams();
 
 	// Use either blending shader or alpharef shader
 	// The only used alpharef value is 128, so no need to dynamically change it
-	TUINT uiComboFlags = bIsBlending ? 0 : shadercombos::World_ALPHAREF;
+	TUINT uiComboFlags = 0;
+	if ( !bIsBlending && !remaster::TextureResource_IsOpaque( pMaterial->GetTexture( 0 ) ) )
+		uiComboFlags |= shadercombos::World_ALPHAREF;
 	if ( !g_bInMainScenePass || bIsGlowing || pMesh->IsWater() || !GameSettings::IsCSMEnabled() || !g_pCSMManager || g_flShadowIntensity <= 0.0f )
 		uiComboFlags |= shadercombos::World_NO_CSM;
 	if ( bIsGlowing || !pCurrentContext->IsFogEnabled() || s_flFogDensity <= 0.0f )
@@ -357,21 +359,21 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 	if ( !bHasDynLight )
 		uiComboFlags |= shadercombos::World_NO_DYN_LIGHT;
 	// Per-material map sampling and POM compile out for meshes that don't use them.
-	if ( pSSRParams && ( pSSRParams->pNormalMap || pSSRParams->pRoughnessMap || pSSRParams->pMetallicMap ) )
+	if ( pMatParams && ( pMatParams->pNormalMap || pMatParams->pRoughnessMap || pMatParams->pMetallicMap ) )
 		uiComboFlags |= shadercombos::World_MATERIAL_MAPS;
-	if ( pSSRParams && pSSRParams->pHeightMap )
+	if ( pMatParams && pMatParams->pHeightMap )
 		uiComboFlags |= shadercombos::World_PARALLAX;
 	if ( GameSettings::AreCloudShadowsEnabled() )
 		uiComboFlags |= shadercombos::World_CLOUD_SHADOWS;
 	// Wind vertex deformation (blue vertex-color channel = strength); opt-in via the XML "wind"
 	// flag + global master toggle. Glow meshes opt out so their geometry stays put
-	const TBOOL bWind = GameSettings::IsWindEnabled() && !bIsGlowing && pSSRParams && pSSRParams->bWind;
+	const TBOOL bWind = GameSettings::IsWindEnabled() && !bIsGlowing && pMatParams && pMatParams->bWind;
 	if ( bWind )
 		uiComboFlags |= shadercombos::World_WIND;
 
 	// Wii-style FOB tree billboards, opt-in via the XML "fob" flag; the per-instance selector
 	// arrives through light-colour row 0 (see WorldMesh)
-	const TBOOL bFOB = pSSRParams && pSSRParams->bFOB;
+	const TBOOL bFOB = pMatParams && pMatParams->bFOB;
 	if ( bFOB )
 		uiComboFlags |= shadercombos::World_FOB;
 
@@ -440,21 +442,21 @@ void remaster::WorldShaderDX11::Render( Toshi::TRenderPacket* a_pRenderPacket )
 
 	// Per-material normal/roughness/height/metallic map SRVs; presence flags live in the material
 	// record (b5), maps reuse the albedo sampler at s0
-	if ( pSSRParams && pSSRParams->pNormalMap )
-		g_pRender->PSSetShaderResource( 1, (ID3D11ShaderResourceView*)pSSRParams->pNormalMap );
-	if ( pSSRParams && pSSRParams->pRoughnessMap )
-		g_pRender->PSSetShaderResource( 3, (ID3D11ShaderResourceView*)pSSRParams->pRoughnessMap );
-	if ( pSSRParams && pSSRParams->pMetallicMap )
-		g_pRender->PSSetShaderResource( 8, (ID3D11ShaderResourceView*)pSSRParams->pMetallicMap );
-	if ( pSSRParams && pSSRParams->pHeightMap )
-		g_pRender->PSSetShaderResource( 4, (ID3D11ShaderResourceView*)pSSRParams->pHeightMap );
+	if ( pMatParams && pMatParams->pNormalMap )
+		g_pRender->PSSetShaderResource( 1, (ID3D11ShaderResourceView*)pMatParams->pNormalMap );
+	if ( pMatParams && pMatParams->pRoughnessMap )
+		g_pRender->PSSetShaderResource( 3, (ID3D11ShaderResourceView*)pMatParams->pRoughnessMap );
+	if ( pMatParams && pMatParams->pMetallicMap )
+		g_pRender->PSSetShaderResource( 8, (ID3D11ShaderResourceView*)pMatParams->pMetallicMap );
+	if ( pMatParams && pMatParams->pHeightMap )
+		g_pRender->PSSetShaderResource( 4, (ID3D11ShaderResourceView*)pMatParams->pHeightMap );
 
 	// Misc params (slot 6): x = isWater, y = isLit
 	const TBOOL bIsWater = pMesh->IsWater();
 	g_pRender->VSBufferSetVec4( 6, TVector4( bIsWater ? 1.0f : 0.0f, bIsWater ? 0.0f : 1.0f, 0.0f, 0.0f ) );
 
 	// All static material values come from the immutable material buffer (b5)
-	remaster::BindMaterialConstants( pSSRParams, remaster::MATBUF_DEFAULT_WORLD );
+	remaster::BindMaterialConstants( pMatParams, remaster::MATBUF_DEFAULT_WORLD );
 
 	// Per-pass env-specular vec4: [intensity (0 while capturing/off), cube max mip (roughness->LOD),
 	// capture-active mask (kills metallic/parallax so metals' darkened diffuse doesn't bake into the
@@ -540,15 +542,6 @@ AWorldMaterial* remaster::WorldShaderDX11::CreateMaterial( const TCHAR* a_szName
 
 	auto pMaterial = new WorldMaterial();
 	pMaterial->SetShader( this );
-
-	/*if ( WorldMaterial::IsAlphaBlendMaterial() )
-	{
-		auto pAlphaBlendMaterial = new AWorldMaterialHAL();
-		pAlphaBlendMaterial->SetShader( this );
-		pAlphaBlendMaterial->Create( 1 );
-
-		pMaterial->SetAlphaBlendMaterial( pAlphaBlendMaterial );
-	}*/
 
 	return pMaterial;
 }
