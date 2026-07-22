@@ -51,11 +51,14 @@ float4 ps_main(PS_IN input) : SV_TARGET
 #elif FONT // TEXTURED
 
     float sdf = ui_texture.SampleLevel(ui_texture_sampler, input.texcoord, 0).r;
-    float pxRange = 0.03f;
     float outlineWidth = 0.1f;
 
-    float alpha = smoothstep(0.5 - pxRange, 0.5 + pxRange, sdf);
-    float outlineAlpha = smoothstep(0.5 - outlineWidth - pxRange, 0.5 - outlineWidth + pxRange, sdf);
+    // Screen-space anti-aliasing: 1/fwidth is how many distance-field units cover
+    // one screen pixel, so the edge stays a ~1px ramp at any text scale
+    float aaInv = 1.0f / max(fwidth(sdf), 1e-5f);
+
+    float alpha = saturate((sdf - 0.5f) * aaInv + 0.5f);
+    float outlineAlpha = saturate((sdf - (0.5f - outlineWidth)) * aaInv + 0.5f);
 
     float4 finalColor = lerp(float4(0, 0, 0, input.color.a), input.color, alpha);
     finalColor.a *= max(alpha, outlineAlpha);
