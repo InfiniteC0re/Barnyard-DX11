@@ -114,6 +114,40 @@ int ElementUtilities::GetStringWidth(Element* element, StringView string, Charac
 	return GetFontEngineInterface()->GetStringWidth(font_face_handle, string, text_shaping_context, prior_character);
 }
 
+static bool ProjectRectIfAxisAligned(const Matrix4f& transform, const Rectanglef& rect, Rectanglef& out_rect)
+{
+	const Vector2f corners[4] = {rect.TopLeft(), rect.TopRight(), rect.BottomRight(), rect.BottomLeft()};
+	Vector2f projected[4];
+
+	for (int i = 0; i < 4; i++)
+	{
+		const Vector4f p = transform * Vector4f(corners[i].x, corners[i].y, 0.f, 1.f);
+		if (p.w <= 0.f)
+			return false;
+		const Vector3f d = p.PerspectiveDivide();
+		projected[i] = Vector2f(d.x, d.y);
+	}
+
+	// Axis-aligned when the top/bottom edges stay horizontal and the left/right edges stay vertical.
+	const float eps = 0.25f;
+	const bool axis_aligned = Math::Absolute(projected[0].y - projected[1].y) < eps &&
+		Math::Absolute(projected[3].y - projected[2].y) < eps && Math::Absolute(projected[0].x - projected[3].x) < eps &&
+		Math::Absolute(projected[1].x - projected[2].x) < eps;
+	if (!axis_aligned)
+		return false;
+
+	Vector2f min = projected[0];
+	Vector2f max = projected[0];
+	for (int i = 1; i < 4; i++)
+	{
+		min = Math::Min(min, projected[i]);
+		max = Math::Max(max, projected[i]);
+	}
+
+	out_rect = Rectanglef::FromCorners(min, max);
+	return true;
+}
+
 bool ElementUtilities::GetClippingRegion(Element* element, Rectanglei& out_clip_region, ClipMaskGeometryList* out_clip_mask_list,
 	bool force_clip_self)
 {
@@ -149,6 +183,11 @@ bool ElementUtilities::GetClippingRegion(Element* element, Rectanglei& out_clip_
 					clipping_element->GetClientHeight() < clipping_element->GetScrollHeight() - 0.5f);
 			bool disable_scissor_clipping = false;
 
+			// The element's clip rectangle in window space (projected below if the transform is axis-aligned).
+			Vector2f element_offset = clipping_element->GetAbsoluteOffset(clip_area).Round();
+			Vector2f element_size = clipping_element->GetRenderBox(clip_area).GetFillSize();
+			Rectanglef element_region = Rectanglef::FromPositionSize(element_offset, element_size);
+
 			if (out_clip_mask_list)
 			{
 				const TransformState* transform_state = clipping_element->GetTransformState();
@@ -156,9 +195,22 @@ bool ElementUtilities::GetClippingRegion(Element* element, Rectanglei& out_clip_
 				const bool has_border_radius = (clip_computed.border_top_left_radius() > 0.f || clip_computed.border_top_right_radius() > 0.f ||
 					clip_computed.border_bottom_right_radius() > 0.f || clip_computed.border_bottom_left_radius() > 0.f);
 
+				// A pure scale/translate transform keeps the clip axis-aligned, so we can keep scissoring using the projected
+				// rectangle rather than falling back to a stencil clip mask.
+				bool transform_axis_aligned = false;
+				if (transform && !has_border_radius && has_clipping_content)
+				{
+					Rectanglef projected;
+					if (ProjectRectIfAxisAligned(*transform, element_region, projected))
+					{
+						transform_axis_aligned = true;
+						element_region = projected;
+					}
+				}
+
 				// If the element has border-radius we always use a clip mask, since we can't easily predict if content is located on the curved
-				// region to be clipped. If the element has a transform we only use a clip mask when the content clips.
-				if (has_border_radius || (transform && has_clipping_content))
+				// region to be clipped. If the element has a non-axis-aligned transform we only use a clip mask when the content clips.
+				if (has_border_radius || (transform && !transform_axis_aligned && has_clipping_content))
 				{
 					Geometry* clip_geometry = clipping_element->GetElementBackgroundBorder()->GetClipGeometry(clipping_element, clip_area);
 					const ClipMaskOperation clip_operation = (out_clip_mask_list->empty() ? ClipMaskOperation::Set : ClipMaskOperation::Intersect);
@@ -166,20 +218,14 @@ bool ElementUtilities::GetClippingRegion(Element* element, Rectanglei& out_clip_
 					out_clip_mask_list->push_back(ClipMaskGeometry{clip_operation, clip_geometry, absolute_offset, transform});
 				}
 
-				// If we only have border-radius then we add this element to the scissor region as well as the clip mask. This may help with e.g.
-				// culling text render calls. However, when we have a transform, the element cannot be added to the scissor region since its geometry
-				// may be projected entirely elsewhere.
-				if (transform)
+				// A non-axis-aligned transform cannot be added to the scissor region since its geometry may be projected entirely elsewhere.
+				if (transform && !transform_axis_aligned)
 					disable_scissor_clipping = true;
 			}
 
 			if (has_clipping_content && !disable_scissor_clipping)
 			{
-				// Shrink the scissor region to the element's client area.
-				Vector2f element_offset = clipping_element->GetAbsoluteOffset(clip_area).Round();
-				Vector2f element_size = clipping_element->GetRenderBox(clip_area).GetFillSize();
-				Rectanglef element_region = Rectanglef::FromPositionSize(element_offset, element_size);
-
+				// Shrink the scissor region to the element's client area (projected above when transformed).
 				clip_region = element_region.IntersectIfValid(clip_region);
 			}
 		}
