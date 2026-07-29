@@ -11,6 +11,9 @@
 #include <StaticLights.h>
 
 #include "UI/FontRenderer.h"
+#include "UI/Rml/RmlManager.h"
+#include "UI/Rml/ARmlVideoSettingsState.h"
+#include "UI/Rml/ARmlFrontEndState.h"
 
 #include <AImGUI.h>
 #include <ModLoader.h>
@@ -67,7 +70,7 @@ public:
 	TBOOL OnLoad() OVERRIDE
 	{
 		editor::SetupHooks();
-		remaster::SetupRenderHooks();
+		remaster::SetupRenderer();
 
 		SetStaticLightCallbacks( Bridge_GatherStaticLights, Bridge_AddStaticLights, Bridge_ClearStaticLights );
 
@@ -83,6 +86,7 @@ public:
 
 	void OnUnload() OVERRIDE
 	{
+		remaster::rml::Shutdown();
 	}
 
 	void OnRenderInterfaceReady( Toshi::TRenderD3DInterface* a_pRenderInterface ) OVERRIDE

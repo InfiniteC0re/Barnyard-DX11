@@ -1,0 +1,23 @@
+<rml>
+<head>
+	<link type="text/template" href="keyhints.rml"/>
+	<link type="text/template" href="window.rml"/>
+	<link type="text/rcss" href="../Style/options.css"/>
+</head>
+<body data-model="options">
+	<template src="window">
+		<h1 class="window-title">[[284]]</h1>
+
+		<focusgroup class="opt-list" sound-focus="166" sound-click="175">
+			<button id="opt-audio" class="opt" data-event-click="audio">[[282]]</button>
+			<button id="opt-controls" class="opt" data-event-click="controls">[[281]]</button>
+			<button id="opt-video" class="opt" data-event-click="video">Video</button>
+		</focusgroup>
+	</template>
+	
+	<template src="keyhints">
+		<span class="key">[[1047]]</span>
+		<span class="key">[[1048]]</span>
+	</template>
+</body>
+</rml>

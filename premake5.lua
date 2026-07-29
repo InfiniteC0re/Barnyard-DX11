@@ -112,6 +112,7 @@ group "Remaster"
 
 group "ThirdParty"
 	-- include "ThirdParty/ImGui"
+	include "ERRender/Vendor/RmlUi"
 
 if _OPTIONS["profiler"] == 'perf' or _OPTIONS["profiler"] == 'perfmem' then
 	group "Utils"

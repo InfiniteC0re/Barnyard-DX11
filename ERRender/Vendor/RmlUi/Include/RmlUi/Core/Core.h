@@ -1,5 +1,10 @@
 #pragma once
 
+#undef GetFirstChild
+#undef GetNextSibling
+#undef GetPrevSibling
+#undef GetNextWindow
+
 #include "Event.h"
 #include "Header.h"
 #include "StyleTypes.h"

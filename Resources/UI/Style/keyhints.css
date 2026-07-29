@@ -1,0 +1,14 @@
+#keyhints {
+    position: absolute;
+    bottom: 3dp;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    display: flex;
+    justify-content: space-around;
+    color: #fff;
+}
+
+.key {
+    font-size: 26.8dp;
+}

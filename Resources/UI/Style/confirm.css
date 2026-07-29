@@ -1,0 +1,53 @@
+/* Window frame + title come from the shared window template (window.css) */
+
+.confirm-wrap {
+	display: flex;
+	flex-direction: column;
+	margin: 16dp 32dp;
+}
+
+.message {
+	font-family: Rekord18;
+	font-size: 24dp;
+	color: #ffffff;
+	margin-top: 22dp;
+	margin-bottom: 22dp;
+	text-align: center;
+	font-effect: shadow( 3dp 3dp #00000080 );
+}
+
+.buttons {
+	display: flex;
+	gap: 50dp;
+	justify-content: center;
+}
+
+.btn {
+	tab-index: auto;
+	nav: auto;
+	font-family: Rekord26;
+	font-size: 26dp;
+	text-transform: uppercase;
+	color: rgb(179, 111, 34);
+	font-effect: shadow( 4dp 4dp #00000080 );
+	transition: color 0.1s quadratic-out;
+}
+
+@keyframes pulse {
+	0% {
+		transform: scale(1);
+	}
+
+	50% {
+		transform: scale(1.12);
+	}
+
+	100% {
+		transform: scale(1);
+	}
+}
+
+.btn:focus {
+	color: #ffffff;
+	animation: pulse 0.8s quadratic-out infinite;
+}

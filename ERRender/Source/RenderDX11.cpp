@@ -367,6 +367,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 				pTextAtlasTexture->QueryInterface( __uuidof( IDXGISurface ), (void**)&pBackBufferSurface );
 
 				m_pFontAtlases[ FONT_REKORD26 ] = new FontAtlas( pAtlasSRV, ".\\Resources\\Fonts\\CCThatsAllFolks.ttf", pTextAtlasTexture, 1024, 1024, 1.1f, 0.6f, 0.85f );
+				m_pFontAtlases[ FONT_REKORD26 ]->AddFallbackFont( ".\\Resources\\Fonts\\comicbd.ttf" );
 				pTextAtlasTexture->Release();
 			}
 
@@ -396,6 +397,7 @@ TBOOL RenderDX11::CreateDisplay( const DISPLAYPARAMS& a_rParams )
 				pTextAtlasTexture->QueryInterface( __uuidof( IDXGISurface ), (void**)&pBackBufferSurface );
 
 				m_pFontAtlases[ FONT_REKORD18 ] = new FontAtlas( pAtlasSRV, ".\\Resources\\Fonts\\AmmanSansPro-Bold.ttf", pTextAtlasTexture, 1024, 1024, 0.8f, 0.5f, 0.8f, 0.0f, 0.0f, 6.0f );
+				m_pFontAtlases[ FONT_REKORD18 ]->AddFallbackFont( ".\\Resources\\Fonts\\comic.ttf" );
 				pTextAtlasTexture->Release();
 			}
 		}

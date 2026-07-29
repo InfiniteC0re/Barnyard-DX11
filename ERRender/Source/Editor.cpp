@@ -609,7 +609,6 @@ static const LevelSetting s_aFXSettings[] = {
 	// Volumetric fog
 	LS_BOOL( "volFogEnabled", remaster::g_bVolumetricFogEnabled ),
 	LS_BOOL( "volFogUseSceneColor", remaster::g_bVolumetricFogUseSceneColor ),
-	LS_INT( "volFogComposite", remaster::g_iVolumetricFogCompositeMode ),
 	LS_FLOAT( "volFogDensity", remaster::g_flVolumetricFogDensity ),
 	LS_FLOAT( "volFogG", remaster::g_flVolumetricFogG ),
 	LS_FLOAT( "volFogMaxDist", remaster::g_flVolumetricFogMaxDist ),
@@ -1469,29 +1468,16 @@ static void DrawFXTab()
 	ImGui::Checkbox( "Enable Volumetric Fog", &remaster::g_bVolumetricFogEnabled );
 	if ( remaster::g_bVolumetricFogEnabled )
 	{
-		const TCHAR* apVolumetricFogModes[] = {
-			"Additive Light",
-			"Darken Covered Areas",
-		};
-
-		ImGui::Combo( "Fog Composite", &remaster::g_iVolumetricFogCompositeMode, apVolumetricFogModes, TARRAYSIZE( apVolumetricFogModes ) );
 		ImGui::DragFloat( "Fog Density", &remaster::g_flVolumetricFogDensity, 0.001f, 0.0f, 1.0f, "%.4f" );
 		ImGui::SliderFloat( "Asymmetry (g)", &remaster::g_flVolumetricFogG, -0.99f, 0.99f, "%.2f" );
 		ImGui::DragFloat( "Max Distance", &remaster::g_flVolumetricFogMaxDist, 1.0f, 1.0f, 500.0f, "%.0f m" );
 		ImGui::SliderFloat( "Step Growth", &remaster::g_flVolumetricFogStepGrowth, 1.0f, 1.08f, "%.3f" );
-		if ( remaster::g_iVolumetricFogCompositeMode == 1 )
-		{
-			ImGui::SliderFloat( "Darkening", &remaster::g_flVolumetricFogIntensity, 0.0f, 1.0f, "%.2f" );
-		}
-		else
-		{
-			ImGui::SliderFloat( "Intensity", &remaster::g_flVolumetricFogIntensity, 0.0f, 10.0f, "%.2f" );
-			ImGui::Checkbox( "Use Scene Fog Color", &remaster::g_bVolumetricFogUseSceneColor );
-			if ( ImGui::IsItemHovered() )
-				ImGui::SetTooltip( "Colour the volumetrics with the level's distance-fog colour;\nthe colour below then multiplies it as a tint." );
-			// "###" keeps the widget ID stable while the visible label switches with the mode
-			ImGui::ColorEdit3( remaster::g_bVolumetricFogUseSceneColor ? "Modulation (multiply)###VolFogColor" : "Fog Color###VolFogColor", remaster::g_flVolumetricFogColor );
-		}
+		ImGui::SliderFloat( "Intensity", &remaster::g_flVolumetricFogIntensity, 0.0f, 10.0f, "%.2f" );
+		ImGui::Checkbox( "Use Scene Fog Color", &remaster::g_bVolumetricFogUseSceneColor );
+		if ( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "Colour the volumetrics with the level's distance-fog colour;\nthe colour below then multiplies it as a tint." );
+		// "###" keeps the widget ID stable while the visible label switches with the checkbox
+		ImGui::ColorEdit3( remaster::g_bVolumetricFogUseSceneColor ? "Modulation (multiply)###VolFogColor" : "Fog Color###VolFogColor", remaster::g_flVolumetricFogColor );
 
 		ImGui::SeparatorText( "Height" );
 		ImGui::DragFloat( "Fog Bottom", &remaster::g_flVolumetricFogHeight, 0.1f, -100.0f, 200.0f, "%.1f m" );

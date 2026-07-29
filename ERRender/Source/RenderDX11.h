@@ -38,7 +38,7 @@
 namespace remaster
 {
 
-void SetupRenderHooks();
+void SetupRenderer();
 
 // Deferred shader warm-up: boot-critical combos compile in CreateRenderObjects, the rest on a
 // worker thread (D3DCompile only) started by Begin. RunStep finalizes ready families on the
@@ -276,6 +276,7 @@ public:
 	{
 		FONT_REKORD26,
 		FONT_REKORD18,
+		FONT_NUMOF,
 	};
 
 public:
@@ -425,6 +426,7 @@ public:
 	void SetDepthBias( TINT a_iDepthBias );
 	void SetSlopeScaledDepthBias( TFLOAT a_fDepthBias );
 	void SetAlphaToCoverageEnabled( TBOOL a_bEnabled ) { m_BlendState.Parts.bAlphaToCoverage = a_bEnabled; }
+	void SetScissorEnabled( TBOOL a_bEnabled ) { m_RasterizerState.Flags.Parts.bScissorEnable = a_bEnabled; }
 
 	D3D11_BLEND_OP        GetBlendOp() const { return m_BlendState.Parts.BlendOp; }
 	TBOOL                 IsBlendEnabled() const { return m_BlendState.Parts.bBlendEnabled; }

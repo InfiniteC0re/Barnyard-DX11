@@ -39,6 +39,11 @@ TBOOL AreDynamicLightsEnabled();
 TBOOL AreDynamicLightShadowsEnabled();
 TBOOL IsWindEnabled();
 
+// User effect toggles, indexed for building settings UIs
+TINT  GetEffectCount();
+TBOOL GetEffectEnabled( TINT a_iIndex );
+void  SetEffectEnabled( TINT a_iIndex, TBOOL a_bEnabled );
+
 } // namespace GameSettings
 
 } // namespace remaster

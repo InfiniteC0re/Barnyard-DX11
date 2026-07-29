@@ -22,6 +22,7 @@
 #include "Resource/IndexBlock.h"
 #include "UI/UIRenderer.h"
 #include "UI/FontRenderer.h"
+#include "UI/Rml/RmlManager.h"
 #include "LightData.h"
 #include "BootState.h"
 
@@ -149,7 +150,6 @@ TFLOAT g_flXeGTAOSampleDistributionPower  = 2.8f;
 TFLOAT g_flXeGTAOThinOccluderCompensation = 0.5f;
 
 TBOOL  g_bVolumetricFogEnabled       = TTRUE;
-TINT   g_iVolumetricFogCompositeMode = 0;
 TFLOAT g_flVolumetricFogDensity      = 0.019f;
 TFLOAT g_flVolumetricFogG            = 0.0f;
 TFLOAT g_flVolumetricFogMaxDist      = 44.0f;
@@ -733,14 +733,6 @@ static TUINT           s_uiSSRHeight          = 0;
 static ID3D11Texture2D*          s_pVolumetricFogTexture         = TNULL;
 static ID3D11RenderTargetView*   s_pVolumetricFogRTV             = TNULL;
 static ID3D11ShaderResourceView* s_pVolumetricFogSRV             = TNULL;
-static ID3D11Texture2D*          s_pVolumetricFogTemporalTexture = TNULL;
-static ID3D11RenderTargetView*   s_pVolumetricFogTemporalRTV     = TNULL;
-static ID3D11ShaderResourceView* s_pVolumetricFogTemporalSRV     = TNULL;
-static ID3D11Texture2D*          s_pVolumetricFogHistoryTexture  = TNULL;
-static ID3D11RenderTargetView*   s_pVolumetricFogHistoryRTV      = TNULL;
-static ID3D11ShaderResourceView* s_pVolumetricFogHistorySRV      = TNULL;
-static TBOOL                     s_bVolumetricFogHistoryValid    = TFALSE;
-static TUINT                     s_uiVolumetricFogFrameIndex     = 0;
 
 // Baked tileable 3D fBm noise for the fog density (sampled per march step instead of live)
 static ID3D11Texture3D*          s_pVolumetricFogNoiseTexture = TNULL;
@@ -1266,13 +1258,6 @@ void remaster::RenderDX11::CreateRenderTargets()
 		DX11_API_VALIDATE( GetD3D11Device()->CreateTexture2D( &desc, TNULL, &s_pVolumetricFogTexture ) );
 		DX11_API_VALIDATE( GetD3D11Device()->CreateRenderTargetView( s_pVolumetricFogTexture, TNULL, &s_pVolumetricFogRTV ) );
 		DX11_API_VALIDATE( GetD3D11Device()->CreateShaderResourceView( s_pVolumetricFogTexture, TNULL, &s_pVolumetricFogSRV ) );
-		DX11_API_VALIDATE( GetD3D11Device()->CreateTexture2D( &desc, TNULL, &s_pVolumetricFogTemporalTexture ) );
-		DX11_API_VALIDATE( GetD3D11Device()->CreateRenderTargetView( s_pVolumetricFogTemporalTexture, TNULL, &s_pVolumetricFogTemporalRTV ) );
-		DX11_API_VALIDATE( GetD3D11Device()->CreateShaderResourceView( s_pVolumetricFogTemporalTexture, TNULL, &s_pVolumetricFogTemporalSRV ) );
-		DX11_API_VALIDATE( GetD3D11Device()->CreateTexture2D( &desc, TNULL, &s_pVolumetricFogHistoryTexture ) );
-		DX11_API_VALIDATE( GetD3D11Device()->CreateRenderTargetView( s_pVolumetricFogHistoryTexture, TNULL, &s_pVolumetricFogHistoryRTV ) );
-		DX11_API_VALIDATE( GetD3D11Device()->CreateShaderResourceView( s_pVolumetricFogHistoryTexture, TNULL, &s_pVolumetricFogHistorySRV ) );
-		s_bVolumetricFogHistoryValid = TFALSE;
 
 		D3D11_BUFFER_DESC fogCBDesc = {};
 		fogCBDesc.ByteWidth         = sizeof( VolumetricFogCBuffer );
@@ -1418,18 +1403,11 @@ void remaster::RenderDX11::ReleaseRenderTargets()
 	fnRelease( s_pVolumetricFogSRV );
 	fnRelease( s_pVolumetricFogRTV );
 	fnRelease( s_pVolumetricFogTexture );
-	fnRelease( s_pVolumetricFogTemporalSRV );
-	fnRelease( s_pVolumetricFogTemporalRTV );
-	fnRelease( s_pVolumetricFogTemporalTexture );
-	fnRelease( s_pVolumetricFogHistorySRV );
-	fnRelease( s_pVolumetricFogHistoryRTV );
-	fnRelease( s_pVolumetricFogHistoryTexture );
 	fnRelease( s_pVolumetricFogConstantBuffer );
 	fnRelease( s_pVolumetricFogCompositeConstantBuffer );
 	fnRelease( s_pVolumetricFogNoiseSRV );
 	fnRelease( s_pVolumetricFogNoiseTexture );
 	fnRelease( s_pVolumetricFogNoiseSampler );
-	s_bVolumetricFogHistoryValid = TFALSE;
 
 	fnRelease( s_pSkyMaskSampler );
 	fnRelease( s_pPointClampSampler );
@@ -2448,12 +2426,10 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		cbFog.fogParams[ 1 ] = remaster::g_flVolumetricFogG;
 		cbFog.fogParams[ 2 ] = remaster::g_flVolumetricFogMaxDist;
 		cbFog.fogParams[ 3 ] = remaster::g_flVolumetricFogIntensity;
-		if ( remaster::g_iVolumetricFogCompositeMode == 1 )
-			TMath::Clip( cbFog.fogParams[ 3 ], 0.0f, 1.0f );
 		static TFLOAT s_flVolumetricFogWindTime = 0.0f;
 		s_flVolumetricFogWindTime += a_flDeltaTime;
 
-		cbFog.frameParams[ 0 ]  = TFLOAT( s_uiVolumetricFogFrameIndex & 7 );
+		cbFog.frameParams[ 0 ]  = 0.0f;
 		cbFog.frameParams[ 1 ]  = s_flVolumetricFogWindTime;
 		cbFog.frameParams[ 2 ]  = 0.0f;
 		cbFog.frameParams[ 3 ]  = 0.0f;
@@ -2469,7 +2445,6 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		cbFog.heightParams[ 1 ] = remaster::g_flVolumetricFogTopHeight;
 		cbFog.heightParams[ 2 ] = 0.0f;
 		cbFog.heightParams[ 3 ] = 0.0f;
-		s_uiVolumetricFogFrameIndex++;
 
 		D3D11_MAPPED_SUBRESOURCE fogMapped;
 		remaster::g_pRender->GetD3D11DeviceContext()->Map( s_pVolumetricFogConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &fogMapped );
@@ -2497,9 +2472,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->PSSetSamplerState( 3, s_pVolumetricFogNoiseSampler );
 		remaster::g_pRender->PSSetConstantBuffer( 1, s_pVolumetricFogConstantBuffer );
 		TUINT uiVolumetricFogComboFlags = 0;
-		if ( !remaster::GameSettings::AreDynamicLightsEnabled() ||
-		     remaster::g_iVolumetricFogCompositeMode == 1
-		)
+		if ( !remaster::GameSettings::AreDynamicLightsEnabled() )
 		{
 			uiVolumetricFogComboFlags |= remaster::shadercombos::VolumetricFog_NO_DYN_LIGHT;
 		}
@@ -2519,18 +2492,9 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->SetCullMode( D3D11_CULL_NONE );
 		remaster::g_pRender->SetBlendEnabled( TFALSE );
 		remaster::g_pRender->SetDepthEnabled( TFALSE );
-		if ( remaster::g_iVolumetricFogCompositeMode == 1 )
-		{
-			remaster::g_pRender->DrawScreenRectangle(
-			    remaster::shadercombos::GetVolumetricFogPixelShaderCombo_ps_visibility().GetPixelShader( uiVolumetricFogComboIndex )
-			);
-		}
-		else
-		{
-			remaster::g_pRender->DrawScreenRectangle(
-			    remaster::shadercombos::GetVolumetricFogPixelShaderCombo_ps_main().GetPixelShader( uiVolumetricFogComboIndex )
-			);
-		}
+		remaster::g_pRender->DrawScreenRectangle(
+		    remaster::shadercombos::GetVolumetricFogPixelShaderCombo_ps_main().GetPixelShader( uiVolumetricFogComboIndex )
+		);
 		remaster::g_pRender->PSSetShaderResource( 0, TNULL );
 		remaster::g_pRender->PSSetShaderResource( 1, TNULL );
 		remaster::g_pRender->PSSetShaderResource( 2, TNULL );
@@ -2544,11 +2508,9 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		cbFogComposite.depthParams[ 1 ]              = 0.0f;
 		cbFogComposite.depthParams[ 2 ]              = pFogCtx->GetProjectionParams().m_fNearClip;
 		cbFogComposite.depthParams[ 3 ]              = pFogCtx->GetProjectionParams().m_fFarClip;
-		// Temporal blend weight; 1.0 = pure current (accumulation off). The history-heavy 0.12 blend denoised well but
-		// lagged the camera without reprojection -- disabled until reprojection lands; lower to ~0.12 to re-enable
-		cbFogComposite.compositeParams[ 0 ] = 1.0f;
-		cbFogComposite.compositeParams[ 1 ] = s_bVolumetricFogHistoryValid ? 1.0f : 0.0f;
-		cbFogComposite.compositeParams[ 2 ] = 24.0f;
+		cbFogComposite.compositeParams[ 0 ] = 24.0f;
+		cbFogComposite.compositeParams[ 1 ] = 0.0f;
+		cbFogComposite.compositeParams[ 2 ] = 0.0f;
 		cbFogComposite.compositeParams[ 3 ] = 0.0f;
 
 		D3D11_MAPPED_SUBRESOURCE fogCompositeMapped;
@@ -2556,45 +2518,15 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		TUtil::MemCopy( fogCompositeMapped.pData, &cbFogComposite, sizeof( cbFogComposite ) );
 		remaster::g_pRender->GetD3D11DeviceContext()->Unmap( s_pVolumetricFogCompositeConstantBuffer, 0 );
 
-		// Temporal resolve at half res before the full-res composite
-		remaster::g_pRender->DiscardView( s_pVolumetricFogTemporalRTV );
-		remaster::g_pRender->SetRenderTargetView( s_pVolumetricFogTemporalRTV, TNULL );
-		if ( !s_bVolumetricFogHistoryValid )
-		{
-			remaster::g_pRender->GetD3D11DeviceContext()->CopyResource( s_pVolumetricFogHistoryTexture, s_pVolumetricFogTexture );
-			s_bVolumetricFogHistoryValid = TTRUE;
-		}
-		remaster::g_pRender->PSSetShaderResource( 0, s_pVolumetricFogSRV );
-		remaster::g_pRender->PSSetShaderResource( 3, s_pVolumetricFogHistorySRV );
-		remaster::g_pRender->PSSetSamplerState( 0, s_pLinearClampSampler );
-		remaster::g_pRender->PSSetConstantBuffer( 1, s_pVolumetricFogCompositeConstantBuffer );
-		remaster::g_pRender->DrawScreenRectangle(
-		    remaster::shadercombos::GetVolumetricFogCompositePixelShaderCombo_ps_temporal().GetPixelShader( remaster::shadercombos::VolumetricFogComposite_NoCombos )
-		);
-		remaster::g_pRender->PSSetShaderResource( 0, TNULL );
-		remaster::g_pRender->PSSetShaderResource( 3, TNULL );
-
 		remaster::g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &oFogOldVP );
 		remaster::g_pRender->SetRenderTargetView( remaster::g_pRender->GetD3D11RenderTargetView(), TNULL );
 		// Re-resolve MSAA color so the fog composite sees the post-AO scene (the HBAO composite drew scene*ao after the first resolve)
 		fnResolve( s_pResolvedColorTexture, remaster::g_pRender->GetD3D11RenderTargetTexture(), DXGI_FORMAT_R11G11B10_FLOAT );
 
-		// Ping-pong temporal <-> history so next frame's temporal pass reads what we just wrote, no GPU copy
-		{
-			ID3D11Texture2D*          pTmpTex = s_pVolumetricFogTemporalTexture;
-			ID3D11RenderTargetView*   pTmpRTV = s_pVolumetricFogTemporalRTV;
-			ID3D11ShaderResourceView* pTmpSRV = s_pVolumetricFogTemporalSRV;
-			s_pVolumetricFogTemporalTexture   = s_pVolumetricFogHistoryTexture;
-			s_pVolumetricFogTemporalRTV       = s_pVolumetricFogHistoryRTV;
-			s_pVolumetricFogTemporalSRV       = s_pVolumetricFogHistorySRV;
-			s_pVolumetricFogHistoryTexture    = pTmpTex;
-			s_pVolumetricFogHistoryRTV        = pTmpRTV;
-			s_pVolumetricFogHistorySRV        = pTmpSRV;
-		}
 		remaster::g_pRender->SetCullMode( D3D11_CULL_NONE );
 		remaster::g_pRender->SetDepthEnabled( TFALSE );
 		remaster::g_pRender->SetBlendEnabled( TFALSE );
-		remaster::g_pRender->PSSetShaderResource( 0, s_pVolumetricFogTemporalSRV );
+		remaster::g_pRender->PSSetShaderResource( 0, s_pVolumetricFogSRV );
 		remaster::g_pRender->PSSetShaderResource( 1, s_pResolvedColorSRV );
 		remaster::g_pRender->PSSetShaderResource( 2, pSceneDepthSRV );
 		remaster::g_pRender->PSSetSamplerState( 0, s_pLinearClampSampler );
@@ -2602,18 +2534,9 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->PSSetSamplerState( 2, s_pPointClampSampler );
 		remaster::g_pRender->PSSetConstantBuffer( 1, s_pVolumetricFogCompositeConstantBuffer );
 
-		if ( remaster::g_iVolumetricFogCompositeMode == 1 )
-		{
-			remaster::g_pRender->DrawScreenRectangle(
-			    remaster::shadercombos::GetVolumetricFogCompositePixelShaderCombo_ps_darken().GetPixelShader( remaster::shadercombos::VolumetricFogComposite_NoCombos )
-			);
-		}
-		else
-		{
-			remaster::g_pRender->DrawScreenRectangle(
-			    remaster::shadercombos::GetVolumetricFogCompositePixelShaderCombo_ps_additive().GetPixelShader( remaster::shadercombos::VolumetricFogComposite_NoCombos )
-			);
-		}
+		remaster::g_pRender->DrawScreenRectangle(
+		    remaster::shadercombos::GetVolumetricFogCompositePixelShaderCombo_ps_additive().GetPixelShader( remaster::shadercombos::VolumetricFogComposite_NoCombos )
+		);
 
 		remaster::g_pRender->PSSetShaderResource( 0, TNULL );
 		remaster::g_pRender->PSSetShaderResource( 1, TNULL );
@@ -3114,7 +3037,7 @@ MEMBER_HOOK( 0x006150e0, ARenderer, ARenderer_CreateTRenderResources, TBOOL )
 	return bResult;
 }
 
-void remaster::SetupRenderHooks()
+void remaster::SetupRenderer()
 {
 	InstallHook<ARenderer_CreateTRenderResources>();
 	InstallHook<SaveLoadSKU_OnUpdate>();
@@ -3170,4 +3093,6 @@ void remaster::SetupRenderHooks()
 	SetupRenderHooks_OrderTable();
 	SetupRenderHooks_VertexBlock();
 	SetupRenderHooks_IndexBlock();
+
+	remaster::rml::SetupHooks();
 }

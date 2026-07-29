@@ -1,0 +1,203 @@
+/* Window frame + title come from the shared window template (window.css) */
+
+/* Character mug sheets. Sprites are indexed by the slot's costume (hide) index --
+   0 American, 1 Angus, 2 Beefmaster, 3 Spaniard, 4 Longhorn, 5 Brahman, 6 Holsien --
+   with the exact rects from Data/GUI/main.gui. Bound per slot (data-style-decorator) */
+@spritesheet mugs-man {
+	src: "../Images/Mugs_Man_Cows.png";
+	mug-man-0: 198px   0px 64px 64px;
+	mug-man-1:  70px  64px 64px 64px;
+	mug-man-2: 133px  64px 64px 64px;
+	mug-man-3:   5px   0px 64px 64px;
+	mug-man-4:  69px   0px 64px 64px;
+	mug-man-5:   5px  65px 64px 64px;
+	mug-man-6: 134px   1px 64px 63px;
+}
+
+@spritesheet mugs-girl {
+	src: "../Images/Mugs_Girl_Cows.png";
+	mug-girl-0:  63px   0px 64px 63px;
+	mug-girl-1:  -1px   0px 63px 63px;
+	mug-girl-2:  64px  62px 64px 63px;
+	mug-girl-3:  -2px  62px 64px 63px;
+	mug-girl-4: 126px   0px 64px 63px;
+	mug-girl-5: 126px  61px 64px 64px;
+	mug-girl-6: 190px   0px 64px 62px;
+}
+
+#window {
+	width: 420dp;
+}
+
+.slot-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6dp;
+	padding: 16dp;
+	padding-top: 32dp;
+}
+
+.slot {
+	tab-index: auto;
+	nav: auto;
+	position: relative;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	height: 64dp;
+	padding: 0 16dp 0 14dp;
+	gap: 10dp;
+	border-radius: 8dp;
+	transition: 0.1s all quadratic-out;
+	font-effect: shadow( 3dp 3dp #00000090 );
+}
+
+.slot:focus {
+	background-color: #ffca3a1c;
+	transform: scale(1.012);
+}
+
+/* Load only lists slots that hold a save, as the retail menu does */
+.slot.hidden {
+	display: none;
+}
+
+.no-saves {
+	font-family: Rekord18;
+	font-size: 20dp;
+	color: #c9a24a;
+	text-align: center;
+	margin: 24dp 32dp;
+	font-effect: shadow( 3dp 3dp #00000080 );
+}
+
+.slot .play-icon {
+	position: absolute;
+	right: 16dp;
+	top: 50%;
+	transform: translateY(-50%) scale(0.75);
+	opacity: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	font-effect: none;
+	gap: 2dp;
+}
+
+.slot .play-icon span {
+	display: block;
+	font-size: 13dp;
+	color: #ebebeb;
+}
+
+.slot .play-icon svg {
+	display: block;
+	height: 18dp;
+}
+
+.slot:focus .play-icon {
+	transform: translateY(-50%) scale(1);
+	transition: 0.2s all quadratic-out;
+	opacity: 1;
+}
+
+.arrow {
+	position: absolute;
+	left: -26dp;
+	top: 50%;
+	width: 16dp;
+	height: 20dp;
+	margin-top: -10dp;
+	decorator: image("../Images/Left_Arrow.png" scale-down);
+	opacity: 0;
+	transform: translateX(-6dp);
+	transition: 0.12s all quadratic-out;
+}
+
+.slot:focus > .arrow {
+	opacity: 1;
+	transform: translateX(0dp);
+}
+
+.portrait {
+	flex-shrink: 0;
+	width: 56dp;
+	height: 56dp;
+	border-radius: 12dp;
+	background-color: #6447208f;
+	box-sizing: border-box;
+	border: 1dp #db800a8e;
+	transition: all 0.1s quadratic-out;
+}
+
+.slot:focus .portrait {
+	background-color: #8d632dab;
+	border: 1dp #db800ab7;
+}
+
+.portrait-icon {
+	position: relative;
+	left: 9dp;
+	top: 6dp;
+	height: 40dp;
+	width: 40dp;
+	display: block;
+	transition: transform 0.2s quadratic-out;
+}
+
+.slot:focus .portrait-icon {
+	transform: scale(1.05);
+}
+
+.slot.empty > .portrait {
+	background-color: transparent;
+	border-color: #ffffff30;
+}
+
+.info {
+	display: flex;
+	flex-direction: column;
+	flex-basis: 100%;
+	justify-content: center;
+}
+
+.name {
+	font-size: 22dp;
+	text-transform: uppercase;
+	transition: color 0.1s quadratic-out;
+}
+
+.slot:focus .name {
+	color: #fff;
+}
+
+.slot.empty > .info > .name {
+	color: #8a8378;
+	text-transform: none;
+}
+
+.meta {
+	font-family: Rekord18;
+	font-size: 16dp;
+	transition: 0.1s color quadratic-out;
+}
+
+.slot-id {
+	font-size: 22dp;
+	font-effect: none;
+	width: 38dp;
+	text-align: left;
+	transition: 0.1s color quadratic-out;
+}
+
+.slot:focus .slot-id {
+	color: #cccccc;
+}
+
+.slot:focus .meta {
+	color: rgb(255, 199, 0);
+}
+
+.slot.empty > .shot {
+	display: none;
+}

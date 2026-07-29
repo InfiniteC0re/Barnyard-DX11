@@ -1,0 +1,93 @@
+<rml>
+<head>
+	<link type="text/template" href="keyhints.rml"/>
+	<link type="text/template" href="window.rml"/>
+	<link type="text/rcss" href="../Style/video_settings.css"/>
+	<title>Graphics Settings</title>
+</head>
+<body data-model="settings">
+
+	<template src="window">
+		<h1 class="window-title">Video Options</h1>
+
+		<focusgroup class="window-content" nav-spatial sound-focus="166">
+			<tabset id="settings-tabs">
+				<tab>Graphics</tab>
+				<panel class="setting-list">
+					<h2 style="margin-top: 0;">General</h2>
+
+					<div class="row">
+						<span class="label">Resolution</span>
+						<select data-value="resIndex">
+							<option data-for="res, i : resolutions" data-attr-value="i">{{res}}</option>
+						</select>
+					</div>
+
+					<div class="row">
+						<span class="label">Display Mode</span>
+						<select data-value="displayMode">
+							<option value="0">Windowed</option>
+							<option value="1">Borderless</option>
+							<option value="2">Fullscreen</option>
+						</select>
+					</div>
+
+					<label class="row">
+						<span class="label">VSync</span>
+						<input type="checkbox" data-checked="vsync"/>
+					</label>
+
+					<div class="row">
+						<span class="label">MSAA</span>
+						<select data-value="msaa">
+							<option value="0">Off</option>
+							<option value="1">2x</option>
+							<option value="2">4x</option>
+							<option value="3">8x</option>
+						</select>
+					</div>
+
+					<div class="row">
+						<span class="label">Post AA</span>
+						<select data-value="postAA">
+							<option value="0">Off</option>
+							<option value="1">FXAA</option>
+							<option value="2">SMAA</option>
+						</select>
+					</div>
+
+					<div class="row">
+						<span class="label">Shadow Resolution</span>
+						<select data-value="csm">
+							<option value="0">Low</option>
+							<option value="1">Medium</option>
+							<option value="2">High</option>
+						</select>
+					</div>
+
+					<h2>Advanced</h2>
+					<label class="row" data-for="effect : effects">
+						<span class="label">{{effect.name}}</span>
+						<input type="checkbox" data-checked="effect.enabled"/>
+					</label>
+				</panel>
+
+				<tab>Misc</tab>
+				<panel class="setting-list">
+				</panel>
+			</tabset>
+
+			<div class="buttons">
+				<button class="btn" data-event-click="apply">Apply</button>
+				<button class="btn" data-event-click="revert">Revert</button>
+				<button class="btn" data-event-click="close">Close</button>
+			</div>
+		</focusgroup>
+	</template>
+
+	<template src="keyhints">
+		<span class="key">[[1047]]</span>
+		<span class="key">[[1048]]</span>
+	</template>
+</body>
+</rml>

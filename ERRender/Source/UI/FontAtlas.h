@@ -69,6 +69,10 @@ public:
 
 	void GetCharUV( TWCHAR a_wChar, TFLOAT a_flScale, CharInfo& a_rCharInfo );
 
+	// Registers a fallback face, consulted in order when the primary font has no glyph
+	// for a character. Shared by every consumer of the atlas (RmlUi and AGUI2)
+	void AddFallbackFont( const TCHAR* a_pchFileName );
+
 	TFLOAT GetTextWidth( const TWCHAR* a_wcsText, TSIZE a_uiTextLength, TFLOAT a_flScale );
 	TFLOAT GetTextHeight( const TWCHAR* a_wcsText, TSIZE a_uiTextLength, TFLOAT a_flScale );
 
@@ -82,7 +86,8 @@ public:
 	ID3D11ShaderResourceView* GetTextureResource() const { return m_pAtlasSRV; }
 
 private:
-	FT_Face m_oFontFace;
+	FT_Face                        m_oFontFace;
+	Toshi::T2DynamicVector<FT_Face> m_vecFallbackFaces;
 
 	ID3D11RenderTargetView*   m_pAtlasTargetView;
 	ID3D11ShaderResourceView* m_pAtlasSRV;

@@ -20,6 +20,8 @@ IncludeDir.openbarnyard = "%{wks.location}/OpenBarnyard/OpenBarnyard/Source"
 IncludeDir.imgui = "%{wks.location}/ThirdParty/ImGui"
 IncludeDir.tracy = "%{wks.location}/OpenBarnyard/Utils/TracyProfiler/Source"
 IncludeDir.libssl = "%{wks.location}/OpenBarnyard/Toshi/Vendor/libssl/include"
+IncludeDir.rmlui = "%{wks.location}/ERRender/Vendor/RmlUi/Include"
+IncludeDir.freetype = "%{wks.location}/ERRender/Vendor/freetype/include"
 
 LibDir = {}
 LibDir.fmod = "%{wks.location}/OpenBarnyard/Toshi/Vendor/fmod/lib"

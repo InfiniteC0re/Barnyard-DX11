@@ -162,6 +162,10 @@ TBOOL GameSettings::AreDynamicLightsEnabled() { return g_bDynamicLightEnabled &&
 TBOOL GameSettings::AreDynamicLightShadowsEnabled() { return g_bDynamicLightShadowsEnabled && s_bUserDynamicLightShadowsEnabled; }
 TBOOL GameSettings::IsWindEnabled() { return g_bWindEnabled; }
 
+TINT  GameSettings::GetEffectCount() { return TARRAYSIZE( s_aToggles ); }
+TBOOL GameSettings::GetEffectEnabled( TINT a_iIndex ) { return *s_aToggles[ a_iIndex ].pValue; }
+void  GameSettings::SetEffectEnabled( TINT a_iIndex, TBOOL a_bEnabled ) { *s_aToggles[ a_iIndex ].pValue = a_bEnabled; }
+
 TBOOL GameSettings::g_bRenderUI = TFALSE;
 
 static GraphicsSettings s_oWorking;

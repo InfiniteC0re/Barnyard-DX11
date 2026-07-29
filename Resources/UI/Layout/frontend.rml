@@ -1,0 +1,22 @@
+<rml>
+<head>
+	<link type="text/template" href="keyhints.rml"/>
+	<link type="text/rcss" href="../Style/frontend.css"/>
+	<title>Main Menu</title>
+</head>
+<body data-model="frontend">
+	<focusgroup id="menu" sound-focus="174" sound-click="175">
+		<button id="btn-newgame" class="btn b0" data-event-click="newgame">[[292]]</button>
+		<button id="btn-loadgame" class="btn b1" data-event-click="loadgame">[[293]]</button>
+		<button id="btn-options" class="btn b2" data-event-click="options">[[294]]</button>
+		<button id="btn-bonus" class="btn b3" data-event-click="bonus">[[296]]</button>
+		<button id="btn-antics" class="btn b4" data-event-click="antics">[[298]]</button>
+		<button id="btn-quit" class="btn b5" data-event-click="quit">[[333]]</button>
+	</focusgroup>
+
+	<template src="keyhints">
+		<span class="key">[[1047]]</span>
+		<span class="key">[[1048]]</span>
+	</template>
+</body>
+</rml>

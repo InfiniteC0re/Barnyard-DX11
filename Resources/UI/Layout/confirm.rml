@@ -1,0 +1,17 @@
+<rml>
+<head>
+	<link type="text/template" href="window.rml"/>
+	<link type="text/rcss" href="../Style/confirm.css"/>
+</head>
+<body template="window" data-model="confirm">
+	<h1 class="window-title">{{title}}</h1>
+
+	<div class="confirm-wrap">
+		<div class="message">{{message}}</div>
+		<focusgroup class="buttons" sound-focus="166">
+			<button id="btn-yes" class="btn" data-event-click="yes">{{yesLabel}}</button>
+			<button id="btn-no" class="btn" data-event-click="no">{{noLabel}}</button>
+		</focusgroup>
+	</div>
+</body>
+</rml>

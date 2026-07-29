@@ -86,7 +86,6 @@ extern TFLOAT g_flVolumetricFogWindDir[ 2 ];
 extern TFLOAT g_flVolumetricFogWindSpeed;
 extern TFLOAT g_flVolumetricFogHeight;       // bottom of the fog (full density at/below)
 extern TFLOAT g_flVolumetricFogTopHeight;    // top of the fog (0 at/above; <= bottom disables the height band)
-extern TINT   g_iVolumetricFogCompositeMode;
 extern TFLOAT g_flVolumetricFogDensity;
 extern TFLOAT g_flVolumetricFogG;
 extern TFLOAT g_flVolumetricFogMaxDist;

@@ -103,45 +103,11 @@ TINLINE TBOOL CreateVolumetricFogPixelShader_ps_main( ID3D11PixelShader** a_ppSh
 	return TTRUE;
 }
 
-inline dx11::ShaderCombo g_oVolumetricFogPixelShaderCombo_ps_visibility;
-inline TBOOL g_bVolumetricFogPixelShaderComboCompiled_ps_visibility = TFALSE;
-
-TINLINE TBOOL EnsureVolumetricFogPixelShaderCombo_ps_visibility()
-{
-	if ( !g_bVolumetricFogPixelShaderComboCompiled_ps_visibility )
-		g_bVolumetricFogPixelShaderComboCompiled_ps_visibility = g_oVolumetricFogPixelShaderCombo_ps_visibility.CompileFromFile( "Data\\Shaders\\VolumetricFog.hlsl", "ps_visibility", "ps_5_0", VolumetricFogCombos, VolumetricFogNumCombos, VolumetricFogNumPermutations );
-
-	return g_bVolumetricFogPixelShaderComboCompiled_ps_visibility;
-}
-
-TINLINE dx11::ShaderCombo& GetVolumetricFogPixelShaderCombo_ps_visibility()
-{
-	TASSERT( g_bVolumetricFogPixelShaderComboCompiled_ps_visibility );
-	return g_oVolumetricFogPixelShaderCombo_ps_visibility;
-}
-
-TINLINE TBOOL CreateVolumetricFogPixelShader_ps_visibility( ID3D11PixelShader** a_ppShader )
-{
-	if ( !g_bVolumetricFogPixelShaderComboCompiled_ps_visibility )
-		return TFALSE;
-
-	dx11::ShaderCombo& rCombo = g_oVolumetricFogPixelShaderCombo_ps_visibility;
-	ID3D11PixelShader** ppShader = rCombo.GetPixelShaderPtr( 0 );
-	TVALIDPTR( ppShader );
-	if ( !ppShader || !*ppShader )
-		return TFALSE;
-	*a_ppShader = *ppShader;
-	return TTRUE;
-}
-
-static constexpr TUINT VolumetricFogNumWarmupShaders = VolumetricFogNumPermutations * 2u;
+static constexpr TUINT VolumetricFogNumWarmupShaders = VolumetricFogNumPermutations * 1u;
 
 TINLINE TBOOL PrepareVolumetricFogShaderCombos()
 {
 	if ( !EnsureVolumetricFogPixelShaderCombo_ps_main() )
-		return TFALSE;
-
-	if ( !EnsureVolumetricFogPixelShaderCombo_ps_visibility() )
 		return TFALSE;
 
 	return TTRUE;
@@ -153,11 +119,6 @@ TINLINE TBOOL CompileVolumetricFogShaderCombos()
 		return TFALSE;
 
 	if ( !g_oVolumetricFogPixelShaderCombo_ps_main.CreatePixelShaders() )
-		return TFALSE;
-	if ( !EnsureVolumetricFogPixelShaderCombo_ps_visibility() )
-		return TFALSE;
-
-	if ( !g_oVolumetricFogPixelShaderCombo_ps_visibility.CreatePixelShaders() )
 		return TFALSE;
 
 	return TTRUE;

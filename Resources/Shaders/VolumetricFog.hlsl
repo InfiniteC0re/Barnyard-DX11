@@ -32,7 +32,7 @@ cbuffer VolumetricFogCBuffer : register( b1 )
     float4   cb_LightDirVS;   // view-space direction toward sun
     float4   cb_FogColor;
     float4   cb_FogParams;    // density, anisotropy, max distance, intensity/darkening
-    float4   cb_FrameParams;  // x = temporal frame index, y = wind time (seconds)
+    float4   cb_FrameParams;  // y = wind time (seconds)
     float4   cb_CloudParams;  // xy = cloud region min (X,Z), z = 1/region size, w = strength (0 = off)
     float4   cb_FogNoiseParams; // x = scale (frequency), y = strength (0 = uniform), zw = wind velocity (world XZ)
     float4   cb_FogHeightParams; // x = bottom height (full at/below), y = top height (0 at/above; <= bottom disables)
@@ -44,12 +44,9 @@ static const float PI                    = 3.14159265f;
 // and jittered, so the coarser far steps don't read as banding at quarter res). A flat
 // coarser step would need the dormant temporal accumulation (no reprojection yet)
 static const int   MAX_LIGHT_STEPS       = 384;
-static const int   MAX_TRANSMITTANCE_STEPS = 64;
 static const float LIGHT_STEP_LENGTH     = 0.25f;
-static const float TRANSMITTANCE_STEP_LENGTH = 0.5f;
 static const float MAX_STEP_GROWTH_FACTOR = 6.0f;
 static const float LIGHT_EXTINCTION_SCALE = 0.05f;
-static const float SHADOW_EXTINCTION_SCALE = 0.25f;
 
 float LinearizeDepth( float hwDepth )
 {
@@ -83,10 +80,11 @@ float InterleavedGradientNoise( float2 pixel )
     return frac( 52.9829189f * frac( dot( pixel, float2( 0.06711056f, 0.00583715f ) ) ) );
 }
 
+// Fixed per-pixel offset. Rotating it per frame only pays off behind a temporal resolve that
+// accumulates; with none, the march re-randomises every frame and the fog boils in place
 float RayJitter( float2 pixel )
 {
-    float frame = frac( cb_FrameParams.x * ( 1.0f / 8.0f ) ) * 8.0f;
-    return InterleavedGradientNoise( pixel + float2( frame * 19.0f, frame * 47.0f ) );
+    return InterleavedGradientNoise( pixel );
 }
 
 // Two-octave density: a single tap slides rigidly with the wind (blobby); a finer second tap
@@ -212,11 +210,11 @@ float3 IntegrateLightRay( float2 uv, float2 pixel )
     float growth = max( cb_DepthParams.x, 1.0f );
     float jitter = RayJitter( pixel );
 
-    // Keep the scattering phase tied to the camera orientation. Using each pixel's
-    // view ray makes the same world-space shaft fade as it moves toward screen edges.
-    float3 cameraForwardVS = normalize( UVToViewRay( float2( 0.5f, 0.5f ) ) );
-    float cosTheta = dot( cameraForwardVS, normalize( cb_LightDirVS.xyz ) );
-    float phase    = HenyeyGreenstein( cosTheta, g ) * ( 4.0f * PI );
+    // Per-pixel scattering angle -- this is what makes the shafts converge on the sun and fall
+    // off away from it. A screen-constant angle collapses the phase to a flat screen-wide scale
+    float cosTheta = dot( marchDirVS, normalize( cb_LightDirVS.xyz ) );
+    // HG is unbounded as |g| -> 1 (g = 0.9 peaks near 190x); cap so the forward lobe stays usable
+    float phase    = min( HenyeyGreenstein( cosTheta, g ) * ( 4.0f * PI ), 8.0f );
 
     float  transmittance = 1.0f;
     float3 radiance      = 0.0f;
@@ -245,13 +243,14 @@ float3 IntegrateLightRay( float2 uv, float2 pixel )
         if ( density < minDensity )
             continue;
 
-        float extinction = density * LIGHT_EXTINCTION_SCALE;
-        float scattering = density;
 #if CLOUD_SHADOWS
         float visibility = SampleShadow( worldPos, viewPos.z ) * SampleCloudLight( worldPos.xz );
 #else
         float visibility = SampleShadow( worldPos, viewPos.z );
 #endif
+
+        float extinction = density * LIGHT_EXTINCTION_SCALE;
+        float scattering = density;
 
         float stepTransmittance = exp( -extinction * stepSize );
         float stepScatter       = scattering * stepSize;
@@ -277,56 +276,4 @@ float4 ps_main( PS_IN i ) : SV_TARGET
 {
     float3 color = IntegrateLightRay( i.UV, i.Position.xy );
     return float4( color, 1.0f );
-}
-
-float4 ps_visibility( PS_IN i ) : SV_TARGET
-{
-    float  sceneViewDepth = GetSceneViewDepth( i.UV );
-    float3 rayDirVS       = UVToViewRay( i.UV );
-    float3 rayToSceneVS   = rayDirVS * sceneViewDepth;
-    float  rayDistance    = min( length( rayToSceneVS ), cb_FogParams.z );
-    if ( rayDistance <= 0.0001f )
-        return float4( 1.0f, 1.0f, 1.0f, 1.0f );
-
-    float3 marchDirVS = rayToSceneVS / max( length( rayToSceneVS ), 0.0001f );
-    float  amount   = saturate( cb_FogParams.w );
-
-    float growth = max( cb_DepthParams.x, 1.0f );
-    float jitter = RayJitter( i.Position.xy );
-
-    float shadowedOpticalDepth = 0.0f;
-
-    float minDensity = max( cb_FogParams.x, 0.0f ) * 0.05f;
-
-    float t  = 0.0f;
-    float dt = TRANSMITTANCE_STEP_LENGTH;
-
-    [loop]
-    for ( int step = 0; step < MAX_TRANSMITTANCE_STEPS; step++ )
-    {
-        if ( t >= rayDistance ) break;
-
-        float stepSize = min( dt, rayDistance - t );
-        float rayT     = t + jitter * stepSize;
-        t += dt;
-        dt = min( dt * growth, TRANSMITTANCE_STEP_LENGTH * MAX_STEP_GROWTH_FACTOR );
-
-        float3 viewPos = marchDirVS * rayT;
-        float3 worldPos = mul( float4( viewPos, 1.0f ), cb_matViewWorld ).xyz;
-
-        float density = FogDensityAt( worldPos, rayT );
-        if ( density < minDensity )
-            continue;
-
-#if CLOUD_SHADOWS
-        float visibility = SampleShadow( worldPos, viewPos.z ) * SampleCloudLight( worldPos.xz );
-#else
-        float visibility = SampleShadow( worldPos, viewPos.z );
-#endif
-
-        shadowedOpticalDepth += ( 1.0f - visibility ) * density * SHADOW_EXTINCTION_SCALE * stepSize;
-    }
-
-    float transmittance = exp( -shadowedOpticalDepth * amount );
-    return float4( transmittance, transmittance, transmittance, 1.0f );
 }

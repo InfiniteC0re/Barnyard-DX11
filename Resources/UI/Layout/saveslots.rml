@@ -1,0 +1,42 @@
+<rml>
+<head>
+	<link type="text/template" href="keyhints.rml"/>
+	<link type="text/template" href="window.rml"/>
+	<link type="text/rcss" href="../Style/saveslots.css"/>
+	<title>Save Slots</title>
+</head>
+<body data-model="saveslots">
+	<template src="window">
+		<h1 class="window-title" data-if="isNew">[[292]]</h1>
+		<h1 class="window-title" data-if="!isNew">[[293]]</h1>
+
+		<focusgroup class="slot-list" id="slots" sound-focus="174" sound-click="175">
+			<div class="slot" data-for="slot, i : slots" data-class-empty="!slot.occupied" data-class-hidden="!slot.occupied && !isNew" data-event-click="select(i)">
+				<div class="arrow"></div>
+				<span class="slot-id">#{{i + 1}}</span>
+				<div class="portrait">
+					<div class="portrait-icon" data-style-decorator="slot.portrait"></div>
+				</div>
+				<div class="info">
+					<span class="name">{{slot.name}}</span>
+					<span class="meta">{{slot.date}}</span>
+					<!-- <span class="hint">{{slot.hint}}</span> -->
+					
+					<div class="play-icon">
+						<span data-if="isNew">use</span>
+						<span data-if="!isNew">play</span>
+						<svg src="../Images/Keys/Enter.svg" />
+					</div>
+				</div>
+			</div>
+		</focusgroup>
+
+		<div class="no-saves" data-if="!isNew && !hasSaves">[[243]]</div>
+	</template>
+
+	<template src="keyhints">
+		<span class="key">[[1047]]</span>
+		<span class="key">[[1048]]</span>
+	</template>
+</body>
+</rml>

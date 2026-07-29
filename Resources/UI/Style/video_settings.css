@@ -1,0 +1,228 @@
+/* Window frame + title come from the shared window template (window.css) */
+
+#window {
+	width: 460dp;
+	height: 320dp;
+}
+
+.window-content {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	flex-basis: 100%;
+	padding-top: 24dp;
+}
+
+.setting-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2.75dp;
+	padding: 0 16dp;
+	overflow: auto;
+	height: 100%;
+}
+
+h2 {
+	font-size: 15dp;
+	color: #ffffff;
+	margin-top: 16dp;
+	margin-bottom: 2dp;
+}
+
+.row {
+	display: flex;
+	justify-content: space-between;
+	transition: color 0.1s quadratic-out;
+}
+
+.label,
+select {
+	font-size: 16dp;
+}
+
+.label {
+	align-self: center;
+	font-effect: shadow(3dp 3dp #00000065);
+	transition: transform 0.1s quadratic-out;
+}
+
+.row:focus {
+	color: rgb(255, 199, 0);
+}
+
+.row:focus > .label {
+	transform: scale(1.05);
+}
+
+select {
+	nav: auto;
+	width: 130dp;
+	height: 24dp;
+	font-size: 14dp;
+	color: #f08827;
+
+	font-family: Rekord18;
+	box-sizing: border-box;
+
+	border-radius: 4dp;
+	decorator: image("../Images/Wood_CutA.png");
+	font-effect: shadow(3dp 3dp #00000070);
+
+	transition: 0.1s all quadratic-out;
+}
+
+.row:focus > select {
+	width: 135dp;
+	color: #f0f0f0;
+}
+
+selectvalue {
+	line-height: 24dp;
+	padding-left: 10dp;
+}
+
+selectarrow {
+	width: 14dp;
+	decorator: image("../Images/Down_Arrow.png" cover);
+	margin-right: 8dp;
+	height: 16dp;
+	margin-top: 3.5dp;
+}
+
+selectbox {
+	background-color: #10203a;
+}
+
+selectbox option {
+	padding-left: 8dp;
+	font-size: 14dp;
+}
+
+selectbox option:hover {
+	background-color: #2a63b8;
+}
+
+selectbox option:checked {
+	background-color: #3f86e6;
+	color: rgb(184, 184, 184);
+}
+
+input {
+	nav: auto;
+	box-sizing: border-box;
+	display: inline-block;
+	width: 24dp;
+	height: 24dp;
+	/* border: 1px solid;
+	border-color: #74490e; */
+	background-color: #332005;
+	border-radius: 3dp;
+	padding: 2dp;
+	align-self: center;
+	transform: scale(0.9);
+	transition: 0.2s all back-out;
+}
+
+input:checked {
+	decorator: image("../Images/StarSmall.png" cover) content-box;
+	transform: scale(0.95);
+}
+
+.row:hover > input {
+	transform: scale(1);
+}
+
+.buttons {
+	color: rgb(255, 255, 255);
+	flex-shrink: 0;
+	align-self: center;
+	display: flex;
+	gap: 8dp;
+}
+
+.btn {
+	tab-index: auto;
+	nav: auto;
+	display: inline-block;
+	font-size: 17dp;
+	width: 80dp;
+	height: 28dp;
+	line-height: 28dp;
+	color: rgb(255, 199, 0);
+	border-radius: 5dp;
+	text-align: center;
+	transition: 0.2s all quadratic-out;
+	font-effect: shadow(3dp 3dp #00000065);
+	margin: 8dp 0;
+}
+
+.btn:focus {
+	color: rgb(255, 255, 255);
+	transform: scale(1.1);
+}
+
+.btn:active {
+	color: #10203a;
+}
+
+tabset {
+	flex-basis: 100%;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+}
+
+panels {
+	display: block;
+	flex-basis: 100%;
+	margin-top: 8dp;
+}
+
+tabs {
+	display: flex;
+	justify-content: center;
+}
+
+tab {
+	tab-index: auto;
+	font-family: Rekord26;
+	font-size: 18dp;
+	color: rgb(189, 189, 189);
+	margin-right: 12dp;
+	decorator: image("../Images/Wood_Short.png");
+	padding: 4dp 12dp;
+	padding-bottom: 6dp;
+	transition: 0.1s all cubic-out;
+	font-effect: shadow(4dp 4dp #00000080);
+}
+
+tab:focus {
+	transform: scale(1.025);
+	color: rgb(223, 223, 223);
+}
+
+tab:selected {
+	color: rgb(255, 255, 255);
+	transform: scale(1.075);
+}
+
+scrollbarvertical {
+	width: 4dp;
+	margin-right: 14dp;
+}
+
+slidertrack {
+	background-color: #00000040;
+	border-radius: 2dp;
+}
+
+sliderbar {
+	background-color: rgb(185, 185, 185);
+	border-radius: 2dp;
+	padding: 0 1dp;
+}
+
+sliderbar:hover,
+sliderbar:active {
+	background-color: rgb(255, 255, 255);
+}

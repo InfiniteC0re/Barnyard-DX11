@@ -65,37 +65,6 @@ TINLINE TBOOL CreateVolumetricFogCompositeShaderPipelines(
 	return TTRUE;
 }
 
-inline dx11::ShaderCombo g_oVolumetricFogCompositePixelShaderCombo_ps_temporal;
-inline TBOOL g_bVolumetricFogCompositePixelShaderComboCompiled_ps_temporal = TFALSE;
-
-TINLINE TBOOL EnsureVolumetricFogCompositePixelShaderCombo_ps_temporal()
-{
-	if ( !g_bVolumetricFogCompositePixelShaderComboCompiled_ps_temporal )
-		g_bVolumetricFogCompositePixelShaderComboCompiled_ps_temporal = g_oVolumetricFogCompositePixelShaderCombo_ps_temporal.CompileFromFile( "Data\\Shaders\\VolumetricFogComposite.hlsl", "ps_temporal", "ps_5_0", VolumetricFogCompositeCombos, VolumetricFogCompositeNumCombos, VolumetricFogCompositeNumPermutations );
-
-	return g_bVolumetricFogCompositePixelShaderComboCompiled_ps_temporal;
-}
-
-TINLINE dx11::ShaderCombo& GetVolumetricFogCompositePixelShaderCombo_ps_temporal()
-{
-	TASSERT( g_bVolumetricFogCompositePixelShaderComboCompiled_ps_temporal );
-	return g_oVolumetricFogCompositePixelShaderCombo_ps_temporal;
-}
-
-TINLINE TBOOL CreateVolumetricFogCompositePixelShader_ps_temporal( ID3D11PixelShader** a_ppShader )
-{
-	if ( !g_bVolumetricFogCompositePixelShaderComboCompiled_ps_temporal )
-		return TFALSE;
-
-	dx11::ShaderCombo& rCombo = g_oVolumetricFogCompositePixelShaderCombo_ps_temporal;
-	ID3D11PixelShader** ppShader = rCombo.GetPixelShaderPtr( 0 );
-	TVALIDPTR( ppShader );
-	if ( !ppShader || !*ppShader )
-		return TFALSE;
-	*a_ppShader = *ppShader;
-	return TTRUE;
-}
-
 inline dx11::ShaderCombo g_oVolumetricFogCompositePixelShaderCombo_ps_additive;
 inline TBOOL g_bVolumetricFogCompositePixelShaderComboCompiled_ps_additive = TFALSE;
 
@@ -127,48 +96,11 @@ TINLINE TBOOL CreateVolumetricFogCompositePixelShader_ps_additive( ID3D11PixelSh
 	return TTRUE;
 }
 
-inline dx11::ShaderCombo g_oVolumetricFogCompositePixelShaderCombo_ps_darken;
-inline TBOOL g_bVolumetricFogCompositePixelShaderComboCompiled_ps_darken = TFALSE;
-
-TINLINE TBOOL EnsureVolumetricFogCompositePixelShaderCombo_ps_darken()
-{
-	if ( !g_bVolumetricFogCompositePixelShaderComboCompiled_ps_darken )
-		g_bVolumetricFogCompositePixelShaderComboCompiled_ps_darken = g_oVolumetricFogCompositePixelShaderCombo_ps_darken.CompileFromFile( "Data\\Shaders\\VolumetricFogComposite.hlsl", "ps_darken", "ps_5_0", VolumetricFogCompositeCombos, VolumetricFogCompositeNumCombos, VolumetricFogCompositeNumPermutations );
-
-	return g_bVolumetricFogCompositePixelShaderComboCompiled_ps_darken;
-}
-
-TINLINE dx11::ShaderCombo& GetVolumetricFogCompositePixelShaderCombo_ps_darken()
-{
-	TASSERT( g_bVolumetricFogCompositePixelShaderComboCompiled_ps_darken );
-	return g_oVolumetricFogCompositePixelShaderCombo_ps_darken;
-}
-
-TINLINE TBOOL CreateVolumetricFogCompositePixelShader_ps_darken( ID3D11PixelShader** a_ppShader )
-{
-	if ( !g_bVolumetricFogCompositePixelShaderComboCompiled_ps_darken )
-		return TFALSE;
-
-	dx11::ShaderCombo& rCombo = g_oVolumetricFogCompositePixelShaderCombo_ps_darken;
-	ID3D11PixelShader** ppShader = rCombo.GetPixelShaderPtr( 0 );
-	TVALIDPTR( ppShader );
-	if ( !ppShader || !*ppShader )
-		return TFALSE;
-	*a_ppShader = *ppShader;
-	return TTRUE;
-}
-
-static constexpr TUINT VolumetricFogCompositeNumWarmupShaders = VolumetricFogCompositeNumPermutations * 3u;
+static constexpr TUINT VolumetricFogCompositeNumWarmupShaders = VolumetricFogCompositeNumPermutations * 1u;
 
 TINLINE TBOOL PrepareVolumetricFogCompositeShaderCombos()
 {
-	if ( !EnsureVolumetricFogCompositePixelShaderCombo_ps_temporal() )
-		return TFALSE;
-
 	if ( !EnsureVolumetricFogCompositePixelShaderCombo_ps_additive() )
-		return TFALSE;
-
-	if ( !EnsureVolumetricFogCompositePixelShaderCombo_ps_darken() )
 		return TFALSE;
 
 	return TTRUE;
@@ -176,20 +108,10 @@ TINLINE TBOOL PrepareVolumetricFogCompositeShaderCombos()
 
 TINLINE TBOOL CompileVolumetricFogCompositeShaderCombos()
 {
-	if ( !EnsureVolumetricFogCompositePixelShaderCombo_ps_temporal() )
-		return TFALSE;
-
-	if ( !g_oVolumetricFogCompositePixelShaderCombo_ps_temporal.CreatePixelShaders() )
-		return TFALSE;
 	if ( !EnsureVolumetricFogCompositePixelShaderCombo_ps_additive() )
 		return TFALSE;
 
 	if ( !g_oVolumetricFogCompositePixelShaderCombo_ps_additive.CreatePixelShaders() )
-		return TFALSE;
-	if ( !EnsureVolumetricFogCompositePixelShaderCombo_ps_darken() )
-		return TFALSE;
-
-	if ( !g_oVolumetricFogCompositePixelShaderCombo_ps_darken.CreatePixelShaders() )
 		return TFALSE;
 
 	return TTRUE;

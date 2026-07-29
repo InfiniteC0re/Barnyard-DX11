@@ -1,0 +1,9 @@
+<template name="keyhints" content="keyhints">
+<head>
+	<link type="text/rcss" href="../Style/keyhints.css"/>
+</head>
+<body>
+	<div id="keyhints">
+    </div>
+</body>
+</template>

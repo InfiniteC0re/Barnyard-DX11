@@ -1,0 +1,63 @@
+/* Shared wood-framed window chrome, taken from the settings window. Documents pull
+   it in via the "window" template (Data/UI/Layout/window.rml) and inject their own
+   .window-title plus body content into #window. Per-window size (width/height) is
+   set by each document's own stylesheet */
+
+body {
+	font-family: Rekord26;
+	color: rgb(179, 111, 34);
+	width: 100%;
+	height: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+@keyframes appear {
+	0%   { transform: scale(0); opacity: 0; }
+	100% { transform: scale(1); opacity: 1; }
+}
+
+#window {
+	padding-left: 37dp;
+	padding-top: 33dp;
+	padding-right: 46dp;
+	padding-bottom: 49dp;
+	animation: appear 0.4s back-out 1;
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	transition: opacity 0.4s back-in, transform 0.4s back-in;
+
+	margin-bottom: -30dp;
+
+	decorator:
+		tiled-box(
+			"../Images/Border_Top_Left.png",    "../Images/Border_Horizontal.png", "../Images/Border_Top_Right.png",
+			"../Images/Border_Vertical.png",     "../Images/Transparent.png",       "../Images/Border_Vertical.png",
+			"../Images/Border_Bottom_Left.png",  "../Images/Border_Horizontal.png",  "../Images/Border_Bottom_Right.png"
+			),
+			horizontal-gradient( #00000079 #00000079 ) content-box;
+}
+
+#window.closing {
+	transform: scale(0.0);
+	opacity: 0;
+}
+
+.window-title {
+	display: inline-block;
+	width: auto;
+	padding: 4dp 28dp;
+	padding-bottom: 14dp;
+	text-transform: uppercase;
+	font-size: 40dp;
+	font-family: Rekord26;
+	color: rgb(255, 239, 171);
+	decorator: image("../Images/Panel_01.png");
+	font-effect: shadow( 6dp 6dp #000000a2 );
+	position: fixed;
+	top: -5dp;
+	left: 50%;
+	transform: translateX(-50%) translateX(-6dp);
+}

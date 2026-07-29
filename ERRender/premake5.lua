@@ -11,6 +11,7 @@ project "ERRender"
 		"Toshi",
 		"BYardSDK",
 		"BYModCore",
+		"RmlUi",
 		"d3d11.lib",
 		"dxgi.lib",
 		"d3dcompiler.lib",
@@ -34,10 +35,17 @@ project "ERRender"
 		"Source/**.c",
 	}
 
+	defines
+	{
+		"RMLUI_STATIC_LIB",
+	}
+
 	includedirs
 	{
 		"Source",
 		"Vendor/freetype/include",
+		"Vendor/nanosvg",
+		"%{IncludeDir.rmlui}",
 		"%{IncludeDir.toshi}",
 		"%{IncludeDir.byardsdk}",
 		"%{IncludeDir.modcore}",
@@ -71,6 +79,9 @@ project "ERRender"
 		flags { "NoPCH" }
 
 	filter "files:Source/ImGuizmo/**"
+		flags { "NoPCH" }
+
+	filter "files:**NanoSVGImpl.cpp"
 		flags { "NoPCH" }
 
 	filter "configurations:Debug"
