@@ -111,11 +111,13 @@ TBOOL  g_bSSRDebug         = TFALSE;
 TBOOL  g_bSSRDebugNormals  = TFALSE;
 TFLOAT g_flSSRIntensity    = 0.3f;
 TFLOAT g_flSSRMaxDistance  = 70.0f;
-TFLOAT g_flSSRThickness    = 0.3f;
+TFLOAT g_flSSRThickness    = 0.025f; // fraction of view depth, not world units
 TFLOAT g_flSSRStepSize     = 1.0f;
 TINT   g_iSSRMaxSteps      = 50;
 TFLOAT g_flSSRFresnelPower = 4.0f;
 TFLOAT g_flSSREdgeFade     = 2.0f;
+// View distance past which surfaces stop casting SSR entirely (0 = no limit)
+TFLOAT g_flSSRSurfaceFadeDistance = 20.0f;
 
 TBOOL  g_bSkyCubeEnabled    = TTRUE;
 TBOOL  g_bSkyCubeDebugView  = TFALSE;
@@ -147,7 +149,6 @@ TFLOAT g_flHBAOBlurSharpness              = 4.0f;
 TFLOAT g_flXeGTAORadiusMultiplier         = 1.457f;
 TFLOAT g_flXeGTAOFalloffRange             = 0.9f;
 TFLOAT g_flXeGTAOSampleDistributionPower  = 2.8f;
-TFLOAT g_flXeGTAOThinOccluderCompensation = 0.5f;
 
 TBOOL  g_bVolumetricFogEnabled       = TTRUE;
 TFLOAT g_flVolumetricFogDensity      = 0.019f;
@@ -899,30 +900,31 @@ struct HBAOBlurCBuffer
 	TFLOAT depthParams[ 4 ];
 };
 
+struct HBAOCompositeCBuffer
+{
+	TFLOAT depthParams[ 4 ];  // near, far, unused, unused
+	TFLOAT aoBufferSize[ 4 ]; // width, height, invWidth, invHeight
+};
+
 struct SSRCBuffer
 {
 	TFLOAT    projection[ 4 ];
 	TFLOAT    depthParams[ 4 ];
 	TFLOAT    params[ 4 ]; // intensity, maxDistance, thickness, fresnelPower
 	TFLOAT    bufferSize[ 4 ];
-	TFLOAT    marchParams[ 4 ];      // maxSteps, pixelStride, edgeFadePower, unused
+	TFLOAT    marchParams[ 4 ];      // maxSteps, pixelStride, edgeFadePower, surfaceFadeDistance (0 = off)
 	TFLOAT    blurParams[ 4 ];       // invWidth, invHeight, dirX, dirY
 	TFLOAT    blurDepth[ 4 ];        // near, far, sharpness, unused
-	TMatrix44 worldToView;           // rotates G-buffer world normals into view space
-	TFLOAT    skyHorizon[ 4 ];       // rgb = horizon colour avg(FORWARD,TRANSLATION), a = fallback intensity (0 = off)
-	TFLOAT    skyZenith[ 4 ];        // rgb = zenith colour avg(RIGHT,UP)
-	TFLOAT    skyCubeParams[ 4 ];    // maxMip, enable (0/1), intensity, unused
-	TFLOAT    skyCubeParallax[ 4 ];  // "to" box half-extents xyz (world units), w = enable (0/1)
-	TFLOAT    skyCubeOffset[ 4 ];    // xyz = camera - "to" probe (world); w = cross-fade blend (1 = fully "to")
-	TFLOAT    skyCubeParallax2[ 4 ]; // "from" box half-extents xyz
-	TFLOAT    skyCubeOffset2[ 4 ];   // xyz = camera - "from" probe (world)
+	TMatrix44 worldToView;        // rotates G-buffer world normals into view space
+	TFLOAT    skyCubeParams[ 4 ]; // maxMip, enable (0/1), intensity, unused
 };
 
 static ID3D11Buffer* s_pSSRConstantBuffer = TNULL;
 
-static ID3D11Buffer* s_pHBAOConstantBuffer     = TNULL;
-static ID3D11Buffer* s_pXeGTAOConstantBuffer   = TNULL;
-static ID3D11Buffer* s_pHBAOBlurConstantBuffer = TNULL;
+static ID3D11Buffer* s_pHBAOConstantBuffer          = TNULL;
+static ID3D11Buffer* s_pXeGTAOConstantBuffer        = TNULL;
+static ID3D11Buffer* s_pHBAOBlurConstantBuffer      = TNULL;
+static ID3D11Buffer* s_pHBAOCompositeConstantBuffer = TNULL;
 
 struct SunShaftsCBuffer
 {
@@ -1128,6 +1130,13 @@ void remaster::RenderDX11::CreateRenderTargets()
 		hbaoBlurCBDesc.BindFlags         = D3D11_BIND_CONSTANT_BUFFER;
 		hbaoBlurCBDesc.CPUAccessFlags    = D3D11_CPU_ACCESS_WRITE;
 		DX11_API_VALIDATE( GetD3D11Device()->CreateBuffer( &hbaoBlurCBDesc, TNULL, &s_pHBAOBlurConstantBuffer ) );
+
+		D3D11_BUFFER_DESC hbaoCompositeCBDesc = {};
+		hbaoCompositeCBDesc.ByteWidth         = sizeof( HBAOCompositeCBuffer );
+		hbaoCompositeCBDesc.Usage             = D3D11_USAGE_DYNAMIC;
+		hbaoCompositeCBDesc.BindFlags         = D3D11_BIND_CONSTANT_BUFFER;
+		hbaoCompositeCBDesc.CPUAccessFlags    = D3D11_CPU_ACCESS_WRITE;
+		DX11_API_VALIDATE( GetD3D11Device()->CreateBuffer( &hbaoCompositeCBDesc, TNULL, &s_pHBAOCompositeConstantBuffer ) );
 
 		// SSR buffers (own resolution; see SSR_RESOLUTION_DIVISOR)
 		D3D11_TEXTURE2D_DESC ssrDesc = {};
@@ -1358,6 +1367,7 @@ void remaster::RenderDX11::ReleaseRenderTargets()
 	fnRelease( s_pHBAOConstantBuffer );
 	fnRelease( s_pXeGTAOConstantBuffer );
 	fnRelease( s_pHBAOBlurConstantBuffer );
+	fnRelease( s_pHBAOCompositeConstantBuffer );
 
 	// The cloud shadow sampler aliases s_pLinearClampSampler (released below), so it isn't freed here
 	fnRelease( remaster::g_pCloudShadowSRV );
@@ -1923,10 +1933,11 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->PSSetShaderResource( 0, TNULL );
 	}
 
-	// Half-res min-depth downsample, consumed by the SSR march and HBAO. Point-sampling full-res depth at half-res
-	// picks an unstable texel per 2x2 (HBAO crawled on grazing ground); min gives one stable depth. XeGTAO and the fog keep full-res
-	const TBOOL bHBAOWantsHalfDepth = remaster::GameSettings::IsAOEnabled() && remaster::g_iAOAlgorithm != 1;
-	if ( ( remaster::GameSettings::IsSSREnabled() || bHBAOWantsHalfDepth ) && s_pHalfDepthRTV )
+	// Half-res min-depth downsample, consumed by the SSR march and by the whole AO chain. Point-sampling full-res
+	// depth at half-res picks an unstable texel per 2x2 (HBAO crawled on grazing ground); min gives one stable
+	// depth. Both AO algorithms render half-res, so both read this -- the blur weights and the composite's
+	// upsample guide have to agree with whatever the AO pass measured. The fog keeps full-res
+	if ( ( remaster::GameSettings::IsSSREnabled() || remaster::GameSettings::IsAOEnabled() ) && s_pHalfDepthRTV )
 	{
 		TPROFILER_NAMED( "Half-Depth Downsample" );
 		TracyD3D11Zone( remaster::g_pRender->GetTracyGpuContext(), "Half-Depth Downsample" );
@@ -1973,8 +1984,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 		remaster::g_pRender->DiscardView( s_pHBAORTV );
 		remaster::g_pRender->SetRenderTargetView( s_pHBAORTV, TNULL );
-		// HBAO reads the half-res min-depth (matches its render target); XeGTAO takes full-res
-		remaster::g_pRender->PSSetShaderResource( 0, remaster::g_iAOAlgorithm == 1 ? pSceneDepthSRV : s_pHalfDepthSRV );
+		remaster::g_pRender->PSSetShaderResource( 0, s_pHalfDepthSRV );
 		remaster::g_pRender->PSSetSamplerState( 0, s_pPointClampSampler );
 		remaster::g_pRender->SetCullMode( D3D11_CULL_NONE );
 		remaster::g_pRender->SetBlendEnabled( TFALSE );
@@ -2001,7 +2011,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 			cbData.bufferSize[ 3 ]  = 1.0f / cbData.bufferSize[ 1 ];
 			cbData.xeParams[ 0 ]    = remaster::g_flXeGTAORadiusMultiplier;
 			cbData.xeParams[ 1 ]    = remaster::g_flXeGTAOSampleDistributionPower;
-			cbData.xeParams[ 2 ]    = remaster::g_flXeGTAOThinOccluderCompensation;
+			cbData.xeParams[ 2 ]    = 0.0f;
 			cbData.xeParams[ 3 ]    = 0.0f;
 
 			D3D11_MAPPED_SUBRESOURCE mapped;
@@ -2050,7 +2060,10 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		const TFLOAT fNearClip = pContext->GetProjectionParams().m_fNearClip;
 		const TFLOAT fFarClip  = pContext->GetProjectionParams().m_fFarClip;
 
-		auto fnBlurHBAO = [ fNearClip, fFarClip, pSceneDepthSRV ]( ID3D11RenderTargetView* a_pRTV, ID3D11ShaderResourceView* a_pInputSRV, TFLOAT a_fDirX, TFLOAT a_fDirY ) {
+		// Bilateral weights have to be measured against the same depth the AO pass ran on -- point-sampling
+		// full-res depth at half-res UVs picks a different texel of each 2x2 than the min the AO saw, so the
+		// weights disagreed with the signal exactly at the edges they exist to protect
+		auto fnBlurHBAO = [ fNearClip, fFarClip ]( ID3D11RenderTargetView* a_pRTV, ID3D11ShaderResourceView* a_pInputSRV, TFLOAT a_fDirX, TFLOAT a_fDirY ) {
 			HBAOBlurCBuffer blurData;
 			blurData.blurParams[ 0 ]  = 1.0f / TFLOAT( s_uiHBAOWidth );
 			blurData.blurParams[ 1 ]  = 1.0f / TFLOAT( s_uiHBAOHeight );
@@ -2069,7 +2082,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 			remaster::g_pRender->DiscardView( a_pRTV );
 			remaster::g_pRender->SetRenderTargetView( a_pRTV, TNULL );
 			remaster::g_pRender->PSSetShaderResource( 0, a_pInputSRV );
-			remaster::g_pRender->PSSetShaderResource( 1, pSceneDepthSRV );
+			remaster::g_pRender->PSSetShaderResource( 1, s_pHalfDepthSRV );
 			remaster::g_pRender->PSSetSamplerState( 0, s_pPointClampSampler );
 			remaster::g_pRender->PSSetSamplerState( 1, s_pLinearClampSampler );
 			remaster::g_pRender->PSSetConstantBuffer( 1, s_pHBAOBlurConstantBuffer );
@@ -2085,6 +2098,21 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 		remaster::g_pRender->GetD3D11DeviceContext()->RSSetViewports( 1, &oHBAOOldVP );
 
+		HBAOCompositeCBuffer compositeData;
+		compositeData.depthParams[ 0 ]  = fNearClip;
+		compositeData.depthParams[ 1 ]  = fFarClip;
+		compositeData.depthParams[ 2 ]  = 0.0f;
+		compositeData.depthParams[ 3 ]  = 0.0f;
+		compositeData.aoBufferSize[ 0 ] = TFLOAT( s_uiHBAOWidth );
+		compositeData.aoBufferSize[ 1 ] = TFLOAT( s_uiHBAOHeight );
+		compositeData.aoBufferSize[ 2 ] = 1.0f / compositeData.aoBufferSize[ 0 ];
+		compositeData.aoBufferSize[ 3 ] = 1.0f / compositeData.aoBufferSize[ 1 ];
+
+		D3D11_MAPPED_SUBRESOURCE mappedComposite;
+		remaster::g_pRender->GetD3D11DeviceContext()->Map( s_pHBAOCompositeConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedComposite );
+		TUtil::MemCopy( mappedComposite.pData, &compositeData, sizeof( compositeData ) );
+		remaster::g_pRender->GetD3D11DeviceContext()->Unmap( s_pHBAOCompositeConstantBuffer, 0 );
+
 		remaster::g_pRender->SetRenderTargetView(
 		    remaster::g_pRender->GetD3D11RenderTargetView(),
 		    remaster::g_pRender->GetD3D11DepthStencilView()
@@ -2092,7 +2120,12 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->SetCullMode( D3D11_CULL_NONE );
 		remaster::g_pRender->SetDepthEnabled( TFALSE );
 		remaster::g_pRender->PSSetShaderResource( 0, s_pHBAOSRV );
+		// Full-res depth drives the sky reject; the half-res depth is the guide the AO was measured against
+		remaster::g_pRender->PSSetShaderResource( 2, pSceneDepthSRV );
+		remaster::g_pRender->PSSetShaderResource( 3, s_pHalfDepthSRV );
 		remaster::g_pRender->PSSetSamplerState( 0, s_pLinearClampSampler );
+		remaster::g_pRender->PSSetSamplerState( 2, s_pPointClampSampler );
+		remaster::g_pRender->PSSetConstantBuffer( 1, s_pHBAOCompositeConstantBuffer );
 		remaster::g_pRender->SetBlendEnabled( TFALSE );
 
 		if ( remaster::g_bHBAODebug )
@@ -2112,6 +2145,8 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		}
 
 		remaster::g_pRender->PSSetShaderResource( 0, TNULL );
+		remaster::g_pRender->PSSetShaderResource( 2, TNULL );
+		remaster::g_pRender->PSSetShaderResource( 3, TNULL );
 		remaster::g_pRender->PSSetConstantBuffer( 1, TNULL );
 	}
 
@@ -2192,7 +2227,7 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		cbData.marchParams[ 0 ] = TFLOAT( remaster::g_iSSRMaxSteps );
 		cbData.marchParams[ 1 ] = remaster::g_flSSRStepSize;
 		cbData.marchParams[ 2 ] = remaster::g_flSSREdgeFade;
-		cbData.marchParams[ 3 ] = 0.0f;
+		cbData.marchParams[ 3 ] = remaster::g_flSSRSurfaceFadeDistance;
 		cbData.blurDepth[ 0 ]   = fNearClip;
 		cbData.blurDepth[ 1 ]   = fFarClip;
 		cbData.blurDepth[ 2 ]   = remaster::g_flHBAOBlurSharpness;
@@ -2200,44 +2235,11 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 		cbData.worldToView.InvertOrthogonal( pCtx->GetViewWorldMatrix() );
 
-		// No sky-gradient ray-miss fallback now (forward pass draws the cube at full res, SSR only adds hits); slots stay for layout, carry zeros
-		cbData.skyHorizon[ 0 ] = 0.0f;
-		cbData.skyHorizon[ 1 ] = 0.0f;
-		cbData.skyHorizon[ 2 ] = 0.0f;
-		cbData.skyHorizon[ 3 ] = 0.0f;
-		cbData.skyZenith[ 0 ]  = 0.0f;
-		cbData.skyZenith[ 1 ]  = 0.0f;
-		cbData.skyZenith[ 2 ]  = 0.0f;
-		cbData.skyZenith[ 3 ]  = 0.0f;
-
-		// Sky cubemap fallback: enabled only when the cube was captured this frame
+		// Only ps_debug_skycube reads these; the SSR march has no cube fallback
 		cbData.skyCubeParams[ 0 ] = TFLOAT( remaster::g_iSkyCubeMaxMip );
 		cbData.skyCubeParams[ 1 ] = ( remaster::GameSettings::IsSkyCubeEnabled() && remaster::g_pSkyCubeSRV ) ? 1.0f : 0.0f;
 		cbData.skyCubeParams[ 2 ] = remaster::g_flSkyCubeIntensity;
 		cbData.skyCubeParams[ 3 ] = 0.0f;
-
-		// Cross-fade parallax anchoring: each cube carries its own probe + box. The shader samples both with
-		// offset = (camera - probe) so each stays pinned to its world point, then lerps by the blend (skyCubeOffset.w; 1 = fully "to")
-		const remaster::SkyCubeBlendState& rBlend = remaster::g_oSkyCubeBlend;
-		const TVector4&                    vCam   = pCtx->GetViewWorldMatrix().GetTranslation();
-
-		cbData.skyCubeParallax[ 0 ] = TMath::Max( rBlend.vBoxTo.x, 0.01f );
-		cbData.skyCubeParallax[ 1 ] = TMath::Max( rBlend.vBoxTo.y, 0.01f );
-		cbData.skyCubeParallax[ 2 ] = TMath::Max( rBlend.vBoxTo.z, 0.01f );
-		cbData.skyCubeParallax[ 3 ] = 1.0f;
-		cbData.skyCubeOffset[ 0 ]   = vCam.x - rBlend.vProbeTo.x;
-		cbData.skyCubeOffset[ 1 ]   = vCam.y - rBlend.vProbeTo.y;
-		cbData.skyCubeOffset[ 2 ]   = vCam.z - rBlend.vProbeTo.z;
-		cbData.skyCubeOffset[ 3 ]   = rBlend.flBlend;
-
-		cbData.skyCubeParallax2[ 0 ] = TMath::Max( rBlend.vBoxFrom.x, 0.01f );
-		cbData.skyCubeParallax2[ 1 ] = TMath::Max( rBlend.vBoxFrom.y, 0.01f );
-		cbData.skyCubeParallax2[ 2 ] = TMath::Max( rBlend.vBoxFrom.z, 0.01f );
-		cbData.skyCubeParallax2[ 3 ] = 0.0f;
-		cbData.skyCubeOffset2[ 0 ]   = vCam.x - rBlend.vProbeFrom.x;
-		cbData.skyCubeOffset2[ 1 ]   = vCam.y - rBlend.vProbeFrom.y;
-		cbData.skyCubeOffset2[ 2 ]   = vCam.z - rBlend.vProbeFrom.z;
-		cbData.skyCubeOffset2[ 3 ]   = 0.0f;
 
 		auto fnUploadSSRCB = [ & ]() {
 			D3D11_MAPPED_SUBRESOURCE mapped;
@@ -2269,15 +2271,11 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 		remaster::g_pRender->PSSetShaderResource( 0, pSceneDepthSRV ); // full-res depth
 		remaster::g_pRender->PSSetShaderResource( 1, s_pResolvedColorSRV );
 		remaster::g_pRender->PSSetShaderResource( 3, s_pResolvedGBufferSRV );
-		remaster::g_pRender->PSSetShaderResource( 4, remaster::g_oSkyCubeBlend.pSRVTo );   // active cube fallback
-		remaster::g_pRender->PSSetShaderResource( 5, remaster::g_oSkyCubeBlend.pSRVFrom ); // outgoing cube (cross-fade)
 		remaster::g_pRender->DrawScreenRectangle(
 		    remaster::shadercombos::GetSSRPixelShaderCombo_ps_gather().GetPixelShader( remaster::shadercombos::SSR_NoCombos )
 		);
 		remaster::g_pRender->PSSetShaderResource( 1, TNULL );
 		remaster::g_pRender->PSSetShaderResource( 3, TNULL );
-		remaster::g_pRender->PSSetShaderResource( 4, TNULL );
-		remaster::g_pRender->PSSetShaderResource( 5, TNULL );
 
 		// Separable depth-aware bilateral blur: horizontal then vertical
 		auto fnBlurSSR = [ & ]( ID3D11RenderTargetView* a_pRTV, ID3D11ShaderResourceView* a_pInput, TFLOAT a_fDirX, TFLOAT a_fDirY ) {
@@ -2289,7 +2287,10 @@ MEMBER_HOOK( 0x0060b370, ARenderer, ARenderer_RenderMainScene, void, TFLOAT a_fl
 
 			remaster::g_pRender->DiscardView( a_pRTV );
 			remaster::g_pRender->SetRenderTargetView( a_pRTV, TNULL );
-			remaster::g_pRender->PSSetShaderResource( 0, pSceneDepthSRV ); // full-res depth
+			// Half-res depth, matching the reflection buffer this filters. The march wants full-res
+			// depth for accuracy, but bilateral weights taken a half-res texel apart against a
+			// full-res texture land on an arbitrary member of each 2x2
+			remaster::g_pRender->PSSetShaderResource( 0, s_pHalfDepthSRV );
 			remaster::g_pRender->PSSetShaderResource( 2, a_pInput );
 			remaster::g_pRender->PSSetShaderResource( 3, s_pResolvedGBufferSRV ); // roughness for blur width
 			remaster::g_pRender->DrawScreenRectangle(

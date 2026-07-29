@@ -9,7 +9,7 @@ cbuffer XeGTAOCBuffer : register( b1 )
     float4 cb_DepthParams;     // m33, m43, near, far
     float4 cb_Params;          // radius, falloffRange, intensity, finalPower
     float4 cb_BufferSize;      // width, height, invWidth, invHeight
-    float4 cb_XeParams;        // radiusMultiplier, sampleDistributionPower, thinOccluderCompensation, unused
+    float4 cb_XeParams;        // radiusMultiplier, sampleDistributionPower, unused, unused
 };
 
 static const int   XE_GTAO_SLICE_COUNT          = 3;

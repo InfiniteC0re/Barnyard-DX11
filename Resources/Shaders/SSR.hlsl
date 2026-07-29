@@ -1,13 +1,11 @@
 #include "ScreenSpace.hlsl"
 #include "GBuffer.hlsli"
-#include "ShaderUtils.hlsli" // ParallaxCorrectReflection, shared with the world/skin IBL
 
 Texture2D   depthTexture      : register( t0 );
 Texture2D   colorTexture      : register( t1 );
 Texture2D   reflectionTexture : register( t2 );
 Texture2D   gbufferTexture    : register( t3 );
-TextureCube skyCube           : register( t4 ); // active ("to") cube (mipped)
-TextureCube skyCube2          : register( t5 ); // outgoing ("from") cube, sampled while cross-fading
+TextureCube skyCube           : register( t4 ); // ps_debug_skycube only
 
 SamplerState pointSampler  : register( s0 );
 SamplerState linearSampler : register( s1 );
@@ -16,24 +14,17 @@ cbuffer SSRCBuffer : register( b1 )
 {
     float4   cb_Projection;  // m11, m22, m31, m32
     float4   cb_DepthParams; // m33, m43, near, far
-    float4   cb_Params;      // intensity, maxDistance, thickness, fresnelPower
+    float4   cb_Params;      // intensity, maxDistance, thickness (fraction of view depth), fresnelPower
     float4   cb_BufferSize;  // width, height, invWidth, invHeight
-    float4   cb_MarchParams; // maxSteps, pixelStride, edgeFadePower, unused
+    float4   cb_MarchParams; // maxSteps, pixelStride, edgeFadePower, surfaceFadeDistance (0 = off)
     float4   cb_BlurParams;  // invWidth, invHeight, dirX, dirY
     float4   cb_BlurDepth;   // near, far, sharpness, unused
     float4x4 cb_WorldToView; // rotates G-buffer world normals into view space
-    float4   cb_SkyHorizon;  // rgb = horizon colour avg(FORWARD,TRANSLATION), a = intensity (0 = off)
-    float4   cb_SkyZenith;   // rgb = zenith colour avg(RIGHT,UP)
     float4   cb_SkyCubeParams; // x = maxMip, y = cube enable (0/1), z = intensity
-    float4   cb_SkyCubeParallax;  // "to" box half-extents xyz, w = enable (0/1)
-    float4   cb_SkyCubeOffset;    // xyz = camera - "to" probe (world); w = cross-fade blend (1 = fully "to")
-    float4   cb_SkyCubeParallax2; // "from" box half-extents xyz
-    float4   cb_SkyCubeOffset2;   // xyz = camera - "from" probe (world)
 };
 
 // No ray-miss sky/cube fallback: the forward pass (World/Skin EnvSpecular) renders the cube
-// reflection at full res, and SSR only adds reflections where a ray hits geometry. skyCube/skyCube2
-// (t4/t5) stay bound only for ps_debug_skycube below
+// reflection at full res, and SSR only adds reflections where a ray hits geometry
 
 float LinearizeDepthNF( float hardwareDepth, float nearZ, float farZ )
 {
@@ -73,25 +64,6 @@ float2 ViewToUV( float3 viewPos )
     return float2( ndcX * 0.5f + 0.5f, ( 1.0f - ndcY ) * 0.5f );
 }
 
-float3 MinDiff( float3 center, float3 posA, float3 posB )
-{
-    float3 a = posA - center;
-    float3 b = center - posB;
-    return dot( a, a ) < dot( b, b ) ? a : b;
-}
-
-float3 ReconstructNormal( float2 uv, float3 center )
-{
-    float2 texel = cb_BufferSize.zw;
-    float3 pr = UVToView( uv + float2( texel.x, 0.0f ) );
-    float3 pl = UVToView( uv - float2( texel.x, 0.0f ) );
-    float3 pt = UVToView( uv + float2( 0.0f, texel.y ) );
-    float3 pb = UVToView( uv - float2( 0.0f, texel.y ) );
-
-    float3 normal = normalize( cross( MinDiff( center, pr, pl ), MinDiff( center, pt, pb ) ) );
-    return dot( normal, -center ) < 0.0f ? -normal : normal;
-}
-
 float InterleavedGradientNoise( float2 pixel )
 {
     return frac( 52.9829189f * frac( dot( pixel, float2( 0.06711056f, 0.00583715f ) ) ) );
@@ -103,6 +75,20 @@ float4 ps_gather( PS_IN i ) : SV_TARGET
     float hardwareDepth = depthTexture.SampleLevel( pointSampler, i.UV, 0 ).r;
     if ( hardwareDepth >= 0.99999f )
         return float4( 0.0f, 0.0f, 0.0f, 0.0f ); // sky: nothing to reflect
+
+    // Surfaces past the fade distance get no SSR. Their reflection is sub-pixel and the forward pass's
+    // cube already covers it, but more importantly a ray leaving a distant surface near-parallel to the
+    // view direction gets its endpoint clipped to the near plane, so it sweeps most of the screen and
+    // latches onto whatever near-camera geometry it crosses -- a real depth crossing, so no thickness
+    // test rejects it. Fades over the last quarter so surfaces do not pop as the camera pulls back
+    float surfaceViewZ = LinearizeDepthNF( hardwareDepth, cb_DepthParams.z, cb_DepthParams.w );
+    float surfaceFade  = 1.0f;
+    if ( cb_MarchParams.w > 0.0f )
+    {
+        surfaceFade = saturate( ( cb_MarchParams.w - surfaceViewZ ) / max( cb_MarchParams.w * 0.25f, 0.0001f ) );
+        if ( surfaceFade <= 0.0f )
+            return float4( 0.0f, 0.0f, 0.0f, 0.0f );
+    }
 
     // Only authored-reflective surfaces (reflectivity > 0) cast SSR. This both limits
     // reflections to the right materials and skips the march everywhere else.
@@ -152,18 +138,26 @@ float4 ps_gather( PS_IN i ) : SV_TARGET
 
     float2 pixDelta = pixEnd - pixStart;
     float  pixLen   = max( abs( pixDelta.x ), abs( pixDelta.y ) );
-    int    numSteps = (int)clamp( ceil( pixLen / pixStride ), 1.0f, (float)maxSteps );
-    float  dt       = 1.0f / (float)numSteps;
+
+    // Power-distributed steps rather than a uniform stride. Uniform forces a choice between accuracy
+    // and reach: fine enough to catch contacts needs hundreds of steps to cross the screen, coarse
+    // enough to reach tunnels through thin geometry and self-intersects at grazing angles, which
+    // mirrors the surface onto itself as dark blotches. Picking the exponent from the ray's own screen
+    // length makes the first step exactly pixStride and the last land on the ray end, so near-field
+    // keeps full precision and the far half coarsens where it costs least
+    float numStepsF = (float)max( maxSteps, 1 );
+    float stepPower = max( log( max( pixLen / pixStride, 1.0f ) ) / log( max( numStepsF, 2.0f ) ), 1.0f );
 
     // Jitter the start by a fraction of a step to trade banding for noise (cleaned up by the blur)
     float jitter = InterleavedGradientNoise( i.Position.xy );
 
-    float2 hitUV = float2( 0.0f, 0.0f );
-    float  hit   = 0.0f;
+    float2 hitUV   = float2( 0.0f, 0.0f );
+    float  hit     = 0.0f;
+    float  hitFade = 0.0f;
 
     // Seed the previous depth difference just off the surface so the hit test detects a genuine
     // front->behind crossing, not the origin pixel
-    float tPrev = dt * jitter;
+    float tPrev = pow( max( jitter / numStepsF, 1e-6f ), stepPower );
     float lastDiff;
     {
         float2 uv0 = lerp( pixStart, pixEnd, tPrev ) * cb_BufferSize.zw;
@@ -173,9 +167,9 @@ float4 ps_gather( PS_IN i ) : SV_TARGET
     }
 
     [loop]
-    for ( int s = 1; s <= numSteps; s++ )
+    for ( int s = 1; s <= maxSteps; s++ )
     {
-        float  t  = min( dt * ( (float)s + jitter ), 1.0f );
+        float  t  = min( pow( max( ( (float)s + jitter ) / numStepsF, 1e-6f ), stepPower ), 1.0f );
         float2 uv = lerp( pixStart, pixEnd, t ) * cb_BufferSize.zw;
         if ( any( uv < 0.0f ) || any( uv > 1.0f ) ) break;
 
@@ -185,9 +179,10 @@ float4 ps_gather( PS_IN i ) : SV_TARGET
         float sceneZ = LinearizeDepthNF( depthTexture.SampleLevel( pointSampler, uv, 0 ).r, nearZ, farZ );
         float diff   = rayZ - sceneZ;
 
-        // Hit only when the ray crosses from in front (diff <= 0) to just behind (0 < diff <
-        // thickness); rejects the immediate self-hit
-        if ( lastDiff <= 0.0f && diff > 0.0f && diff < thickness )
+        // Detect the front->behind crossing only. Whether it counts as a hit is decided below from the
+        // refined position, so neither the accept threshold nor the fade scales with how coarse this
+        // step happened to be -- a wide stride would otherwise reject its own valid hits
+        if ( lastDiff <= 0.0f && diff > 0.0f )
         {
             float a = tPrev;
             float b = t;
@@ -201,9 +196,25 @@ float4 ps_gather( PS_IN i ) : SV_TARGET
                 if ( midRZ - midSZ > 0.0f ) b = mid;
                 else                        a = mid;
             }
-            hitUV = lerp( pixStart, pixEnd, b ) * cb_BufferSize.zw;
-            hit   = 1.0f;
-            break;
+
+            float2 refinedUV = lerp( pixStart, pixEnd, b ) * cb_BufferSize.zw;
+            float  refinedRZ = 1.0f / lerp( kStart, kEnd, b );
+            float  refinedSZ = LinearizeDepthNF( depthTexture.SampleLevel( pointSampler, refinedUV, 0 ).r, nearZ, farZ );
+
+            // Thickness as a fraction of view depth, not an absolute slab: a fixed world-space value
+            // accepts anything up close and is too tight to ever register a hit at distance
+            float relError = max( refinedRZ - refinedSZ, 0.0f ) / max( refinedSZ, 0.00001f );
+            float fade     = 1.0f - smoothstep( 0.0f, thickness, relError );
+
+            if ( fade > 0.0f )
+            {
+                hitUV   = refinedUV;
+                hitFade = fade * fade;
+                hit     = 1.0f;
+                break;
+            }
+
+            // Ray passed behind this surface rather than into it -- keep marching
         }
 
         lastDiff = diff;
@@ -217,11 +228,29 @@ float4 ps_gather( PS_IN i ) : SV_TARGET
 
     float roughFade = 1.0f - saturate( roughness );
 
-    float confidence = saturate( fresnel * cb_Params.x * reflectivity * roughFade );
+    float confidence = saturate( fresnel * cb_Params.x * reflectivity * roughFade ) * surfaceFade;
 
     // Misses contribute nothing (the forward-pass cube already covers them)
     if ( hit < 0.5f )
         return float4( 0.0f, 0.0f, 0.0f, 0.0f );
+
+    // Reject hits that barely left the origin pixel. At grazing angles the ray hugs the surface it came
+    // from and depth quantisation reads as a crossing, so the surface reflects itself -- dark, because
+    // it is the same unlit pixel
+    float2 hitPixel = hitUV * cb_BufferSize.xy;
+    if ( max( abs( hitPixel.x - i.Position.x ), abs( hitPixel.y - i.Position.y ) ) < 2.0f )
+        return float4( 0.0f, 0.0f, 0.0f, 0.0f );
+
+    // Reject hits on geometry facing away from the ray -- it cannot reflect back toward us, and
+    // accepting it mirrors the far side of an object onto the reflector. rg == 0 is the cleared
+    // G-buffer and no real normal can encode to it (the octahedral encode bounds |e.x| + |e.y| <= 1),
+    // so it means nothing wrote this pixel -- skip the test rather than cull on a decoded (0,0,-1)
+    float4 hitGBuffer    = gbufferTexture.SampleLevel( pointSampler, hitUV, 0 );
+    float3 hitNormalView = mul( OctDecodeNormal( hitGBuffer.rg ), (float3x3)cb_WorldToView );
+    if ( any( hitGBuffer.rg > 0.0f ) && dot( hitNormalView, rayDir ) > 0.0f )
+        return float4( 0.0f, 0.0f, 0.0f, 0.0f );
+
+    confidence *= hitFade;
 
     // Fade SSR out near the screen edge (back to the forward cube); folded into confidence so rgb
     // and the dst-removal fade together
@@ -252,8 +281,8 @@ float4 ps_blur( PS_IN i ) : SV_TARGET
     UnpackFresnelRoughness( gb.a, fresnelPower, roughness );
 
     float centerDepth = LinearizeDepthNF( depthTexture.SampleLevel( pointSampler, i.UV, 0 ).r, cb_BlurDepth.x, cb_BlurDepth.y );
-    // Roughness widens the kernel; keep a little blur even when sharp for denoise. Smaller floor than
-    // the old half-res path: full res has less jitter to hide
+    // Roughness widens the kernel; the 0.25 floor keeps a little blur on mirror surfaces to clean up
+    // the march jitter
     float  blurScale = lerp( 0.25f, 4.0f, saturate( roughness ) );
     float2 delta = cb_BlurParams.xy * cb_BlurParams.zw * blurScale;
 

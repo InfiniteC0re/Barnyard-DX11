@@ -42,7 +42,6 @@ extern TFLOAT g_flHBAOBlurSharpness;
 extern TFLOAT g_flXeGTAORadiusMultiplier;
 extern TFLOAT g_flXeGTAOFalloffRange;
 extern TFLOAT g_flXeGTAOSampleDistributionPower;
-extern TFLOAT g_flXeGTAOThinOccluderCompensation;
 
 // Screen-space reflections
 extern TBOOL  g_bSSREnabled;
@@ -55,6 +54,7 @@ extern TFLOAT g_flSSRStepSize;
 extern TINT   g_iSSRMaxSteps;
 extern TFLOAT g_flSSRFresnelPower;
 extern TFLOAT g_flSSREdgeFade;
+extern TFLOAT g_flSSRSurfaceFadeDistance;
 
 // Sky cube reflections
 extern TBOOL  g_bSkyCubeEnabled;

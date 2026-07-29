@@ -547,16 +547,18 @@ static const LevelSetting s_aLevelSettings[] = {
 	LS_FLOAT( "xeRadiusMultiplier", remaster::g_flXeGTAORadiusMultiplier ),
 	LS_FLOAT( "xeFalloffRange", remaster::g_flXeGTAOFalloffRange ),
 	LS_FLOAT( "xeDistribution", remaster::g_flXeGTAOSampleDistributionPower ),
-	LS_FLOAT( "xeThinOccluder", remaster::g_flXeGTAOThinOccluderCompensation ),
 	// SSR
 	LS_BOOL( "ssrEnabled", remaster::g_bSSREnabled ),
 	LS_FLOAT( "ssrIntensity", remaster::g_flSSRIntensity ),
 	LS_FLOAT( "ssrMaxDistance", remaster::g_flSSRMaxDistance ),
 	LS_INT( "ssrMaxSteps", remaster::g_iSSRMaxSteps ),
 	LS_FLOAT( "ssrStride", remaster::g_flSSRStepSize ),
-	LS_FLOAT( "ssrThickness", remaster::g_flSSRThickness ),
+	// Renamed on the switch to depth-relative thickness -- an old absolute value read as a fraction
+	// would accept almost any crossing
+	LS_FLOAT( "ssrThicknessRel", remaster::g_flSSRThickness ),
 	LS_FLOAT( "ssrFresnelPower", remaster::g_flSSRFresnelPower ),
 	LS_FLOAT( "ssrEdgeFade", remaster::g_flSSREdgeFade ),
+	LS_FLOAT( "ssrSurfaceFadeDist", remaster::g_flSSRSurfaceFadeDistance ),
 	// Reflection cube / IBL
 	LS_BOOL( "skyCubeEnabled", remaster::g_bSkyCubeEnabled ),
 	LS_BOOL( "reflectTerrain", remaster::g_bReflectTerrain ),
@@ -1311,7 +1313,6 @@ static void DrawRenderSettingsTab()
 			ImGui::SliderFloat( "XeGTAO Radius Multiplier", &remaster::g_flXeGTAORadiusMultiplier, 0.3f, 3.0f, "%.3f" );
 			ImGui::SliderFloat( "XeGTAO Falloff Range", &remaster::g_flXeGTAOFalloffRange, 0.05f, 1.0f, "%.3f" );
 			ImGui::SliderFloat( "XeGTAO Distribution", &remaster::g_flXeGTAOSampleDistributionPower, 1.0f, 3.0f, "%.2f" );
-			ImGui::SliderFloat( "XeGTAO Thin Occluder", &remaster::g_flXeGTAOThinOccluderCompensation, 0.0f, 0.7f, "%.2f" );
 		}
 		else
 		{
@@ -1332,9 +1333,10 @@ static void DrawRenderSettingsTab()
 		ImGui::DragFloat( "SSR Max Distance", &remaster::g_flSSRMaxDistance, 0.5f, 1.0f, 200.0f, "%.1f" );
 		ImGui::SliderInt( "SSR Max Steps", &remaster::g_iSSRMaxSteps, 8, 256 );
 		ImGui::DragFloat( "SSR Pixel Stride", &remaster::g_flSSRStepSize, 0.05f, 0.25f, 8.0f, "%.2f" );
-		ImGui::DragFloat( "SSR Thickness", &remaster::g_flSSRThickness, 0.01f, 0.02f, 5.0f, "%.3f" );
+		ImGui::DragFloat( "SSR Thickness", &remaster::g_flSSRThickness, 0.001f, 0.002f, 0.25f, "%.4f" );
 		ImGui::SliderFloat( "SSR Fresnel Power", &remaster::g_flSSRFresnelPower, 0.0f, 8.0f, "%.2f" );
 		ImGui::SliderFloat( "SSR Edge Fade", &remaster::g_flSSREdgeFade, 0.5f, 8.0f, "%.2f" );
+		ImGui::DragFloat( "SSR Surface Fade Dist", &remaster::g_flSSRSurfaceFadeDistance, 1.0f, 0.0f, 400.0f, "%.1f" );
 	}
 
 	ImGui::PopID();

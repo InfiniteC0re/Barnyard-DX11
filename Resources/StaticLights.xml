@@ -1,46 +1,69 @@
 <?xml version="1.0"?>
+<!--
+    Per-level static point lights.
+
+    Each <level> is keyed by the game's terrain/level name (see the Terrain_ enum).
+    Each <light> is a fixed world-space point light:
+      - x/y/z:     world position
+      - radius:    influence radius (world units)
+      - r/g/b:     colour (0..1)
+      - intensity: brightness multiplier
+      - enabled:   on/off
+      - nightOnly: only lit at night
+
+    Authored in-game via Light Manager -> Static tab. "Save" writes the current
+    level (preserving other levels); the level's lights auto-load on entering it.
+    Saved to Game\Data\StaticLights.xml -- copy it back here to track in the repo.
+
+    Example:
+    <level name="EnvMain">
+        <light x="10.0" y="2.5" z="-8.0" radius="12" r="1.0" g="0.85" b="0.6" intensity="2.0" enabled="true" nightOnly="false"/>
+    </level>
+-->
 <staticLights>
     <level name="envbarnintday">
-        <light x="14.748077" y="-9.4211855" z="6.1927099" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="false"/>
-        <light x="20.615444" y="-7.8521500" z="6.2477622" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="false"/>
-        <light x="9.0125008" y="-7.9035792" z="6.6481485" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="false"/>
-        <light x="14.739093" y="-14.302924" z="6.3583817" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="false"/>
-        <light x="15.596420" y="-2.7672462" z="6.6046686" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.34200001" enabled="true" nightOnly="false"/>
-        <light x="14.606484" y="-11.170865" z="38.566261" radius="14.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="false"/>
-        <light x="24.712717" y="3.3103716" z="42.633171" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="false"/>
-        <light x="2.5443125" y="2.6329963" z="26.539944" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="false"/>
-        <light x="13.331206" y="3.4448292" z="26.531898" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="false"/>
-        <light x="24.102917" y="3.1745422" z="26.504328" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="false"/>
-        <light x="13.414492" y="3.2854693" z="42.754948" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="false"/>
-        <light x="2.5266342" y="3.0553813" z="42.587086" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="false"/>
-        <light x="-4.6034608" y="3.0680809" z="34.823822" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="false"/>
-        <light x="34.776726" y="2.7509568" z="34.830097" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="false"/>
+        <light x="14.748077" y="-9.4211855" z="6.1927099" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="false"/>
+        <light x="20.615444" y="-7.8521500" z="6.2477622" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="false"/>
+        <light x="9.0125008" y="-7.9035792" z="6.6481485" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="false"/>
+        <light x="14.739093" y="-14.302924" z="6.3583817" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="false"/>
+        <light x="15.596420" y="-2.7672462" z="6.6046686" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.14869565" enabled="true" nightOnly="false"/>
+        <light x="14.606484" y="-11.170865" z="38.566261" radius="14.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="false"/>
+        <light x="24.712717" y="3.3103716" z="42.633171" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="false"/>
+        <light x="2.5443125" y="2.6329963" z="26.539944" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="false"/>
+        <light x="13.331206" y="3.4448292" z="26.531898" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="false"/>
+        <light x="24.102917" y="3.1745422" z="26.504328" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="false"/>
+        <light x="13.414492" y="3.2854693" z="42.754948" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="false"/>
+        <light x="2.5266342" y="3.0553813" z="42.587086" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="false"/>
+        <light x="-4.6034608" y="3.0680809" z="34.823822" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="false"/>
+        <light x="34.776726" y="2.7509568" z="34.830097" radius="8.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="false"/>
     </level>
     <level name="EnvMain">
-        <light x="273.66470" y="1.8940241" z="-77.067314" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="264.10715" y="-0.26489085" z="-90.636940" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="226.17076" y="-4.6831832" z="-106.53963" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="206.06085" y="-5.3647366" z="-78.207474" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="205.36510" y="-5.2795253" z="-64.691650" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="225.15706" y="-2.8356867" z="-43.575199" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="232.67842" y="-2.6233811" z="-46.411873" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="210.73891" y="-4.7033110" z="-53.441185" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="-12.323565" y="-11.295723" z="28.346066" radius="8.0000000" r="0.99766892" g="0.72356141" b="0.41263333" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="-18.693342" y="-11.105719" z="28.809782" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="-10.581889" y="-11.289236" z="34.602394" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="17.499392" y="-17.448370" z="-17.425919" radius="6.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="14.848896" y="-10.816542" z="-23.160692" radius="4.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="4.2426386" y="-10.718376" z="-23.375530" radius="4.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="8.2804089" y="-10.958874" z="-23.845953" radius="4.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="10.760796" y="-9.9151001" z="-7.5900517" radius="4.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.50000000" enabled="true" nightOnly="true"/>
-        <light x="7.8080821" y="-9.8623857" z="-7.4608688" radius="4.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.50000000" enabled="true" nightOnly="true"/>
-        <light x="4.1017036" y="-9.8023434" z="-8.6994905" radius="4.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.50000000" enabled="true" nightOnly="true"/>
-        <light x="15.083537" y="-10.449639" z="-34.539612" radius="5.0000000" r="1.0000000" g="0.93150300" b="0.66223776" intensity="1.5000000" enabled="true" nightOnly="true"/>
-        <light x="69.597542" y="-2.2879357" z="-57.858295" radius="6.0000000" r="1.0000000" g="0.93986410" b="0.65602177" intensity="1.5000000" enabled="true" nightOnly="true"/>
-        <light x="78.383316" y="-14.995153" z="-105.48615" radius="5.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="-14.064058" y="-6.4037104" z="-83.625298" radius="6.0000000" r="1.0000000" g="0.93183398" b="0.66386974" intensity="1.5000000" enabled="true" nightOnly="true"/>
-        <light x="-52.466518" y="-4.6921763" z="-70.620827" radius="8.0000000" r="1.0000000" g="0.95121145" b="0.46332562" intensity="1.5000000" enabled="true" nightOnly="true"/>
-        <light x="-72.287544" y="-3.4965723" z="-23.914190" radius="6.0000000" r="1.0000000" g="0.94674730" b="0.63737345" intensity="1.0000000" enabled="true" nightOnly="true"/>
-        <light x="-74.968460" y="-5.2036319" z="17.877972" radius="6.0000000" r="1.0000000" g="0.97404754" b="0.58764541" intensity="1.0000000" enabled="true" nightOnly="true"/>
+        <light x="273.66470" y="1.8940241" z="-77.067314" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="264.10715" y="-0.26489085" z="-90.636940" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="226.17076" y="-4.6831832" z="-106.53963" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="206.06085" y="-5.3647366" z="-78.207474" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="205.36510" y="-5.2795253" z="-64.691650" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="225.15706" y="-2.8356867" z="-43.575199" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="232.67842" y="-2.6233811" z="-46.411873" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="210.73891" y="-4.7033110" z="-53.441185" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="-12.323565" y="-11.295723" z="28.346066" radius="8.0000000" r="0.99766892" g="0.72356141" b="0.41263333" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="-18.693342" y="-11.105719" z="28.809782" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="-10.581889" y="-11.289236" z="34.602394" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="17.499392" y="-17.448370" z="-17.425919" radius="6.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="4"/>
+        <light x="14.848896" y="-10.816542" z="-23.160692" radius="4.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="4"/>
+        <light x="4.2426386" y="-10.718376" z="-23.375530" radius="4.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="4"/>
+        <light x="8.2804089" y="-10.958874" z="-23.845953" radius="4.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="4"/>
+        <light x="10.760796" y="-9.9151001" z="-7.5900517" radius="4.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.21739131" enabled="true" nightOnly="true" lightMag="4"/>
+        <light x="7.8080821" y="-9.8623857" z="-7.4608688" radius="4.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.21739131" enabled="true" nightOnly="true" lightMag="4"/>
+        <light x="4.1017036" y="-9.8023434" z="-8.6994905" radius="4.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.21739131" enabled="true" nightOnly="true" lightMag="4"/>
+        <light x="15.083537" y="-10.449639" z="-34.539612" radius="5.0000000" r="1.0000000" g="0.93150300" b="0.66223776" intensity="0.65217391" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="69.597542" y="-2.2879357" z="-57.858295" radius="6.0000000" r="1.0000000" g="0.93986410" b="0.65602177" intensity="0.65217391" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="78.383316" y="-14.995153" z="-105.48615" radius="5.0000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="-14.064058" y="-6.4037104" z="-83.625298" radius="6.0000000" r="1.0000000" g="0.93183398" b="0.66386974" intensity="0.65217391" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="-52.466518" y="-4.6921763" z="-70.620827" radius="8.0000000" r="1.0000000" g="0.95121145" b="0.46332562" intensity="0.65217391" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="-72.287544" y="-3.4965723" z="-23.914190" radius="6.0000000" r="1.0000000" g="0.94674730" b="0.63737345" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="-74.968460" y="-5.2036319" z="17.877972" radius="6.0000000" r="1.0000000" g="0.97404754" b="0.58764541" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="10"/>
+        <light x="33.596565" y="-10.494079" z="6.0458913" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="true" lightMag="0"/>
+        <light x="42.298565" y="-10.888507" z="2.4893582" radius="10.000000" r="1.0000000" g="1.0000000" b="1.0000000" intensity="0.4347826" enabled="true" nightOnly="false" lightMag="0"/>
     </level>
 </staticLights>

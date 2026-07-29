@@ -180,21 +180,21 @@ void RmlFocusGroup::SpatialNavigate( Rml::Element* a_pCurrent, TINT a_iKey )
 	}
 
 	// The walk lands on whichever element of the target row comes first in the travel
-	// direction -- for a row of tabs that is the far one. Pick the selected element
-	// instead (a tabset's active tab), or failing that the nearest one horizontally
+	// direction, so moving up hits the far end of a tab or button bar. Enter the row at
+	// its selected element (a tabset's active tab) or, failing that, at its first one
 	if ( pBest && bVertical )
 	{
 		const Rml::Vector2f vRowPos  = pBest->GetAbsoluteOffset( Rml::BoxArea::Border );
 		const Rml::Vector2f vRowSize = pBest->GetBox().GetSize( Rml::BoxArea::Border );
 		const float         fRowTop  = vRowPos.y;
 		const float         fRowBot  = vRowPos.y + vRowSize.y;
-		const float         fCurMid  = vCurPos.x + vCurSize.x * 0.5f;
 
-		Rml::Element* pInRow    = TNULL;
-		float         fBestDist = 3.4e38f;
+		Rml::Element* pInRow = TNULL;
 
 		for ( Rml::Element* pCand : vecFocusable )
 		{
+			// A scrolled panel keeps laying its rows out past the visible area, so only
+			// siblings of the landing element count as its row
 			if ( pCand->GetParentNode() != pBest->GetParentNode() )
 				continue;
 
@@ -213,13 +213,8 @@ void RmlFocusGroup::SpatialNavigate( Rml::Element* a_pCurrent, TINT a_iKey )
 				break;
 			}
 
-			const float fMid  = vPos.x + vSize.x * 0.5f;
-			const float fDist = fMid > fCurMid ? fMid - fCurMid : fCurMid - fMid;
-			if ( fDist < fBestDist )
-			{
-				fBestDist = fDist;
-				pInRow    = pCand;
-			}
+			if ( !pInRow )
+				pInRow = pCand;
 		}
 
 		if ( pInRow )

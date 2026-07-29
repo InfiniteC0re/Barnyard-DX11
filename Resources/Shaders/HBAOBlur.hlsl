@@ -20,7 +20,13 @@ float LinearizeDepth( float hardwareDepth )
 
 float ps_main( PS_IN i ) : SV_TARGET
 {
-    float centerDepth = LinearizeDepth( depthTexture.SampleLevel( pointSampler, i.UV, 0 ).r );
+    // Sky is written as 1.0 by the AO pass; skipping it here saves the whole 20-tap kernel over
+    // however much of an outdoor level is sky
+    float centerHardwareDepth = depthTexture.SampleLevel( pointSampler, i.UV, 0 ).r;
+    if ( centerHardwareDepth >= 0.99999f )
+        return 1.0f;
+
+    float centerDepth = LinearizeDepth( centerHardwareDepth );
     float centerInvZ  = 1.0f / max( centerDepth, 0.00001f );
     float2 delta = cb_BlurParams.xy * cb_BlurParams.zw;
 

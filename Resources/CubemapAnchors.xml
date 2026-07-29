@@ -44,8 +44,23 @@
         <anchor x="24.737171" y="-5.5514569" z="-409.64676" radius="50.000000" halfX="40.000000" halfY="20.000000" halfZ="40.000000"/>
         <anchor x="-3.7424648" y="-12.111105" z="-853.25073" radius="50.000000" halfX="40.000000" halfY="20.000000" halfZ="40.000000"/>
     </level>
+    <level name="envwoods">
+        <anchor x="9.8095474" y="-3.3089507" z="17.643826" radius="16.000000" halfX="16.000000" halfY="6.0000000" halfZ="16.000000"/>
+        <anchor x="-11.324457" y="-5.4324121" z="-14.001701" radius="16.000000" halfX="16.000000" halfY="6.0000000" halfZ="16.000000"/>
+        <anchor x="22.070312" y="-5.0205326" z="-17.152412" radius="16.000000" halfX="16.000000" halfY="6.0000000" halfZ="16.000000"/>
+        <anchor x="-15.925324" y="-13.777964" z="16.166948" radius="16.000000" halfX="16.000000" halfY="40.000000" halfZ="16.000000"/>
+    </level>
     <level name="envbarnintday">
         <anchor x="14.818109" y="-2.2312584" z="23.386709" radius="50.000000" halfX="15.000000" halfY="10.000000" halfZ="20.000000"/>
         <anchor x="15.115326" y="3.8666174" z="33.998009" radius="50.000000" halfX="16.000000" halfY="3.2000000" halfZ="13.000000"/>
+    </level>
+    <level name="envpoolboat">
+        <anchor x="13.426068" y="5.2577109" z="34.772732" radius="50.000000" halfX="40.000000" halfY="20.000000" halfZ="40.000000"/>
+    </level>
+    <level name="EnvWacARac">
+        <anchor x="-0.25346059" y="-1.4589863" z="-0.061111856" radius="6.0000000" halfX="2.0000000" halfY="3.0000000" halfZ="2.0000000"/>
+    </level>
+    <level name="tappers">
+        <anchor x="12.249813" y="-2.6048346" z="31.751997" radius="30.000000" halfX="14.000000" halfY="20.000000" halfZ="10.000000"/>
     </level>
 </cubemapAnchors>
